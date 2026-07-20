@@ -411,12 +411,15 @@ func (c *Coordinator) writeFinalReport(ctx context.Context, job jobs.Job, report
 	if err != nil {
 		return err
 	}
-	_, err = c.artifacts.Put(ctx, artifactfiles.PutRequest{
+	artifact, err := c.artifacts.Put(ctx, artifactfiles.PutRequest{
 		JobID: job.ID, ProjectID: job.ProjectID, Kind: "final_report", MediaType: "application/json",
 		Producer: "workflow-controller", IdempotencyKey: phaseKey(job) + "_final_report",
 		Metadata: mustJSON(map[string]any{"result_sha": job.ResultSHA}), Reader: bytes.NewReader(payload),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return extractVerifiedCase(ctx, c.store, job, artifact.ID)
 }
 
 func (c *Coordinator) worktree(jobID string) string { return filepath.Join(c.worktreesRoot, jobID) }

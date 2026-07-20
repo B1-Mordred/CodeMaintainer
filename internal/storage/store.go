@@ -78,6 +78,8 @@ type PhaseRecord struct {
 type WorkflowStore interface {
 	JobStore
 	ReserveJobTokens(context.Context, string, int64, jobs.State, int) (jobs.Job, error)
+	PutCandidate(context.Context, memory.ProjectScope, memory.Record) (memory.Record, error)
+	GetMemory(context.Context, memory.ProjectScope, string) (memory.Record, error)
 	CompletePhase(context.Context, PhaseCompletion) (jobs.Job, error)
 	ListPhaseRecords(context.Context, string, int) ([]PhaseRecord, error)
 }

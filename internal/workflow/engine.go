@@ -83,6 +83,7 @@ func (e *Engine) fail(ctx context.Context, job jobs.Job, cause error, reason str
 		ExpectedVersion: job.Version, Details: details,
 	})
 	if transitionErr == nil {
+		extractFailedCase(transitionContext, e.store, failed, cause)
 		return failed, cause
 	}
 	return jobs.Job{}, cause

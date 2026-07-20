@@ -14,6 +14,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -185,6 +186,13 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	jobArtifacts, err := store.ListJobArtifacts(ctx, job.ID, 100)
 	if err != nil || len(jobArtifacts) < 2 {
 		t.Fatalf("job artifacts = %#v, %v", jobArtifacts, err)
+	}
+	records, err := store.ListMemory(ctx, memory.ProjectScope{Owner: "fixture", Repository: "arithmetic"}, memory.StatusQuarantine, 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("verified memory records = %#v, %v", records, err)
+	}
+	if records[0].Kind != "verified_case" || records[0].Verified || records[0].BaseCommit != job.BaseSHA || !strings.HasPrefix(records[0].SourceURI, "artifact://") {
+		t.Fatalf("verified memory record = %#v", records[0])
 	}
 }
 

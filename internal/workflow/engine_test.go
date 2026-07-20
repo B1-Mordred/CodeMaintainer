@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
 )
@@ -123,6 +125,18 @@ func TestPhaseFailurePersistsFailedState(t *testing.T) {
 	}
 	if failed.State != jobs.StateFailed {
 		t.Fatalf("failure state is %s", failed.State)
+	}
+	records, err := store.ListMemory(ctx, memory.ProjectScope{Owner: "o", Repository: "r"}, memory.StatusQuarantine, 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("failure memory records = %#v, %v", records, err)
+	}
+	if records[0].Kind != "failed_case" || records[0].Verified || !strings.Contains(records[0].Content, "phase failed") {
+		t.Fatalf("failure memory record = %#v", records[0])
+	}
+	extractFailedCase(ctx, store, failed, errors.New("fixture failure"))
+	records, err = store.ListMemory(ctx, memory.ProjectScope{Owner: "o", Repository: "r"}, memory.StatusQuarantine, 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("idempotent failure memory records = %#v, %v", records, err)
 	}
 }
 
