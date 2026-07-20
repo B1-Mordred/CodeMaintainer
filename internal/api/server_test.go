@@ -183,10 +183,69 @@ func TestProjectMemoryAPIIsScopedQuarantinedAndTraceable(t *testing.T) {
 	}
 }
 
+func TestProjectMemoryExportAndRestoreAPI(t *testing.T) {
+	server, store := testServer(t)
+	scope := memory.ProjectScope{Owner: "owner", Repository: "repo"}
+	record, err := store.PutCandidate(context.Background(), scope, memory.Record{
+		Content: "The project uses an offline deterministic verification gate.", Kind: "project_knowledge",
+		SourceURI: "job://controller/job_export", BaseCommit: strings.Repeat("a", 40),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/projects/owner-repo/memory/export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle memory.ExportBundle
+	if err := json.NewDecoder(response.Body).Decode(&bundle); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || bundle.ManifestHash == "" || len(bundle.Records) != 1 {
+		t.Fatalf("export returned %d: %+v", response.StatusCode, bundle)
+	}
+	if err := store.DeleteMemory(context.Background(), scope, record.ID, memory.DeletionRequest{ActorID: "admin", Rationale: "API restore fixture", ExpectedVersion: record.Version}); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"dry_run": true, "bundle": bundle})
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/restore", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dryRun memory.RestoreReport
+	if err := json.NewDecoder(response.Body).Decode(&dryRun); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !dryRun.DryRun || dryRun.Imported != 1 {
+		t.Fatalf("dry run returned %d: %+v", response.StatusCode, dryRun)
+	}
+	payload, _ = json.Marshal(map[string]any{"dry_run": false, "bundle": bundle})
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/restore", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored memory.RestoreReport
+	if err := json.NewDecoder(response.Body).Decode(&restored); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || restored.Imported != 1 {
+		t.Fatalf("restore returned %d: %+v", response.StatusCode, restored)
+	}
+}
+
 func TestMemoryRoutePermissionsSeparateReviewFromAdministration(t *testing.T) {
 	cases := map[string]maintainerauth.Permission{
 		"GET /api/v1/projects/p/memory":                       maintainerauth.PermissionRead,
+		"GET /api/v1/projects/p/memory/export":                maintainerauth.PermissionAdminister,
 		"POST /api/v1/projects/p/memory":                      maintainerauth.PermissionAdminister,
+		"POST /api/v1/projects/p/memory/actions/restore":      maintainerauth.PermissionAdminister,
 		"POST /api/v1/projects/p/memory/m/actions/promote":    maintainerauth.PermissionReview,
 		"POST /api/v1/projects/p/memory/m/actions/correct":    maintainerauth.PermissionReview,
 		"POST /api/v1/projects/p/memory/m/actions/invalidate": maintainerauth.PermissionReview,
@@ -352,6 +411,53 @@ func TestAuthenticationBootstrapSessionCSRFAndHeaderForgeryRejection(t *testing.
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || session.CSRFToken == "" || session.CSRFToken == bootstrap.CSRFToken {
 		t.Fatalf("session CSRF rotation failed: status=%d response=%+v", response.StatusCode, session)
+	}
+
+	scope := memory.ProjectScope{Owner: "owner", Repository: "repo"}
+	if _, err := store.PutCandidate(context.Background(), scope, memory.Record{Content: "authenticated restore fixture", Kind: "pattern"}); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := store.ExportProjectMemory(context.Background(), scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restorePayload, _ := json.Marshal(map[string]any{"dry_run": false, "bundle": bundle})
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/restore", bytes.NewReader(restorePayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", session.CSRFToken)
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("restore without recent reauthentication returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/reauthenticate", strings.NewReader(`{"password":"correct horse battery staple"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", session.CSRFToken)
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reauthentication returned %d", response.StatusCode)
+	}
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/restore", bytes.NewReader(restorePayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", session.CSRFToken)
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("recently reauthenticated restore returned %d", response.StatusCode)
 	}
 }
 

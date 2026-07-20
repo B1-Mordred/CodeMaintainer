@@ -432,6 +432,96 @@ func (s *Store) ListRetrievals(ctx context.Context, scope memory.ProjectScope, l
 	return traces, rows.Err()
 }
 
+func (s *Store) ExportProjectMemory(ctx context.Context, scope memory.ProjectScope) (memory.ExportBundle, error) {
+	if !scope.Valid() {
+		return memory.ExportBundle{}, memory.ErrScope
+	}
+	rows, err := s.db.QueryContext(ctx, memorySelect+" WHERE owner = ? AND repository = ? AND status != 'deleted' ORDER BY id LIMIT 101", scope.Owner, scope.Repository)
+	if err != nil {
+		return memory.ExportBundle{}, err
+	}
+	records, err := scanMemoryRows(rows)
+	rows.Close()
+	if err != nil || len(records) > 100 {
+		return memory.ExportBundle{}, memory.ErrInvalid
+	}
+	exported := make([]memory.ExportRecord, 0, len(records))
+	for _, record := range records {
+		exported = append(exported, memory.ExportRecord{
+			OriginalID: record.ID, Content: record.Content, SourceURI: record.SourceURI,
+			BaseCommit: record.BaseCommit, MergedCommit: record.MergedCommit,
+			AffectedPaths: record.AffectedPaths, Kind: record.Kind, InvalidationRule: record.InvalidationRule,
+			ExpiresAt: record.ExpiresAt, OriginalStatus: record.Status, OriginalVerified: record.Verified,
+			ContentHash: record.ContentHash,
+		})
+	}
+	return memory.SealExport(scope, exported, s.now())
+}
+
+func (s *Store) RestoreProjectMemory(ctx context.Context, scope memory.ProjectScope, bundle memory.ExportBundle, dryRun bool, actor string) (memory.RestoreReport, error) {
+	if strings.TrimSpace(actor) == "" || bundle.ManifestHash == "" {
+		return memory.RestoreReport{}, memory.ErrInvalid
+	}
+	if err := memory.ValidateExport(scope, bundle); err != nil {
+		return memory.RestoreReport{}, err
+	}
+	report := memory.RestoreReport{DryRun: dryRun, Validated: len(bundle.Records), ManifestHash: bundle.ManifestHash}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return memory.RestoreReport{}, err
+	}
+	defer tx.Rollback()
+	now := s.now()
+	for _, exported := range bundle.Records {
+		var existing int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_records WHERE owner = ? AND repository = ? AND content_hash = ? AND status != 'deleted'`, scope.Owner, scope.Repository, exported.ContentHash).Scan(&existing); err != nil {
+			return memory.RestoreReport{}, err
+		}
+		if existing != 0 {
+			report.Skipped++
+			continue
+		}
+		if dryRun {
+			report.Imported++
+			continue
+		}
+		record, err := memory.PrepareCandidate(scope, memory.Record{
+			Content: exported.Content, SourceURI: exported.SourceURI, BaseCommit: exported.BaseCommit,
+			MergedCommit: exported.MergedCommit, AffectedPaths: exported.AffectedPaths, Kind: exported.Kind,
+			InvalidationRule: exported.InvalidationRule, ExpiresAt: exported.ExpiresAt,
+		})
+		if err != nil {
+			return memory.RestoreReport{}, err
+		}
+		record.CreatedAt, record.UpdatedAt = now, now
+		paths, _ := json.Marshal(record.AffectedPaths)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO memory_records(id, owner, repository, namespace, kind, content,
+			content_hash, source_uri, base_commit, merged_commit, affected_paths, status, verified, secret_scan_pass,
+			invalidation_rule, expires_at, version, created_at, updated_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'quarantine', 0, 1, ?, ?, 1, ?, ?)`, record.ID,
+			scope.Owner, scope.Repository, record.Namespace, record.Kind, record.Content, record.ContentHash,
+			record.SourceURI, record.BaseCommit, record.MergedCommit, string(paths), record.InvalidationRule,
+			nullableMemoryTime(record.ExpiresAt), formatTime(now), formatTime(now)); err != nil {
+			return memory.RestoreReport{}, err
+		}
+		details, _ := json.Marshal(map[string]string{"original_id": exported.OriginalID, "manifest_hash": bundle.ManifestHash})
+		if err := appendMemoryEvent(ctx, tx, record, "restored_to_quarantine", actor, "project memory bundle restored after validation", details, now); err != nil {
+			return memory.RestoreReport{}, err
+		}
+		if err := appendMemoryAudit(ctx, tx, s.now, actor, "memory.restore", record.ID, "validated project bundle restored to quarantine"); err != nil {
+			return memory.RestoreReport{}, err
+		}
+		report.Imported++
+	}
+	if dryRun {
+		return report, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return memory.RestoreReport{}, err
+	}
+	return report, nil
+}
+
 const memorySelect = `SELECT id, owner, repository, namespace, kind, content, content_hash, source_uri,
 	base_commit, merged_commit, affected_paths, status, verified, secret_scan_pass, invalidation_rule,
 	expires_at, deleted_at, version, created_at, updated_at FROM memory_records`

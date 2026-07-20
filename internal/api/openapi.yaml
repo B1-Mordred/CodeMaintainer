@@ -225,6 +225,41 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/MemoryRetrievalTrace" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/export:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    get:
+      summary: Export at most 100 active project records in a manifest-hashed schema-versioned bundle
+      operationId: exportProjectMemory
+      responses:
+        "200":
+          description: Project-bound memory export
+          headers:
+            Content-Disposition: { schema: { type: string } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryExportBundle" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/actions/restore:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    post:
+      summary: Dry-run or restore a validated same-project bundle into quarantine
+      operationId: restoreProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRestoreRequest" } } }
+      responses:
+        "200":
+          description: Dry-run report; no records were written
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRestoreReport" } } }
+        "201":
+          description: Atomic restore report
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRestoreReport" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory/actions/reindex:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -1040,6 +1075,50 @@ components:
         rationale: { type: string }
         details: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
+    MemoryExportRecord:
+      type: object
+      additionalProperties: false
+      required: [original_id, content, affected_paths, kind, original_status, original_verified, content_hash]
+      properties:
+        original_id: { type: string, pattern: "^memory_[0-9a-f]{32}$" }
+        content: { type: string, minLength: 1, maxLength: 65536 }
+        source_uri: { type: string, maxLength: 2048 }
+        base_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        merged_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        affected_paths: { type: array, items: { type: string } }
+        kind: { type: string }
+        invalidation_rule: { type: string, maxLength: 4096 }
+        expires_at: { type: string, format: date-time }
+        original_status: { $ref: "#/components/schemas/MemoryStatus" }
+        original_verified: { type: boolean }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+    MemoryExportBundle:
+      type: object
+      additionalProperties: false
+      required: [schema_version, scope, exported_at, records, manifest_hash]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        scope: { $ref: "#/components/schemas/MemoryScope" }
+        exported_at: { type: string, format: date-time }
+        records: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/MemoryExportRecord" } }
+        manifest_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+    MemoryRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [dry_run, bundle]
+      properties:
+        dry_run: { type: boolean }
+        bundle: { $ref: "#/components/schemas/MemoryExportBundle" }
+    MemoryRestoreReport:
+      type: object
+      additionalProperties: false
+      required: [dry_run, validated, imported, skipped, manifest_hash]
+      properties:
+        dry_run: { type: boolean }
+        validated: { type: integer, minimum: 0, maximum: 100 }
+        imported: { type: integer, minimum: 0, maximum: 100 }
+        skipped: { type: integer, minimum: 0, maximum: 100 }
+        manifest_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
     MemoryRetrievalTrace:
       type: object
       required: [id, scope, namespace, query, query_hash, candidate_ids, selected_ids, budget_tokens, allocated_tokens, trajectory, created_at]

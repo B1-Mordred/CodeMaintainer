@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -168,6 +169,93 @@ type DurableStore interface {
 	ListMemoryEvents(context.Context, ProjectScope, string, int) ([]Event, error)
 	RecordRetrieval(context.Context, RetrievalTrace) (RetrievalTrace, error)
 	ListRetrievals(context.Context, ProjectScope, int) ([]RetrievalTrace, error)
+	ExportProjectMemory(context.Context, ProjectScope) (ExportBundle, error)
+	RestoreProjectMemory(context.Context, ProjectScope, ExportBundle, bool, string) (RestoreReport, error)
+}
+
+const ExportSchemaVersion = 1
+
+type ExportRecord struct {
+	OriginalID       string     `json:"original_id"`
+	Content          string     `json:"content"`
+	SourceURI        string     `json:"source_uri,omitempty"`
+	BaseCommit       string     `json:"base_commit,omitempty"`
+	MergedCommit     string     `json:"merged_commit,omitempty"`
+	AffectedPaths    []string   `json:"affected_paths"`
+	Kind             string     `json:"kind"`
+	InvalidationRule string     `json:"invalidation_rule,omitempty"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	OriginalStatus   Status     `json:"original_status"`
+	OriginalVerified bool       `json:"original_verified"`
+	ContentHash      string     `json:"content_hash"`
+}
+
+type ExportBundle struct {
+	SchemaVersion int            `json:"schema_version"`
+	Scope         ProjectScope   `json:"scope"`
+	ExportedAt    time.Time      `json:"exported_at"`
+	Records       []ExportRecord `json:"records"`
+	ManifestHash  string         `json:"manifest_hash"`
+}
+
+type RestoreReport struct {
+	DryRun       bool   `json:"dry_run"`
+	Validated    int    `json:"validated"`
+	Imported     int    `json:"imported"`
+	Skipped      int    `json:"skipped"`
+	ManifestHash string `json:"manifest_hash"`
+}
+
+func SealExport(scope ProjectScope, records []ExportRecord, exportedAt time.Time) (ExportBundle, error) {
+	bundle := ExportBundle{SchemaVersion: ExportSchemaVersion, Scope: scope, ExportedAt: exportedAt.UTC(), Records: records}
+	if err := ValidateExport(scope, bundle); err != nil {
+		return ExportBundle{}, err
+	}
+	payload, err := json.Marshal(bundle)
+	if err != nil {
+		return ExportBundle{}, err
+	}
+	digest := sha256.Sum256(payload)
+	bundle.ManifestHash = hex.EncodeToString(digest[:])
+	return bundle, nil
+}
+
+func ValidateExport(scope ProjectScope, bundle ExportBundle) error {
+	if !scope.Valid() || bundle.SchemaVersion != ExportSchemaVersion || bundle.Scope != scope || bundle.ExportedAt.IsZero() || len(bundle.Records) > 100 {
+		return ErrInvalid
+	}
+	if bundle.ManifestHash != "" {
+		provided := bundle.ManifestHash
+		bundle.ManifestHash = ""
+		payload, err := json.Marshal(bundle)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(payload)
+		expected := hex.EncodeToString(digest[:])
+		if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+			return ErrInvalid
+		}
+	}
+	total := 0
+	for _, item := range bundle.Records {
+		if !ValidID(item.OriginalID) || item.OriginalStatus == StatusDeleted {
+			return ErrInvalid
+		}
+		candidate, err := PrepareCandidate(scope, Record{
+			Content: item.Content, SourceURI: item.SourceURI, BaseCommit: item.BaseCommit,
+			MergedCommit: item.MergedCommit, AffectedPaths: item.AffectedPaths, Kind: item.Kind,
+			InvalidationRule: item.InvalidationRule, ExpiresAt: item.ExpiresAt,
+		})
+		if err != nil || candidate.ContentHash != item.ContentHash {
+			return ErrInvalid
+		}
+		total += len(item.Content)
+		if total > 7<<20 {
+			return ErrInvalid
+		}
+	}
+	return nil
 }
 
 var (

@@ -87,6 +87,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory", s.createProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/retrievals", s.listProjectMemoryRetrievals)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/export", s.exportProjectMemory)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/actions/restore", s.restoreProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/actions/reindex", s.reindexProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}", s.getProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}/events", s.listProjectMemoryEvents)
@@ -655,11 +657,15 @@ func queryInt(r *http.Request, key string, fallback int) int {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
+	return decodeJSONLimit(w, r, destination, maxRequestBody)
+}
+
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, destination any, limit int64) error {
 	if contentType := r.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
 		writeError(w, http.StatusUnsupportedMediaType, "content_type", "Content-Type must be application/json")
 		return errors.New("invalid content type")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {

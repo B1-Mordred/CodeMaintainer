@@ -197,6 +197,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/memory/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Export at most 100 active project records in a manifest-hashed schema-versioned bundle */
+        get: operations["exportProjectMemory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/actions/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dry-run or restore a validated same-project bundle into quarantine */
+        post: operations["restoreProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory/actions/reindex": {
         parameters: {
             query?: never;
@@ -973,6 +1011,41 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        MemoryExportRecord: {
+            original_id: string;
+            content: string;
+            source_uri?: string;
+            base_commit?: string;
+            merged_commit?: string;
+            affected_paths: string[];
+            kind: string;
+            invalidation_rule?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            original_status: components["schemas"]["MemoryStatus"];
+            original_verified: boolean;
+            content_hash: string;
+        };
+        MemoryExportBundle: {
+            /** @constant */
+            schema_version: 1;
+            scope: components["schemas"]["MemoryScope"];
+            /** Format: date-time */
+            exported_at: string;
+            records: components["schemas"]["MemoryExportRecord"][];
+            manifest_hash: string;
+        };
+        MemoryRestoreRequest: {
+            dry_run: boolean;
+            bundle: components["schemas"]["MemoryExportBundle"];
+        };
+        MemoryRestoreReport: {
+            dry_run: boolean;
+            validated: number;
+            imported: number;
+            skipped: number;
+            manifest_hash: string;
+        };
         MemoryRetrievalTrace: {
             id: string;
             job_id?: string;
@@ -1604,6 +1677,72 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    exportProjectMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project-bound memory export */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryExportBundle"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    restoreProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run report; no records were written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRestoreReport"];
+                };
+            };
+            /** @description Atomic restore report */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRestoreReport"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
         };
     };
     reindexProjectMemory: {

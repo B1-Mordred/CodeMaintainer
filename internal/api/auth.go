@@ -134,7 +134,7 @@ func csrfRequestOriginAllowed(r *http.Request) bool {
 func routePermission(r *http.Request) maintainerauth.Permission {
 	path := r.URL.Path
 	if r.Method == http.MethodGet {
-		if path == "/api/v1/audit" {
+		if path == "/api/v1/audit" || strings.HasSuffix(path, "/memory/export") {
 			return maintainerauth.PermissionAdminister
 		}
 		return maintainerauth.PermissionRead

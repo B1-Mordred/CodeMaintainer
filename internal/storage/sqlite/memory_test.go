@@ -166,3 +166,49 @@ func TestMemoryCandidateRejectsSecretsTraversalAndInvalidCommits(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectMemoryExportDryRunAndRestoreRemainScopedAndQuarantined(t *testing.T) {
+	store, err := Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := context.Background()
+	scope := memory.ProjectScope{Owner: "owner", Repository: "repo"}
+	record, err := store.PutCandidate(ctx, scope, memory.Record{
+		Content: "Verified builds use the pinned offline command registry.", Kind: "project_knowledge",
+		SourceURI: "job://controller/job_1", BaseCommit: strings.Repeat("a", 40), AffectedPaths: []string{"README.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := store.ExportProjectMemory(ctx, scope)
+	if err != nil || len(bundle.Records) != 1 || bundle.ManifestHash == "" || bundle.Records[0].OriginalID != record.ID {
+		t.Fatalf("export = %+v, %v", bundle, err)
+	}
+	other := memory.ProjectScope{Owner: "owner", Repository: "other"}
+	if _, err := store.RestoreProjectMemory(ctx, other, bundle, true, "admin"); !errors.Is(err, memory.ErrInvalid) {
+		t.Fatalf("cross-project restore returned %v", err)
+	}
+	tampered := bundle
+	tampered.Records = append([]memory.ExportRecord(nil), bundle.Records...)
+	tampered.Records[0].Content += " tampered"
+	if _, err := store.RestoreProjectMemory(ctx, scope, tampered, true, "admin"); !errors.Is(err, memory.ErrInvalid) {
+		t.Fatalf("tampered restore returned %v", err)
+	}
+	dryRun, err := store.RestoreProjectMemory(ctx, scope, bundle, true, "admin")
+	if err != nil || dryRun.Imported != 0 || dryRun.Skipped != 1 {
+		t.Fatalf("same-project dry run = %+v, %v", dryRun, err)
+	}
+	if err := store.DeleteMemory(ctx, scope, record.ID, memory.DeletionRequest{ActorID: "admin", Rationale: "exercise restore", ExpectedVersion: record.Version}); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.RestoreProjectMemory(ctx, scope, bundle, false, "admin")
+	if err != nil || restored.Imported != 1 || restored.Skipped != 0 {
+		t.Fatalf("restore = %+v, %v", restored, err)
+	}
+	items, err := store.ListMemory(ctx, scope, memory.StatusQuarantine, 10)
+	if err != nil || len(items) != 1 || items[0].Verified || items[0].ID == record.ID {
+		t.Fatalf("restored items = %+v, %v", items, err)
+	}
+}

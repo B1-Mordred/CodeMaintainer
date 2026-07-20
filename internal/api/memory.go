@@ -201,6 +201,52 @@ func (s *Server) listProjectMemoryRetrievals(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) exportProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	bundle, err := s.store.ExportProjectMemory(r.Context(), scope)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="project-memory.json"`)
+	writeJSON(w, http.StatusOK, bundle)
+}
+
+func (s *Server) restoreProjectMemory(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		DryRun bool                `json:"dry_run"`
+		Bundle memory.ExportBundle `json:"bundle"`
+	}
+	if err := decodeJSONLimit(w, r, &request, 8<<20); err != nil {
+		return
+	}
+	if !request.DryRun {
+		if principal, ok := principalFromRequest(r); ok && !principal.RecentlyReauthenticated(time.Now().UTC()) {
+			writeError(w, http.StatusForbidden, "recent_reauthentication_required", "memory restore requires recent reauthentication")
+			return
+		}
+	}
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	report, err := s.store.RestoreProjectMemory(r.Context(), scope, request.Bundle, request.DryRun, actorID(r))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	status := http.StatusCreated
+	if request.DryRun {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, report)
+}
+
 func (s *Server) promoteProjectMemory(w http.ResponseWriter, r *http.Request) {
 	scope, err := s.projectMemoryScope(r)
 	if err != nil {
