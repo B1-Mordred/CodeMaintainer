@@ -78,6 +78,127 @@ func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestProjectMemoryAPIIsScopedQuarantinedAndTraceable(t *testing.T) {
+	server, store := testServer(t)
+	if _, err := store.UpsertProject(context.Background(), projects.UpsertRequest{
+		ID: "other-repo", Provider: "local", Repository: "other/repo", DefaultBranch: "main", LocalRemoteName: "other.git",
+	}, "test-admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory", strings.NewReader(
+		`{"content":"Run go test -race ./... before publication.","kind":"verified_case","source_uri":"job://job_fixture/final-report","base_commit":"0123456789abcdef0123456789abcdef01234567","affected_paths":["go.mod"]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		ID        string `json:"id"`
+		Status    string `json:"status"`
+		Version   int64  `json:"version"`
+		Namespace string `json:"namespace"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || record.ID == "" || record.Status != "quarantine" || record.Namespace != "viking://resources/projects/owner/repo/" {
+		t.Fatalf("unexpected memory candidate: status=%d record=%+v", response.StatusCode, record)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/projects/other-repo/memory/" + record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("cross-project memory lookup returned %d", response.StatusCode)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/projects/owner-repo/memory?q=publication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&before); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(before.Items) != 0 {
+		t.Fatalf("quarantined memory was retrieved: %s", before.Items)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/"+record.ID+"/actions/promote", strings.NewReader(
+		`{"rationale":"reviewed against repository evidence","basis":"human_approval","expected_version":1}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Maintainer-Actor", "reviewer")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("promotion returned %d", response.StatusCode)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/projects/owner-repo/memory?q=publication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var search struct {
+		Items     []json.RawMessage `json:"items"`
+		Retrieval struct {
+			CandidateIDs    []string `json:"candidate_ids"`
+			SelectedIDs     []string `json:"selected_ids"`
+			BudgetTokens    int      `json:"budget_tokens"`
+			AllocatedTokens int      `json:"allocated_tokens"`
+		} `json:"retrieval"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&search); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(search.Items) != 1 || len(search.Retrieval.SelectedIDs) != 1 || search.Retrieval.BudgetTokens != memoryRetrievalBudget || search.Retrieval.AllocatedTokens <= 0 {
+		t.Fatalf("unexpected bounded search: %+v", search)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/projects/other-repo/memory/retrievals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var otherTraces struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&otherTraces); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(otherTraces.Items) != 0 {
+		t.Fatalf("cross-project retrieval trace leaked: %s", otherTraces.Items)
+	}
+}
+
+func TestMemoryRoutePermissionsSeparateReviewFromAdministration(t *testing.T) {
+	cases := map[string]maintainerauth.Permission{
+		"GET /api/v1/projects/p/memory":                       maintainerauth.PermissionRead,
+		"POST /api/v1/projects/p/memory":                      maintainerauth.PermissionAdminister,
+		"POST /api/v1/projects/p/memory/m/actions/promote":    maintainerauth.PermissionReview,
+		"POST /api/v1/projects/p/memory/m/actions/correct":    maintainerauth.PermissionReview,
+		"POST /api/v1/projects/p/memory/m/actions/invalidate": maintainerauth.PermissionReview,
+		"POST /api/v1/projects/p/memory/m/actions/delete":     maintainerauth.PermissionAdminister,
+	}
+	for description, expected := range cases {
+		parts := strings.SplitN(description, " ", 2)
+		request := httptest.NewRequest(parts[0], parts[1], nil)
+		if actual := routePermission(request); actual != expected {
+			t.Fatalf("%s permission = %s, want %s", description, actual, expected)
+		}
+	}
+}
+
 func TestAuthenticationBootstrapSessionCSRFAndHeaderForgeryRejection(t *testing.T) {
 	store, err := storesqlite.Open(context.Background(), ":memory:")
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	"github.com/local-code-maintainer/appliance/internal/ui"
@@ -72,6 +73,15 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory", s.createProjectMemory)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/retrievals", s.listProjectMemoryRetrievals)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}", s.getProjectMemory)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}/events", s.listProjectMemoryEvents)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/promote", s.promoteProjectMemory)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/correct", s.correctProjectMemory)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/invalidate", s.invalidateProjectMemory)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/delete", s.deleteProjectMemory)
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
@@ -627,11 +637,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 
 func (s *Server) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, storage.ErrNotFound):
+	case errors.Is(err, storage.ErrNotFound), errors.Is(err, memory.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
-	case errors.Is(err, storage.ErrConflict):
+	case errors.Is(err, storage.ErrConflict), errors.Is(err, memory.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "resource changed; refresh and retry")
-	case errors.Is(err, storage.ErrInvalid):
+	case errors.Is(err, storage.ErrInvalid), errors.Is(err, memory.ErrInvalid), errors.Is(err, memory.ErrScope):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_transition", err.Error())
 	default:
 		s.internalError(w, r, err)

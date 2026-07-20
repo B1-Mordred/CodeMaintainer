@@ -168,6 +168,165 @@ paths:
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    get:
+      summary: Browse or perform a bounded project-scoped canonical memory retrieval
+      operationId: listProjectMemory
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 4096 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/MemoryStatus" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: Project memory records and, for search, its bounded retrieval trace
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, namespace]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MemoryRecord" } }
+                  namespace: { type: string }
+                  retrieval: { $ref: "#/components/schemas/MemoryRetrievalTrace" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create a secret-scanned provisional memory candidate in the registered project scope
+      operationId: createProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryCandidateRequest" } } }
+      responses:
+        "201":
+          description: Quarantined memory candidate
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/retrievals:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    get:
+      summary: List append-only retrieval traces for one registered project
+      operationId: listProjectMemoryRetrievals
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Project retrieval history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MemoryRetrievalTrace" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    get:
+      summary: Inspect one memory record only within its registered project scope
+      operationId: getProjectMemory
+      responses:
+        "200":
+          description: Project memory record
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}/events:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    get:
+      summary: List the append-only lifecycle for one project memory record
+      operationId: listProjectMemoryEvents
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Memory record events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MemoryEvent" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}/actions/promote:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    post:
+      summary: Promote an eligible quarantined record after reviewer or administrator approval
+      operationId: promoteProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryPromotionRequest" } } }
+      responses:
+        "200":
+          description: Canonical memory record
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}/actions/correct:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    post:
+      summary: Correct a memory record and return it to quarantine
+      operationId: correctProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryCorrectionRequest" } } }
+      responses:
+        "200":
+          description: Corrected quarantined memory record
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}/actions/invalidate:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    post:
+      summary: Mark a quarantined or canonical memory record stale
+      operationId: invalidateProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryLifecycleRequest" } } }
+      responses:
+        "200":
+          description: Stale memory record
+          content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/{memoryID}/actions/delete:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { $ref: "#/components/parameters/MemoryID" }
+    post:
+      summary: Clear memory content after administrator recent reauthentication
+      operationId: deleteProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemoryLifecycleRequest" } } }
+      responses:
+        "204": { description: Memory content cleared and tombstone retained }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /jobs:
     get:
       summary: List a bounded page of jobs
@@ -458,6 +617,16 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^artifact_[0-9a-f]{32}$" }
+    ProjectID:
+      name: projectID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+    MemoryID:
+      name: memoryID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^memory_[0-9a-f]{32}$" }
     CSRFToken:
       name: X-CSRF-Token
       in: header
@@ -537,6 +706,105 @@ components:
             enabled: { type: boolean }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+    MemoryStatus:
+      type: string
+      enum: [quarantine, canonical, stale, deleted]
+    MemoryScope:
+      type: object
+      required: [owner, repository]
+      properties:
+        owner: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        repository: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+    MemoryCandidateRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 65536 }
+        kind: { type: string, enum: [project_knowledge, verified_case, failed_case, pattern, known_issue, flaky_test, issue_history] }
+        source_uri: { type: string, maxLength: 2048 }
+        base_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        merged_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        affected_paths: { type: array, maxItems: 1000, items: { type: string, minLength: 1, maxLength: 4096 } }
+        invalidation_rule: { type: string, maxLength: 4096 }
+        expires_at: { type: string, format: date-time }
+    MemoryPromotionRequest:
+      type: object
+      additionalProperties: false
+      required: [rationale, basis, expected_version]
+      properties:
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+        basis: { type: string, enum: [deterministic_verification, merged_pr, human_approval] }
+        merged_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        expected_version: { type: integer, minimum: 1 }
+    MemoryCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required: [content, rationale, expected_version]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 65536 }
+        affected_paths: { type: array, maxItems: 1000, items: { type: string, minLength: 1, maxLength: 4096 } }
+        invalidation_rule: { type: string, maxLength: 4096 }
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+        expected_version: { type: integer, minimum: 1 }
+    MemoryLifecycleRequest:
+      type: object
+      additionalProperties: false
+      required: [rationale, expected_version]
+      properties:
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+        expected_version: { type: integer, minimum: 1 }
+    MemoryRecord:
+      type: object
+      required: [id, scope, namespace, content, content_hash, source_uri, base_commit, affected_paths, status, verified, secret_scan_pass, kind, version, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^memory_[0-9a-f]{32}$" }
+        scope: { $ref: "#/components/schemas/MemoryScope" }
+        namespace: { type: string, pattern: "^viking://resources/projects/[^/]+/[^/]+/$" }
+        content: { type: string, maxLength: 65536 }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        source_uri: { type: string, maxLength: 2048 }
+        base_commit: { type: string, pattern: "^$|^[a-fA-F0-9]{40}$" }
+        merged_commit: { type: string, pattern: "^[a-fA-F0-9]{40}$" }
+        affected_paths: { type: array, items: { type: string } }
+        status: { $ref: "#/components/schemas/MemoryStatus" }
+        verified: { type: boolean }
+        secret_scan_pass: { type: boolean }
+        kind: { type: string }
+        invalidation_rule: { type: string }
+        expires_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MemoryEvent:
+      type: object
+      required: [sequence, record_id, scope, action, actor_id, rationale, details, created_at]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        record_id: { type: string }
+        scope: { $ref: "#/components/schemas/MemoryScope" }
+        action: { type: string }
+        actor_id: { type: string }
+        rationale: { type: string }
+        details: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    MemoryRetrievalTrace:
+      type: object
+      required: [id, scope, namespace, query, query_hash, candidate_ids, selected_ids, budget_tokens, allocated_tokens, trajectory, created_at]
+      properties:
+        id: { type: string, pattern: "^retrieval_[0-9a-f]{32}$" }
+        job_id: { type: string }
+        scope: { $ref: "#/components/schemas/MemoryScope" }
+        namespace: { type: string }
+        query: { type: string, maxLength: 4096 }
+        query_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        candidate_ids: { type: array, items: { type: string } }
+        selected_ids: { type: array, items: { type: string } }
+        budget_tokens: { type: integer, minimum: 0, maximum: 8192 }
+        allocated_tokens: { type: integer, minimum: 0, maximum: 8192 }
+        trajectory: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
     JobState:
       type: string
       enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]

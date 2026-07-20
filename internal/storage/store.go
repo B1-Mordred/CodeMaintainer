@@ -12,6 +12,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 )
 
@@ -162,6 +163,7 @@ type FindingStore interface {
 
 type Store interface {
 	auth.Store
+	memory.DurableStore
 	WorkflowStore
 	AuditStore
 	ConfigStore

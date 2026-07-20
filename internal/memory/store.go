@@ -2,7 +2,14 @@ package memory
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/url"
+	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -15,8 +22,10 @@ type ProjectScope struct {
 }
 
 func (s ProjectScope) Valid() bool {
-	return s.Owner != "" && s.Repository != "" && !strings.Contains(s.Owner, "/") && !strings.Contains(s.Repository, "/")
+	return projectPartPattern.MatchString(s.Owner) && projectPartPattern.MatchString(s.Repository)
 }
+
+var projectPartPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 func (s ProjectScope) Namespace() string {
 	return "viking://resources/projects/" + s.Owner + "/" + s.Repository + "/"
@@ -28,21 +37,29 @@ const (
 	StatusQuarantine Status = "quarantine"
 	StatusCanonical  Status = "canonical"
 	StatusStale      Status = "stale"
+	StatusDeleted    Status = "deleted"
 )
 
 type Record struct {
-	ID             string       `json:"id"`
-	Scope          ProjectScope `json:"scope"`
-	Namespace      string       `json:"namespace"`
-	Content        string       `json:"content"`
-	ContentHash    string       `json:"content_hash"`
-	SourceURI      string       `json:"source_uri"`
-	BaseCommit     string       `json:"base_commit"`
-	AffectedPaths  []string     `json:"affected_paths"`
-	Status         Status       `json:"status"`
-	Verified       bool         `json:"verified"`
-	SecretScanPass bool         `json:"secret_scan_pass"`
-	CreatedAt      time.Time    `json:"created_at"`
+	ID               string       `json:"id"`
+	Scope            ProjectScope `json:"scope"`
+	Namespace        string       `json:"namespace"`
+	Content          string       `json:"content"`
+	ContentHash      string       `json:"content_hash"`
+	SourceURI        string       `json:"source_uri"`
+	BaseCommit       string       `json:"base_commit"`
+	MergedCommit     string       `json:"merged_commit,omitempty"`
+	AffectedPaths    []string     `json:"affected_paths"`
+	Status           Status       `json:"status"`
+	Verified         bool         `json:"verified"`
+	SecretScanPass   bool         `json:"secret_scan_pass"`
+	Kind             string       `json:"kind"`
+	InvalidationRule string       `json:"invalidation_rule,omitempty"`
+	ExpiresAt        *time.Time   `json:"expires_at,omitempty"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	DeletedAt        *time.Time   `json:"deleted_at,omitempty"`
+	Version          int64        `json:"version"`
+	CreatedAt        time.Time    `json:"created_at"`
 }
 
 type Store interface {
@@ -53,7 +70,173 @@ type Store interface {
 	Delete(context.Context, ProjectScope, string, string) error
 }
 
-var ErrScope = errors.New("invalid or mismatched project scope")
+type Event struct {
+	Sequence  int64           `json:"sequence"`
+	RecordID  string          `json:"record_id"`
+	Scope     ProjectScope    `json:"scope"`
+	Action    string          `json:"action"`
+	ActorID   string          `json:"actor_id"`
+	Rationale string          `json:"rationale"`
+	Details   json.RawMessage `json:"details"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+type RetrievalTrace struct {
+	ID              string          `json:"id"`
+	JobID           string          `json:"job_id,omitempty"`
+	Scope           ProjectScope    `json:"scope"`
+	Namespace       string          `json:"namespace"`
+	Query           string          `json:"query"`
+	QueryHash       string          `json:"query_hash"`
+	CandidateIDs    []string        `json:"candidate_ids"`
+	SelectedIDs     []string        `json:"selected_ids"`
+	BudgetTokens    int             `json:"budget_tokens"`
+	AllocatedTokens int             `json:"allocated_tokens"`
+	Trajectory      json.RawMessage `json:"trajectory"`
+	CreatedAt       time.Time       `json:"created_at"`
+}
+
+type CorrectionRequest struct {
+	Content          string
+	AffectedPaths    []string
+	InvalidationRule string
+	ActorID          string
+	Rationale        string
+	ExpectedVersion  int64
+}
+
+type PromotionRequest struct {
+	ActorID         string
+	Rationale       string
+	Basis           string
+	MergedCommit    string
+	ExpectedVersion int64
+}
+
+type VerificationRequest struct {
+	ActorID         string
+	JobID           string
+	ArtifactID      string
+	Commit          string
+	ExpectedVersion int64
+}
+
+type InvalidationRequest struct {
+	ActorID         string
+	Rationale       string
+	ExpectedVersion int64
+}
+
+type DeletionRequest struct {
+	ActorID         string
+	Rationale       string
+	ExpectedVersion int64
+}
+
+type DurableStore interface {
+	PutCandidate(context.Context, ProjectScope, Record) (Record, error)
+	Search(context.Context, ProjectScope, string, int) ([]Record, error)
+	GetMemory(context.Context, ProjectScope, string) (Record, error)
+	ListMemory(context.Context, ProjectScope, Status, int) ([]Record, error)
+	CorrectMemory(context.Context, ProjectScope, string, CorrectionRequest) (Record, error)
+	VerifyMemory(context.Context, ProjectScope, string, VerificationRequest) (Record, error)
+	PromoteMemory(context.Context, ProjectScope, string, PromotionRequest) (Record, error)
+	InvalidateMemory(context.Context, ProjectScope, string, InvalidationRequest) (Record, error)
+	DeleteMemory(context.Context, ProjectScope, string, DeletionRequest) error
+	ListMemoryEvents(context.Context, ProjectScope, string, int) ([]Event, error)
+	RecordRetrieval(context.Context, RetrievalTrace) (RetrievalTrace, error)
+	ListRetrievals(context.Context, ProjectScope, int) ([]RetrievalTrace, error)
+}
+
+var (
+	ErrScope    = errors.New("invalid or mismatched project scope")
+	ErrInvalid  = errors.New("invalid memory record")
+	ErrNotFound = errors.New("memory record not found")
+	ErrConflict = errors.New("memory record version conflict")
+)
+
+func PrepareCandidate(scope ProjectScope, record Record) (Record, error) {
+	if !scope.Valid() || (record.Scope.Valid() && record.Scope != scope) || len(record.Content) == 0 || len(record.Content) > 64<<10 || strings.ContainsRune(record.Content, 0) {
+		return Record{}, ErrInvalid
+	}
+	if record.ID == "" {
+		identifier := make([]byte, 16)
+		if _, err := rand.Read(identifier); err != nil {
+			return Record{}, err
+		}
+		record.ID = "memory_" + hex.EncodeToString(identifier)
+	}
+	if !strings.HasPrefix(record.ID, "memory_") || len(record.ID) > 80 {
+		return Record{}, ErrInvalid
+	}
+	if record.Kind == "" {
+		record.Kind = "project_knowledge"
+	}
+	allowedKind := map[string]bool{"project_knowledge": true, "verified_case": true, "failed_case": true, "pattern": true, "known_issue": true, "flaky_test": true, "issue_history": true}
+	if !allowedKind[record.Kind] || !ValidCommit(record.BaseCommit) || !ValidCommit(record.MergedCommit) || !validSourceURI(record.SourceURI) {
+		return Record{}, ErrInvalid
+	}
+	for _, affectedPath := range record.AffectedPaths {
+		cleaned := path.Clean(affectedPath)
+		if cleaned != affectedPath || cleaned == "." || strings.HasPrefix(cleaned, "../") || strings.HasPrefix(cleaned, "/") || strings.ContainsRune(cleaned, 0) {
+			return Record{}, ErrInvalid
+		}
+	}
+	if containsLikelySecret(record.Content) {
+		return Record{}, errors.New("memory candidate failed secret scanning")
+	}
+	hash := sha256.Sum256([]byte(record.Content))
+	record.Scope = scope
+	record.Namespace = scope.Namespace()
+	record.ContentHash = hex.EncodeToString(hash[:])
+	record.SecretScanPass = true
+	record.Status = StatusQuarantine
+	record.Version = 1
+	record.Verified = false
+	return record, nil
+}
+
+func ValidCommit(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func validSourceURI(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 2048 || strings.IndexFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.User != nil || parsed.Fragment != "" {
+		return false
+	}
+	switch parsed.Scheme {
+	case "job", "artifact", "viking":
+		return parsed.Host != "" && parsed.Path != ""
+	case "https":
+		return (strings.EqualFold(parsed.Hostname(), "github.com") || strings.EqualFold(parsed.Hostname(), "api.github.com")) && parsed.Path != ""
+	default:
+		return false
+	}
+}
+
+func containsLikelySecret(content string) bool {
+	lower := strings.ToLower(content)
+	for _, marker := range []string{"-----begin private key-----", "ghp_", "github_pat_", "sk-ant-", "aws_secret_access_key", "password="} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 type Fake struct {
 	mu      sync.Mutex

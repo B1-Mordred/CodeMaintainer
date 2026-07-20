@@ -106,6 +106,12 @@ func routePermission(r *http.Request) maintainerauth.Permission {
 	if strings.Contains(path, "/approve-publication") || strings.Contains(path, "/findings/") {
 		return maintainerauth.PermissionReview
 	}
+	if strings.Contains(path, "/memory/") {
+		if strings.Contains(path, "/actions/promote") || strings.Contains(path, "/actions/correct") || strings.Contains(path, "/actions/invalidate") {
+			return maintainerauth.PermissionReview
+		}
+		return maintainerauth.PermissionAdminister
+	}
 	if strings.HasPrefix(path, "/api/v1/projects") || strings.HasPrefix(path, "/api/v1/config") || strings.HasPrefix(path, "/api/v1/admin") {
 		return maintainerauth.PermissionAdminister
 	}

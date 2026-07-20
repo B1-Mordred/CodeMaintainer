@@ -158,6 +158,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Browse or perform a bounded project-scoped canonical memory retrieval */
+        get: operations["listProjectMemory"];
+        put?: never;
+        /** Create a secret-scanned provisional memory candidate in the registered project scope */
+        post: operations["createProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/retrievals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List append-only retrieval traces for one registered project */
+        get: operations["listProjectMemoryRetrievals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        /** Inspect one memory record only within its registered project scope */
+        get: operations["getProjectMemory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        /** List the append-only lifecycle for one project memory record */
+        get: operations["listProjectMemoryEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}/actions/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Promote an eligible quarantined record after reviewer or administrator approval */
+        post: operations["promoteProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}/actions/correct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Correct a memory record and return it to quarantine */
+        post: operations["correctProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}/actions/invalidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a quarantined or canonical memory record stale */
+        post: operations["invalidateProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/memory/{memoryID}/actions/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear memory content after administrator recent reauthentication */
+        post: operations["deleteProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs": {
         parameters: {
             query?: never;
@@ -452,6 +611,97 @@ export interface components {
             updated_at: string;
         };
         /** @enum {string} */
+        MemoryStatus: "quarantine" | "canonical" | "stale" | "deleted";
+        MemoryScope: {
+            owner: string;
+            repository: string;
+        };
+        MemoryCandidateRequest: {
+            content: string;
+            /** @enum {string} */
+            kind?: "project_knowledge" | "verified_case" | "failed_case" | "pattern" | "known_issue" | "flaky_test" | "issue_history";
+            source_uri?: string;
+            base_commit?: string;
+            merged_commit?: string;
+            affected_paths?: string[];
+            invalidation_rule?: string;
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        MemoryPromotionRequest: {
+            rationale: string;
+            /** @enum {string} */
+            basis: "deterministic_verification" | "merged_pr" | "human_approval";
+            merged_commit?: string;
+            expected_version: number;
+        };
+        MemoryCorrectionRequest: {
+            content: string;
+            affected_paths?: string[];
+            invalidation_rule?: string;
+            rationale: string;
+            expected_version: number;
+        };
+        MemoryLifecycleRequest: {
+            rationale: string;
+            expected_version: number;
+        };
+        MemoryRecord: {
+            id: string;
+            scope: components["schemas"]["MemoryScope"];
+            namespace: string;
+            content: string;
+            content_hash: string;
+            source_uri: string;
+            base_commit: string;
+            merged_commit?: string;
+            affected_paths: string[];
+            status: components["schemas"]["MemoryStatus"];
+            verified: boolean;
+            secret_scan_pass: boolean;
+            kind: string;
+            invalidation_rule?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MemoryEvent: {
+            sequence: number;
+            record_id: string;
+            scope: components["schemas"]["MemoryScope"];
+            action: string;
+            actor_id: string;
+            rationale: string;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        MemoryRetrievalTrace: {
+            id: string;
+            job_id?: string;
+            scope: components["schemas"]["MemoryScope"];
+            namespace: string;
+            query: string;
+            query_hash: string;
+            candidate_ids: string[];
+            selected_ids: string[];
+            budget_tokens: number;
+            allocated_tokens: number;
+            trajectory: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @enum {string} */
         JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         CreateJobRequest: {
             project_id: string;
@@ -629,6 +879,8 @@ export interface components {
         JobID: string;
         RevisionID: string;
         ArtifactID: string;
+        ProjectID: string;
+        MemoryID: string;
         CSRFToken: string;
     };
     requestBodies: never;
@@ -886,6 +1138,274 @@ export interface operations {
                 };
             };
             400: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectMemory: {
+        parameters: {
+            query?: {
+                q?: string;
+                status?: components["schemas"]["MemoryStatus"];
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project memory records and, for search, its bounded retrieval trace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MemoryRecord"][];
+                        namespace: string;
+                        retrieval?: components["schemas"]["MemoryRetrievalTrace"];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    createProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Quarantined memory candidate */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectMemoryRetrievals: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project retrieval history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MemoryRetrievalTrace"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    getProjectMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project memory record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectMemoryEvents: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Memory record events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MemoryEvent"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    promoteProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryPromotionRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical memory record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    correctProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryCorrectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Corrected quarantined memory record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    invalidateProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Stale memory record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryRecord"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    deleteProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                memoryID: components["parameters"]["MemoryID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Memory content cleared and tombstone retained */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["ErrorResponse"];
             409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
         };

@@ -1,0 +1,260 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/local-code-maintainer/appliance/internal/memory"
+)
+
+const memoryRetrievalBudget = 4096
+
+func (s *Server) projectMemoryScope(r *http.Request) (memory.ProjectScope, error) {
+	project, err := s.store.GetProject(r.Context(), r.PathValue("projectID"))
+	if err != nil {
+		return memory.ProjectScope{}, err
+	}
+	parts := strings.Split(project.Repository, "/")
+	if !project.Enabled || len(parts) != 2 {
+		return memory.ProjectScope{}, memory.ErrScope
+	}
+	scope := memory.ProjectScope{Owner: parts[0], Repository: parts[1]}
+	if !scope.Valid() {
+		return memory.ProjectScope{}, memory.ErrScope
+	}
+	return scope, nil
+}
+
+func (s *Server) listProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		items, err := s.store.ListMemory(r.Context(), scope, memory.Status(r.URL.Query().Get("status")), queryInt(r, "limit", 100))
+		if err != nil {
+			s.storageError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items, "namespace": scope.Namespace()})
+		return
+	}
+
+	candidates, err := s.store.Search(r.Context(), scope, query, queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	candidateIDs := make([]string, 0, len(candidates))
+	selectedIDs := make([]string, 0, len(candidates))
+	selected := make([]memory.Record, 0, len(candidates))
+	allocated := 0
+	for _, candidate := range candidates {
+		candidateIDs = append(candidateIDs, candidate.ID)
+		tokens := (len(candidate.Content) + 3) / 4
+		if tokens == 0 || allocated+tokens > memoryRetrievalBudget {
+			continue
+		}
+		selected = append(selected, candidate)
+		selectedIDs = append(selectedIDs, candidate.ID)
+		allocated += tokens
+	}
+	trajectory := json.RawMessage(`{"filter":"project-before-ranking","ranker":"bounded-lexical-v1"}`)
+	trace, err := s.store.RecordRetrieval(r.Context(), memory.RetrievalTrace{
+		Scope: scope, Query: query, CandidateIDs: candidateIDs, SelectedIDs: selectedIDs,
+		BudgetTokens: memoryRetrievalBudget, AllocatedTokens: allocated, Trajectory: trajectory,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": selected, "namespace": scope.Namespace(), "retrieval": trace})
+}
+
+func (s *Server) createProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	var request struct {
+		Content          string     `json:"content"`
+		Kind             string     `json:"kind"`
+		SourceURI        string     `json:"source_uri,omitempty"`
+		BaseCommit       string     `json:"base_commit,omitempty"`
+		MergedCommit     string     `json:"merged_commit,omitempty"`
+		AffectedPaths    []string   `json:"affected_paths,omitempty"`
+		InvalidationRule string     `json:"invalidation_rule,omitempty"`
+		ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	record, err := s.store.PutCandidate(r.Context(), scope, memory.Record{
+		Content: request.Content, Kind: request.Kind, SourceURI: request.SourceURI,
+		BaseCommit: request.BaseCommit, MergedCommit: request.MergedCommit,
+		AffectedPaths: request.AffectedPaths, InvalidationRule: request.InvalidationRule, ExpiresAt: request.ExpiresAt,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", r.URL.Path+"/"+record.ID)
+	writeJSON(w, http.StatusCreated, record)
+}
+
+func (s *Server) getProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	record, err := s.store.GetMemory(r.Context(), scope, r.PathValue("memoryID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) listProjectMemoryEvents(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	items, err := s.store.ListMemoryEvents(r.Context(), scope, r.PathValue("memoryID"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) listProjectMemoryRetrievals(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	items, err := s.store.ListRetrievals(r.Context(), scope, queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) promoteProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	var request struct {
+		Rationale       string `json:"rationale"`
+		Basis           string `json:"basis"`
+		MergedCommit    string `json:"merged_commit,omitempty"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	record, err := s.store.PromoteMemory(r.Context(), scope, r.PathValue("memoryID"), memory.PromotionRequest{
+		ActorID: actorID(r), Rationale: request.Rationale, Basis: request.Basis,
+		MergedCommit: request.MergedCommit, ExpectedVersion: request.ExpectedVersion,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) correctProjectMemory(w http.ResponseWriter, r *http.Request) {
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	var request struct {
+		Content          string   `json:"content"`
+		AffectedPaths    []string `json:"affected_paths,omitempty"`
+		InvalidationRule string   `json:"invalidation_rule,omitempty"`
+		Rationale        string   `json:"rationale"`
+		ExpectedVersion  int64    `json:"expected_version"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	record, err := s.store.CorrectMemory(r.Context(), scope, r.PathValue("memoryID"), memory.CorrectionRequest{
+		Content: request.Content, AffectedPaths: request.AffectedPaths, InvalidationRule: request.InvalidationRule,
+		ActorID: actorID(r), Rationale: request.Rationale, ExpectedVersion: request.ExpectedVersion,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) invalidateProjectMemory(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Rationale       string `json:"rationale"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if strings.TrimSpace(request.Rationale) == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_memory_action", "rationale is required")
+		return
+	}
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	record, err := s.store.InvalidateMemory(r.Context(), scope, r.PathValue("memoryID"), memory.InvalidationRequest{
+		ActorID: actorID(r), Rationale: request.Rationale, ExpectedVersion: request.ExpectedVersion,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) deleteProjectMemory(w http.ResponseWriter, r *http.Request) {
+	if principal, ok := principalFromRequest(r); ok && !principal.RecentlyReauthenticated(time.Now().UTC()) {
+		writeError(w, http.StatusForbidden, "recent_reauthentication_required", "memory deletion requires recent reauthentication")
+		return
+	}
+	var request struct {
+		Rationale       string `json:"rationale"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if strings.TrimSpace(request.Rationale) == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_memory_action", "rationale is required")
+		return
+	}
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	if err := s.store.DeleteMemory(r.Context(), scope, r.PathValue("memoryID"), memory.DeletionRequest{
+		ActorID: actorID(r), Rationale: request.Rationale, ExpectedVersion: request.ExpectedVersion,
+	}); err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
