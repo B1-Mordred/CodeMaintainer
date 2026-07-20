@@ -197,6 +197,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/memory/actions/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue canonical records for index rebuild and request a bounded OpenViking reindex */
+        post: operations["reindexProjectMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory/{memoryID}": {
         parameters: {
             query?: never;
@@ -1230,6 +1249,48 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    reindexProjectMemory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    mode: "vectors_only" | "semantic_and_vectors";
+                };
+            };
+        };
+        responses: {
+            /** @description Durable project memory rebuild accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "queued";
+                        records_queued: number;
+                        namespace: string;
+                        /** @enum {string} */
+                        mode: "vectors_only" | "semantic_and_vectors";
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     getProjectMemory: {

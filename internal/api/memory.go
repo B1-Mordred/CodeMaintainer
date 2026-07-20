@@ -44,7 +44,27 @@ func (s *Server) listProjectMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	candidates, err := s.store.Search(r.Context(), scope, query, queryInt(r, "limit", 100))
+	limit := queryInt(r, "limit", 100)
+	var candidates []memory.Record
+	trajectoryData := map[string]any{"filter": "project-before-ranking", "ranker": "bounded-lexical-v1"}
+	if s.memoryIndex == nil {
+		candidates, err = s.store.Search(r.Context(), scope, query, limit)
+	} else {
+		var matches []memory.IndexMatch
+		matches, err = s.memoryIndex.Find(r.Context(), scope, query, limit)
+		if err == nil {
+			scores := make(map[string]float64, len(matches))
+			for _, match := range matches {
+				record, recordErr := s.store.GetMemory(r.Context(), scope, match.RecordID)
+				if recordErr != nil || record.Status != memory.StatusCanonical || (record.ExpiresAt != nil && !record.ExpiresAt.After(time.Now().UTC())) {
+					continue
+				}
+				candidates = append(candidates, record)
+				scores[record.ID] = match.Score
+			}
+			trajectoryData = map[string]any{"filter": "project-before-ranking", "ranker": "openviking-v0.3.21", "scores": scores}
+		}
+	}
 	if err != nil {
 		s.storageError(w, r, err)
 		return
@@ -63,7 +83,7 @@ func (s *Server) listProjectMemory(w http.ResponseWriter, r *http.Request) {
 		selectedIDs = append(selectedIDs, candidate.ID)
 		allocated += tokens
 	}
-	trajectory := json.RawMessage(`{"filter":"project-before-ranking","ranker":"bounded-lexical-v1"}`)
+	trajectory, _ := json.Marshal(trajectoryData)
 	trace, err := s.store.RecordRetrieval(r.Context(), memory.RetrievalTrace{
 		Scope: scope, Query: query, CandidateIDs: candidateIDs, SelectedIDs: selectedIDs,
 		BudgetTokens: memoryRetrievalBudget, AllocatedTokens: allocated, Trajectory: trajectory,
@@ -73,6 +93,38 @@ func (s *Server) listProjectMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": selected, "namespace": scope.Namespace(), "retrieval": trace})
+}
+
+func (s *Server) reindexProjectMemory(w http.ResponseWriter, r *http.Request) {
+	if s.memoryIndex == nil {
+		writeError(w, http.StatusServiceUnavailable, "memory_index_unavailable", "the optional memory index is not configured")
+		return
+	}
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if request.Mode != "vectors_only" && request.Mode != "semantic_and_vectors" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_reindex_mode", "mode must be vectors_only or semantic_and_vectors")
+		return
+	}
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	queued, err := s.store.EnqueueProjectMemoryRebuild(r.Context(), scope, actorID(r))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	if err := s.memoryIndex.Reindex(r.Context(), scope, request.Mode); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "records_queued": queued, "namespace": scope.Namespace(), "mode": request.Mode})
 }
 
 func (s *Server) createProjectMemory(w http.ResponseWriter, r *http.Request) {

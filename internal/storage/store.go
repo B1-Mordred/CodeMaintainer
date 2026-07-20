@@ -164,6 +164,7 @@ type FindingStore interface {
 type Store interface {
 	auth.Store
 	memory.DurableStore
+	memory.IndexQueue
 	WorkflowStore
 	AuditStore
 	ConfigStore

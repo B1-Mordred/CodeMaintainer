@@ -1,0 +1,11 @@
+{
+  "component": "OpenViking",
+  "version": "v0.3.21",
+  "source_repository": "https://github.com/volcengine/OpenViking",
+  "source_revision": "cb5ea7206c6c00d4f64f29878725e484aed7715f",
+  "image": "ghcr.io/volcengine/openviking:v0.3.21@sha256:1f734afb59463893b765e72f1e19445efd8cfb64d19c2088d7115b917407661a",
+  "platform": "linux/amd64",
+  "license": "AGPL-3.0-only",
+  "modified": false,
+  "verified_at": "2026-07-20"
+}

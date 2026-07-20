@@ -20,6 +20,7 @@ import (
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/queue"
 	"github.com/local-code-maintainer/appliance/internal/runners"
@@ -76,9 +77,24 @@ func run(logger *slog.Logger) error {
 	}), "controller-workflow", 30*time.Second, 250*time.Millisecond, logger.With("component", "workflow"))
 	workerErrors := make(chan error, 1)
 	go func() { workerErrors <- worker.Run(ctx) }()
+	memoryIndex, err := newMemoryIndex(profile, dataRoot)
+	if err != nil {
+		return err
+	}
+	indexErrors := make(chan error, 1)
+	if memoryIndex != nil {
+		synchronizer, syncErr := memory.NewSynchronizer(store, memoryIndex, "controller-memory-index", time.Second, logger.With("component", "memory-index"))
+		if syncErr != nil {
+			return syncErr
+		}
+		go func() { indexErrors <- synchronizer.Run(ctx) }()
+	}
 
-	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile,
-		api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie))
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie)}
+	if memoryIndex != nil {
+		serverOptions = append(serverOptions, api.WithMemoryIndex(memoryIndex))
+	}
+	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile, serverOptions...)
 	server := &http.Server{
 		Addr:              listen,
 		Handler:           handler,
@@ -110,7 +126,24 @@ func run(logger *slog.Logger) error {
 			return nil
 		}
 		return err
+	case err := <-indexErrors:
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
 	}
+}
+
+func newMemoryIndex(profile, dataRoot string) (memory.Index, error) {
+	rawURL := strings.TrimSpace(os.Getenv("MAINTAINER_OPENVIKING_URL"))
+	if rawURL == "" {
+		if profile == "mock" {
+			return memory.NewFakeIndex(), nil
+		}
+		return nil, nil
+	}
+	keyFile := env("MAINTAINER_OPENVIKING_API_KEY_FILE", filepath.Join(dataRoot, "secrets", "openviking.token"))
+	return memory.NewOpenVikingIndex(rawURL, keyFile, env("MAINTAINER_OPENVIKING_ACCOUNT", "maintainer"), env("MAINTAINER_OPENVIKING_USER", "maintainer-controller"))
 }
 
 func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.Store, dataRoot, profile string) (*workflow.Engine, error) {

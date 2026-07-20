@@ -121,6 +121,10 @@ services:
       MAINTAINER_SECURE_COOKIE: ${MAINTAINER_SECURE_COOKIE:-false}
       MAINTAINER_GIT_BRIDGE_URL: http://git-bridge:8083
       MAINTAINER_GIT_BRIDGE_TOKEN_FILE: /var/lib/maintainer/secrets/git-bridge.token
+      MAINTAINER_OPENVIKING_URL: ${MAINTAINER_OPENVIKING_URL:-}
+      MAINTAINER_OPENVIKING_API_KEY_FILE: /var/lib/maintainer/secrets/openviking.token
+      MAINTAINER_OPENVIKING_ACCOUNT: ${MAINTAINER_OPENVIKING_ACCOUNT:-maintainer}
+      MAINTAINER_OPENVIKING_USER: ${MAINTAINER_OPENVIKING_USER:-maintainer-controller}
     volumes:
       - type: bind
         source: ./.data
@@ -143,6 +147,36 @@ services:
       start_period: 5s
     mem_limit: 1g
     cpus: 2.0
+
+  openviking:
+    <<: *runtime-security
+    # Official unmodified AGPL-3.0 service, pinned to the Linux/amd64 manifest
+    # published for v0.3.21. Its source correspondence is recorded under
+    # integrations/openviking and it remains a replaceable network boundary.
+    image: ghcr.io/volcengine/openviking:v0.3.21@sha256:1f734afb59463893b765e72f1e19445efd8cfb64d19c2088d7115b917407661a
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    environment:
+      OPENVIKING_WITH_BOT: "0"
+      OPENVIKING_SERVER_HOST: 0.0.0.0
+      OPENVIKING_CONFIG_FILE: /app/.openviking/ov.conf
+    volumes:
+      - type: bind
+        source: ./.data/memory/openviking
+        target: /app/.openviking
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777
+    networks:
+      - control
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:1933/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    profiles:
+      - memory
+    mem_limit: 16g
+    cpus: 4.0
 
   maintainctl:
     <<: *runtime-security

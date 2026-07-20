@@ -11,10 +11,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
@@ -196,6 +198,45 @@ func TestMemoryRoutePermissionsSeparateReviewFromAdministration(t *testing.T) {
 		if actual := routePermission(request); actual != expected {
 			t.Fatalf("%s permission = %s, want %s", description, actual, expected)
 		}
+	}
+}
+
+func TestProjectMemoryReindexQueuesCanonicalRecords(t *testing.T) {
+	_, store := testServer(t)
+	scope := memory.ProjectScope{Owner: "owner", Repository: "repo"}
+	record, err := store.PutCandidate(context.Background(), scope, memory.Record{Content: "rebuild this record", Kind: "pattern"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.PromoteMemory(context.Background(), scope, record.ID, memory.PromotionRequest{
+		ActorID: "reviewer", Rationale: "reviewed", Basis: "human_approval", ExpectedVersion: record.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := memory.NewFakeIndex()
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock", WithMemoryIndex(index)))
+	t.Cleanup(server.Close)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/reindex", strings.NewReader(`{"mode":"vectors_only"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Status        string `json:"status"`
+		RecordsQueued int    `json:"records_queued"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusAccepted || result.Status != "queued" || result.RecordsQueued != 1 {
+		t.Fatalf("reindex returned %d: %+v", response.StatusCode, result)
+	}
+	operation, err := store.ClaimMemoryIndexOperation(context.Background(), "test-indexer", 30*time.Second)
+	if err != nil || operation.RecordID != record.ID || operation.Action != "upsert" {
+		t.Fatalf("rebuild operation = %+v, %v", operation, err)
 	}
 }
 

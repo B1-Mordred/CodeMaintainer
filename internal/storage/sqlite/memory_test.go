@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/memory"
 )
@@ -93,6 +95,56 @@ func TestDurableMemoryIsProjectScopedQuarantinedAuditedAndTraceable(t *testing.T
 	}
 	if _, err := store.db.ExecContext(ctx, "DELETE FROM memory_events WHERE record_id = ?", record.ID); err == nil {
 		t.Fatal("append-only memory history was deleted")
+	}
+}
+
+func TestMemoryIndexQueueIsDurableLeasedAndRetryable(t *testing.T) {
+	store, err := Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	clock := time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return clock }
+	ctx := context.Background()
+	scope := memory.ProjectScope{Owner: "owner", Repository: "queue"}
+	record, err := store.PutCandidate(ctx, scope, memory.Record{Content: "canonical queue knowledge", Kind: "pattern"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.PromoteMemory(ctx, scope, record.ID, memory.PromotionRequest{
+		ActorID: "reviewer", Rationale: "reviewed", Basis: "human_approval", ExpectedVersion: record.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := store.ClaimMemoryIndexOperation(ctx, "indexer-one", 30*time.Second)
+	if err != nil || operation.Action != "upsert" || operation.RecordVersion != record.Version || operation.Attempts != 1 {
+		t.Fatalf("unexpected claimed operation: %+v, %v", operation, err)
+	}
+	if _, err := store.ClaimMemoryIndexOperation(ctx, "indexer-two", 30*time.Second); !errors.Is(err, memory.ErrNoIndexOperation) {
+		t.Fatalf("active lease was stolen: %v", err)
+	}
+	if err := store.CompleteMemoryIndexOperation(ctx, operation.ID, "indexer-one"); err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.InvalidateMemory(ctx, scope, record.ID, memory.InvalidationRequest{
+		ActorID: "reviewer", Rationale: "source changed", ExpectedVersion: record.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err = store.ClaimMemoryIndexOperation(ctx, "indexer-one", 30*time.Second)
+	if err != nil || operation.Action != "forget" {
+		t.Fatalf("unexpected forget operation: %+v, %v", operation, err)
+	}
+	if err := store.FailMemoryIndexOperation(ctx, operation.ID, "indexer-one", "temporary\nbackend error", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(2 * time.Second)
+	retried, err := store.ClaimMemoryIndexOperation(ctx, "indexer-two", 30*time.Second)
+	if err != nil || retried.ID != operation.ID || retried.Attempts != 2 || strings.Contains(retried.LastError, "\n") {
+		t.Fatalf("failed operation was not safely retried: %+v, %v", retried, err)
 	}
 }
 

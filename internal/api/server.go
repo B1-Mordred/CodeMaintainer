@@ -32,6 +32,7 @@ type Server struct {
 	started      time.Time
 	handler      http.Handler
 	auth         *maintainerauth.Service
+	memoryIndex  memory.Index
 	secureCookie bool
 }
 
@@ -50,6 +51,10 @@ func WithAuthentication(service *maintainerauth.Service, secureCookie bool) Opti
 		server.auth = service
 		server.secureCookie = secureCookie
 	}
+}
+
+func WithMemoryIndex(index memory.Index) Option {
+	return func(server *Server) { server.memoryIndex = index }
 }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -76,6 +81,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory", s.createProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/retrievals", s.listProjectMemoryRetrievals)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/actions/reindex", s.reindexProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}", s.getProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/{memoryID}/events", s.listProjectMemoryEvents)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/promote", s.promoteProjectMemory)
@@ -131,12 +137,19 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) systemStatus(w http.ResponseWriter, _ *http.Request) {
+	memoryStatus := "sqlite"
+	if s.memoryIndex != nil {
+		memoryStatus = "openviking"
+		if s.profile == "mock" {
+			memoryStatus = "fake-index"
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "healthy", "profile": s.profile,
 		"uptime_seconds": int64(time.Since(s.started).Seconds()),
 		"components": map[string]string{
 			"controller": "healthy", "storage": "healthy",
-			"runner": "fake", "model": "unloaded", "memory": "fake", "git": "fake",
+			"runner": "fake", "model": "unloaded", "memory": memoryStatus, "git": "fake",
 		},
 	})
 }

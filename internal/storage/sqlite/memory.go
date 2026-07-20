@@ -140,9 +140,15 @@ func (s *Store) CorrectMemory(ctx context.Context, scope memory.ProjectScope, id
 	if err := requireMemoryAffected(result); err != nil {
 		return memory.Record{}, err
 	}
+	wasCanonical := current.Status == memory.StatusCanonical
 	current.Content, current.ContentHash, current.AffectedPaths = prepared.Content, prepared.ContentHash, prepared.AffectedPaths
 	current.Status, current.Verified, current.SecretScanPass = memory.StatusQuarantine, false, true
 	current.InvalidationRule, current.Version, current.UpdatedAt = request.InvalidationRule, request.ExpectedVersion+1, now
+	if wasCanonical {
+		if err := enqueueMemoryIndexOperation(ctx, tx, current, "forget", now); err != nil {
+			return memory.Record{}, err
+		}
+	}
 	if err := appendMemoryEvent(ctx, tx, current, "corrected", request.ActorID, request.Rationale, json.RawMessage(`{}`), now); err != nil {
 		return memory.Record{}, err
 	}
@@ -221,6 +227,9 @@ func (s *Store) PromoteMemory(ctx context.Context, scope memory.ProjectScope, id
 		return memory.Record{}, err
 	}
 	current.Status, current.MergedCommit, current.Version, current.UpdatedAt = memory.StatusCanonical, request.MergedCommit, request.ExpectedVersion+1, now
+	if err := enqueueMemoryIndexOperation(ctx, tx, current, "upsert", now); err != nil {
+		return memory.Record{}, err
+	}
 	details, _ := json.Marshal(map[string]string{"basis": request.Basis})
 	if err := appendMemoryEvent(ctx, tx, current, "promoted", request.ActorID, request.Rationale, details, now); err != nil {
 		return memory.Record{}, err
@@ -266,6 +275,9 @@ func (s *Store) InvalidateMemory(ctx context.Context, scope memory.ProjectScope,
 		return memory.Record{}, err
 	}
 	current.Status, current.Version, current.UpdatedAt = memory.StatusStale, request.ExpectedVersion+1, now
+	if err := enqueueMemoryIndexOperation(ctx, tx, current, "forget", now); err != nil {
+		return memory.Record{}, err
+	}
 	if err := appendMemoryEvent(ctx, tx, current, "invalidated", request.ActorID, request.Rationale, json.RawMessage(`{}`), now); err != nil {
 		return memory.Record{}, err
 	}
@@ -311,6 +323,9 @@ func (s *Store) DeleteMemory(ctx context.Context, scope memory.ProjectScope, id 
 	}
 	current.Content, current.Status, current.Version, current.UpdatedAt = "", memory.StatusDeleted, request.ExpectedVersion+1, now
 	current.DeletedAt = &now
+	if err := enqueueMemoryIndexOperation(ctx, tx, current, "forget", now); err != nil {
+		return err
+	}
 	if err := appendMemoryEvent(ctx, tx, current, "deleted", request.ActorID, request.Rationale, json.RawMessage(`{}`), now); err != nil {
 		return err
 	}
@@ -505,4 +520,20 @@ func nullableMemoryTime(value *time.Time) any {
 		return nil
 	}
 	return formatTime(*value)
+}
+
+func enqueueMemoryIndexOperation(ctx context.Context, tx *sql.Tx, record memory.Record, action string, now time.Time) error {
+	id, err := NewID("memoryindex")
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO memory_index_operations(id, record_id, owner, repository,
+		action, record_version, state, next_attempt_at, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+		ON CONFLICT(record_id, record_version, action) DO NOTHING`, id, record.ID, record.Scope.Owner,
+		record.Scope.Repository, action, record.Version, formatTime(now), formatTime(now), formatTime(now))
+	if err != nil {
+		return fmt.Errorf("enqueue memory index operation: %w", err)
+	}
+	return nil
 }

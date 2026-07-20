@@ -133,6 +133,28 @@ type DeletionRequest struct {
 	ExpectedVersion int64
 }
 
+type IndexOperation struct {
+	ID            string       `json:"id"`
+	RecordID      string       `json:"record_id"`
+	Scope         ProjectScope `json:"scope"`
+	Action        string       `json:"action"`
+	RecordVersion int64        `json:"record_version"`
+	State         string       `json:"state"`
+	Attempts      int          `json:"attempts"`
+	LastError     string       `json:"last_error,omitempty"`
+	LeaseOwner    string       `json:"-"`
+	LeaseExpires  time.Time    `json:"-"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+}
+
+type IndexQueue interface {
+	ClaimMemoryIndexOperation(context.Context, string, time.Duration) (IndexOperation, error)
+	CompleteMemoryIndexOperation(context.Context, string, string) error
+	FailMemoryIndexOperation(context.Context, string, string, string, time.Duration) error
+	EnqueueProjectMemoryRebuild(context.Context, ProjectScope, string) (int, error)
+}
+
 type DurableStore interface {
 	PutCandidate(context.Context, ProjectScope, Record) (Record, error)
 	Search(context.Context, ProjectScope, string, int) ([]Record, error)
@@ -149,10 +171,11 @@ type DurableStore interface {
 }
 
 var (
-	ErrScope    = errors.New("invalid or mismatched project scope")
-	ErrInvalid  = errors.New("invalid memory record")
-	ErrNotFound = errors.New("memory record not found")
-	ErrConflict = errors.New("memory record version conflict")
+	ErrScope            = errors.New("invalid or mismatched project scope")
+	ErrInvalid          = errors.New("invalid memory record")
+	ErrNotFound         = errors.New("memory record not found")
+	ErrConflict         = errors.New("memory record version conflict")
+	ErrNoIndexOperation = errors.New("no memory index operation is ready")
 )
 
 func PrepareCandidate(scope ProjectScope, record Record) (Record, error) {
@@ -204,6 +227,14 @@ func ValidCommit(value string) bool {
 		return false
 	}
 	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func ValidID(value string) bool {
+	if !strings.HasPrefix(value, "memory_") || len(value) != len("memory_")+32 {
+		return false
+	}
+	_, err := hex.DecodeString(strings.TrimPrefix(value, "memory_"))
 	return err == nil
 }
 

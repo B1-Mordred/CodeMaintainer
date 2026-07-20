@@ -225,6 +225,40 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/MemoryRetrievalTrace" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/actions/reindex:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    post:
+      summary: Queue canonical records for index rebuild and request a bounded OpenViking reindex
+      operationId: reindexProjectMemory
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [vectors_only, semantic_and_vectors] }
+      responses:
+        "202":
+          description: Durable project memory rebuild accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, records_queued, namespace, mode]
+                properties:
+                  status: { type: string, const: queued }
+                  records_queued: { type: integer, minimum: 0 }
+                  namespace: { type: string }
+                  mode: { type: string, enum: [vectors_only, semantic_and_vectors] }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory/{memoryID}:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
