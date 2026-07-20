@@ -64,6 +64,7 @@ type ApplyScopeRequest struct {
 	Reason          string
 	RollbackOf      string
 	DraftID         string
+	DraftVersion    int64
 	Changes         []ScopeChange
 }
 
@@ -99,16 +100,41 @@ type Draft struct {
 	UpdatedAt         time.Time    `json:"updated_at"`
 }
 
+type CreateDraftRequest struct {
+	Scope            ScopeRef
+	BaseScopeVersion int64
+	AuthorID         string
+	Reason           string
+	Entries          []DraftEntry
+}
+
+type UpdateDraftRequest struct {
+	ID              string
+	ExpectedVersion int64
+	ActorID         string
+	Reason          string
+	Entries         []DraftEntry
+}
+
+type TransitionDraftRequest struct {
+	ID              string
+	ExpectedVersion int64
+	ActorID         string
+	Target          DraftState
+	Reason          string
+}
+
 type CheckResult struct {
-	ID        string          `json:"id"`
-	Sequence  int64           `json:"sequence"`
-	DraftID   string          `json:"draft_id"`
-	Kind      string          `json:"kind"`
-	Handler   string          `json:"handler"`
-	Status    string          `json:"status"`
-	Result    json.RawMessage `json:"result"`
-	CreatedAt time.Time       `json:"created_at"`
-	ExpiresAt *time.Time      `json:"expires_at,omitempty"`
+	ID           string          `json:"id"`
+	Sequence     int64           `json:"sequence"`
+	DraftID      string          `json:"draft_id"`
+	DraftVersion int64           `json:"draft_version"`
+	Kind         string          `json:"kind"`
+	Handler      string          `json:"handler"`
+	Status       string          `json:"status"`
+	Result       json.RawMessage `json:"result"`
+	CreatedAt    time.Time       `json:"created_at"`
+	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
 }
 
 type JobSnapshot struct {

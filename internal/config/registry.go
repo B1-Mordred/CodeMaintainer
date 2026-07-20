@@ -213,6 +213,24 @@ func (registry *Registry) Descriptor(key string) (Descriptor, bool) {
 	return descriptor, ok
 }
 
+func (registry *Registry) ValidateValue(key string, value json.RawMessage) (json.RawMessage, error) {
+	_, canonical, err := registry.validateValue(key, value)
+	return canonical, err
+}
+
+func (registry *Registry) PermitsScope(key string, scope ScopeKind) bool {
+	descriptor, ok := registry.descriptors[key]
+	if !ok {
+		return false
+	}
+	for _, candidate := range descriptor.PermittedScopes {
+		if candidate == scope {
+			return true
+		}
+	}
+	return false
+}
+
 func (registry *Registry) validateValue(key string, value json.RawMessage) (Descriptor, json.RawMessage, error) {
 	descriptor, ok := registry.descriptors[key]
 	if !ok {
@@ -297,6 +315,7 @@ type ScopedValue struct {
 	Scope          ScopeRef        `json:"scope"`
 	Value          json.RawMessage `json:"value,omitempty"`
 	Configured     bool            `json:"configured"`
+	Secret         bool            `json:"secret"`
 	SourceRevision string          `json:"source_revision"`
 	Version        int64           `json:"version"`
 }
@@ -354,11 +373,20 @@ func (registry *Registry) Resolve(key string, values []ScopedValue) (EffectiveVa
 		if candidate.Version < 1 || candidate.SourceRevision == "" {
 			return EffectiveValue{}, errors.New("stored values require a positive version and source revision")
 		}
-		_, canonical, validationErr := registry.validateValue(key, candidate.Value)
-		if validationErr != nil {
-			return EffectiveValue{}, validationErr
+		if descriptor.Secret {
+			if !candidate.Secret || len(candidate.Value) != 0 || !candidate.Configured {
+				return EffectiveValue{}, fmt.Errorf("%s requires configured write-only state", key)
+			}
+		} else {
+			if candidate.Secret {
+				return EffectiveValue{}, fmt.Errorf("%s is not a secret setting", key)
+			}
+			_, canonical, validationErr := registry.validateValue(key, candidate.Value)
+			if validationErr != nil {
+				return EffectiveValue{}, validationErr
+			}
+			candidate.Value = canonical
 		}
-		candidate.Value = canonical
 		candidate.Configured = true
 		all = append(all, candidate)
 	}

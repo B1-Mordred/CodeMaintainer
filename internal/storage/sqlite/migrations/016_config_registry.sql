@@ -92,6 +92,7 @@ CREATE TABLE config_checks (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL UNIQUE,
   draft_id TEXT NOT NULL REFERENCES config_drafts(id) ON DELETE RESTRICT,
+  draft_version INTEGER NOT NULL CHECK(draft_version >= 1),
   kind TEXT NOT NULL CHECK(kind IN ('validation', 'dry_run', 'prerequisite')),
   handler TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('passed', 'failed', 'unavailable')),
@@ -100,7 +101,7 @@ CREATE TABLE config_checks (
   expires_at TEXT
 ) STRICT;
 
-CREATE INDEX config_checks_draft_idx ON config_checks(draft_id, sequence DESC);
+CREATE INDEX config_checks_draft_idx ON config_checks(draft_id, draft_version, sequence DESC);
 
 CREATE TABLE job_config_snapshots (
   job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE RESTRICT,

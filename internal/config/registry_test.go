@@ -144,8 +144,8 @@ func TestSecretValuesAreNeverReturnedOrExportable(t *testing.T) {
 		t.Fatal(err)
 	}
 	effective, err := registry.Resolve("provider.api_key", []ScopedValue{{
-		Key: "provider.api_key", Scope: ScopeRef{Kind: ScopeSystem}, Value: json.RawMessage(`"super-secret"`),
-		SourceRevision: "secret-1", Version: 1,
+		Key: "provider.api_key", Scope: ScopeRef{Kind: ScopeSystem},
+		SourceRevision: "secret-1", Version: 1, Secret: true, Configured: true,
 	}})
 	if err != nil {
 		t.Fatal(err)

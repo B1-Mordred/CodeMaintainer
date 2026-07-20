@@ -242,3 +242,82 @@ func SystemScopedValues(value System, revision string, version int64) map[string
 	add("notifications.local_inbox_enabled", value.Notifications.LocalInboxEnabled)
 	return result
 }
+
+func ApplySystemChanges(current System, changes []ScopeChange) (System, error) {
+	result := current
+	defaults := Default(current.Deployment.DataRoot)
+	for _, change := range changes {
+		if change.Secret {
+			return System{}, fmt.Errorf("legacy system projection cannot contain secret setting %q", change.Key)
+		}
+		value := change.Value
+		switch change.Key {
+		case "workflow.max_review_cycles":
+			if !change.Configured {
+				result.Workflow.MaxReviewCycles = defaults.Workflow.MaxReviewCycles
+			} else if err := strictDecode(value, &result.Workflow.MaxReviewCycles); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "workflow.max_wall_seconds":
+			if !change.Configured {
+				result.Workflow.MaxWallSeconds = defaults.Workflow.MaxWallSeconds
+			} else if err := strictDecode(value, &result.Workflow.MaxWallSeconds); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "workflow.max_log_bytes":
+			if !change.Configured {
+				result.Workflow.MaxLogBytes = defaults.Workflow.MaxLogBytes
+			} else if err := strictDecode(value, &result.Workflow.MaxLogBytes); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "qc.block_on":
+			if !change.Configured {
+				result.QC.BlockOn = append([]string(nil), defaults.QC.BlockOn...)
+			} else if err := strictDecode(value, &result.QC.BlockOn); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "qc.require_evidence_for_blocking":
+			if !change.Configured {
+				result.QC.RequireEvidenceForBlocking = defaults.QC.RequireEvidenceForBlocking
+			} else if err := strictDecode(value, &result.QC.RequireEvidenceForBlocking); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "qc.require_verification_method":
+			if !change.Configured {
+				result.QC.RequireVerificationMethod = defaults.QC.RequireVerificationMethod
+			} else if err := strictDecode(value, &result.QC.RequireVerificationMethod); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "qc.human_waiver_enabled":
+			if !change.Configured {
+				result.QC.HumanWaiverEnabled = defaults.QC.HumanWaiverEnabled
+			} else if err := strictDecode(value, &result.QC.HumanWaiverEnabled); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "qc.waiver_rationale_required":
+			if !change.Configured {
+				result.QC.WaiverRationaleRequired = defaults.QC.WaiverRationaleRequired
+			} else if err := strictDecode(value, &result.QC.WaiverRationaleRequired); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "protected_paths.patterns":
+			if !change.Configured {
+				result.Protected.Patterns = append([]string(nil), defaults.Protected.Patterns...)
+			} else if err := strictDecode(value, &result.Protected.Patterns); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		case "notifications.local_inbox_enabled":
+			if !change.Configured {
+				result.Notifications.LocalInboxEnabled = defaults.Notifications.LocalInboxEnabled
+			} else if err := strictDecode(value, &result.Notifications.LocalInboxEnabled); err != nil {
+				return System{}, fmt.Errorf("decode %s: %w", change.Key, err)
+			}
+		default:
+			continue
+		}
+	}
+	if validationErrors := ValidateChange(current, result); len(validationErrors) != 0 {
+		return System{}, errors.New(strings.Join(validationErrors, "; "))
+	}
+	return result, nil
+}
