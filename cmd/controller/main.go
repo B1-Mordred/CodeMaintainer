@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/api"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
+	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -56,6 +58,14 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	authService, err := maintainerauth.NewService(store)
+	if err != nil {
+		return err
+	}
+	secureCookie, err := strconv.ParseBool(env("MAINTAINER_SECURE_COOKIE", "false"))
+	if err != nil {
+		return errors.New("MAINTAINER_SECURE_COOKIE must be true or false")
+	}
 	engine, err := newWorkflowEngine(store, artifactStore, dataRoot, profile)
 	if err != nil {
 		return err
@@ -67,7 +77,8 @@ func run(logger *slog.Logger) error {
 	workerErrors := make(chan error, 1)
 	go func() { workerErrors <- worker.Run(ctx) }()
 
-	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile, api.WithArtifactReader(artifactStore))
+	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile,
+		api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie))
 	server := &http.Server{
 		Addr:              listen,
 		Handler:           handler,

@@ -118,6 +118,7 @@ services:
       MAINTAINER_DATABASE: /var/lib/maintainer/database/controller.db
       MAINTAINER_LISTEN: 0.0.0.0:8080
       MAINTAINER_PROFILE: mock
+      MAINTAINER_SECURE_COOKIE: ${MAINTAINER_SECURE_COOKIE:-false}
       MAINTAINER_GIT_BRIDGE_URL: http://git-bridge:8083
       MAINTAINER_GIT_BRIDGE_TOKEN_FILE: /var/lib/maintainer/secrets/git-bridge.token
     volumes:
@@ -135,7 +136,7 @@ services:
       git-bridge:
         condition: service_started
     healthcheck:
-      test: ["CMD", "/maintainctl", "doctor"]
+      test: ["CMD", "/maintainctl", "health"]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -152,14 +153,19 @@ services:
       target: maintainctl
       args:
         VERSION: 0.1.0-dev
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
     environment:
       MAINTAINER_URL: http://controller:8080
+      MAINTAINER_SESSION_FILE: /var/lib/maintainctl/session.json
     working_dir: /workspace
     volumes:
       - type: bind
         source: .
         target: /workspace
         read_only: true
+      - type: bind
+        source: ./.data/cli
+        target: /var/lib/maintainctl
     depends_on:
       controller:
         condition: service_healthy

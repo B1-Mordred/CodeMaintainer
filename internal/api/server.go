@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/projects"
@@ -23,12 +24,14 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	store     storage.Store
-	artifacts ArtifactReader
-	logger    *slog.Logger
-	profile   string
-	started   time.Time
-	handler   http.Handler
+	store        storage.Store
+	artifacts    ArtifactReader
+	logger       *slog.Logger
+	profile      string
+	started      time.Time
+	handler      http.Handler
+	auth         *maintainerauth.Service
+	secureCookie bool
 }
 
 type ArtifactReader interface {
@@ -39,6 +42,13 @@ type Option func(*Server)
 
 func WithArtifactReader(reader ArtifactReader) Option {
 	return func(server *Server) { server.artifacts = reader }
+}
+
+func WithAuthentication(service *maintainerauth.Service, secureCookie bool) Option {
+	return func(server *Server) {
+		server.auth = service
+		server.secureCookie = secureCookie
+	}
 }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -52,6 +62,12 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
+	mux.HandleFunc("GET /api/v1/auth/status", s.authStatus)
+	mux.HandleFunc("POST /api/v1/auth/bootstrap", s.authBootstrap)
+	mux.HandleFunc("POST /api/v1/auth/login", s.authLogin)
+	mux.HandleFunc("GET /api/v1/auth/session", s.authSession)
+	mux.HandleFunc("POST /api/v1/auth/reauthenticate", s.authReauthenticate)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.authLogout)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
@@ -72,7 +88,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/config/revisions/{revisionID}/rollback", s.rollbackConfigRevision)
 	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
 	mux.Handle("GET /", s.staticHandler())
-	s.handler = s.middleware(mux)
+	s.handler = s.middleware(s.authenticationMiddleware(mux))
 	return s
 }
 
@@ -243,7 +259,7 @@ func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Rationale       string `json:"rationale"`
-		Reauthenticated bool   `json:"reauthenticated"`
+		Reauthenticated bool   `json:"reauthenticated,omitempty"`
 	}
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
@@ -253,9 +269,13 @@ func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
 		s.storageError(w, r, err)
 		return
 	}
+	reauthenticated := request.Reauthenticated
+	if principal, ok := principalFromRequest(r); ok {
+		reauthenticated = principal.RecentlyReauthenticated(time.Now().UTC())
+	}
 	job, approval, err := s.store.ApprovePublication(r.Context(), current.ID, storage.PublicationApprovalRequest{
 		ActorID: actorID(r), ActorRole: actorRole(r), Rationale: request.Rationale,
-		Reauthenticated: request.Reauthenticated, ExpectedVersion: current.Version,
+		Reauthenticated: reauthenticated, ExpectedVersion: current.Version,
 	})
 	if err != nil {
 		s.storageError(w, r, err)
@@ -558,6 +578,9 @@ func (s *Server) staticHandler() http.Handler {
 }
 
 func actorID(r *http.Request) string {
+	if principal, ok := principalFromRequest(r); ok {
+		return principal.User.ID
+	}
 	if value := strings.TrimSpace(r.Header.Get("X-Maintainer-Actor")); value != "" && len(value) <= 128 {
 		return value
 	}
@@ -565,6 +588,9 @@ func actorID(r *http.Request) string {
 }
 
 func actorRole(r *http.Request) string {
+	if principal, ok := principalFromRequest(r); ok {
+		return string(principal.User.Role)
+	}
 	value := strings.TrimSpace(r.Header.Get("X-Maintainer-Role"))
 	if value == "viewer" || value == "operator" || value == "reviewer" || value == "administrator" {
 		return value

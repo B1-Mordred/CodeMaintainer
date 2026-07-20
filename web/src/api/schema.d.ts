@@ -4,6 +4,108 @@
  */
 
 export interface paths {
+    "/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report whether one-time administrator bootstrap is complete */
+        get: operations["getAuthenticationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create the one-time local administrator and authenticated session */
+        post: operations["bootstrapAdministrator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a bounded local session */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the current principal and rotate its CSRF token */
+        get: operations["getAuthenticationSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reauthenticate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reauthenticate the current session for a five-minute sensitive-action window */
+        post: operations["reauthenticate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke the current session */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/status": {
         parameters: {
             query?: never;
@@ -302,6 +404,38 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        User: {
+            id: string;
+            username: string;
+            display_name: string;
+            /** @enum {string} */
+            role: "viewer" | "operator" | "reviewer" | "administrator";
+            disabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        Principal: {
+            user: components["schemas"]["User"];
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            reauthenticated_until?: string;
+        };
+        AuthenticationResult: {
+            principal: components["schemas"]["Principal"];
+            csrf_token: string;
+        };
+        BootstrapRequest: {
+            username: string;
+            display_name: string;
+            password: string;
+        };
+        LoginRequest: {
+            username: string;
+            password: string;
+        };
         UpsertProjectRequest: {
             id: string;
             /** @enum {string} */
@@ -495,6 +629,7 @@ export interface components {
         JobID: string;
         RevisionID: string;
         ArtifactID: string;
+        CSRFToken: string;
     };
     requestBodies: never;
     headers: never;
@@ -502,6 +637,161 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getAuthenticationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authentication bootstrap status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bootstrapped: boolean;
+                        authentication_enabled: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    bootstrapAdministrator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Bootstrap administrator session */
+            201: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticationResult"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            429: components["responses"]["ErrorResponse"];
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Authenticated session */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticationResult"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            429: components["responses"]["ErrorResponse"];
+        };
+    };
+    getAuthenticationSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current principal and fresh CSRF token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticationResult"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    reauthenticate: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recently reauthenticated principal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        principal: components["schemas"]["Principal"];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            429: components["responses"]["ErrorResponse"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked and cookie expired */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
     getSystemStatus: {
         parameters: {
             query?: never;
@@ -815,7 +1105,9 @@ export interface operations {
     approvePublication: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
             path: {
                 jobID: components["parameters"]["JobID"];
             };
@@ -825,8 +1117,6 @@ export interface operations {
             content: {
                 "application/json": {
                     rationale: string;
-                    /** @constant */
-                    reauthenticated: true;
                 };
             };
         };

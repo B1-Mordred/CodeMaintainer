@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
+	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -74,6 +75,121 @@ func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
 		if response.Header.Get("X-Frame-Options") != "DENY" || response.Header.Get("Content-Security-Policy") == "" {
 			t.Fatalf("GET %s missing security headers", path)
 		}
+	}
+}
+
+func TestAuthenticationBootstrapSessionCSRFAndHeaderForgeryRejection(t *testing.T) {
+	store, err := storesqlite.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if _, err := store.UpsertProject(context.Background(), projects.UpsertRequest{
+		ID: "owner-repo", Provider: "local", Repository: "owner/repo", DefaultBranch: "main", LocalRemoteName: "fixture.git",
+	}, "setup"); err != nil {
+		t.Fatal(err)
+	}
+	authService, err := maintainerauth.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock", WithAuthentication(authService, false)))
+	t.Cleanup(server.Close)
+
+	request, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/system/status", nil)
+	request.Header.Set("X-Maintainer-Actor", "forged")
+	request.Header.Set("X-Maintainer-Role", "administrator")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("forged headers returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/bootstrap", strings.NewReader(
+		`{"username":"admin","display_name":"Administrator","password":"correct horse battery staple"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bootstrap struct {
+		CSRFToken string `json:"csrf_token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || bootstrap.CSRFToken == "" {
+		t.Fatalf("bootstrap returned %d: %+v", response.StatusCode, bootstrap)
+	}
+	var sessionCookie *http.Cookie
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == sessionCookieName {
+			sessionCookie = cookie
+		}
+	}
+	if sessionCookie == nil || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("unsafe session cookie: %+v", sessionCookie)
+	}
+
+	jobPayload := `{"project_id":"owner-repo","repository":"owner/repo","task":"authenticated task"}`
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(jobPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("missing CSRF returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(jobPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", bootstrap.CSRFToken)
+	request.Header.Set("Sec-Fetch-Site", "cross-site")
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-site request returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(jobPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", bootstrap.CSRFToken)
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("authenticated mutation returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodGet, server.URL+"/api/v1/auth/session", nil)
+	request.AddCookie(sessionCookie)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session struct {
+		CSRFToken string `json:"csrf_token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&session); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || session.CSRFToken == "" || session.CSRFToken == bootstrap.CSRFToken {
+		t.Fatalf("session CSRF rotation failed: status=%d response=%+v", response.StatusCode, session)
 	}
 }
 

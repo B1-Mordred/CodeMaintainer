@@ -17,7 +17,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [x] (2026-07-20 17:20Z) Milestone 3 inference and agents: strict model manifests and verified imports; sequential authenticated model supervision; pinned llama.cpp image without weights; separate implementation and read-only QC roles, images, prompts, contexts, and schema contracts; atomic hash-bound edits; fresh-family QC; append-only finding histories; durable exact-commit verification and repair cycles; atomic phase/state/result persistence; restart reconciliation; and a deterministic full lifecycle that reaches authenticated approval.
 - [ ] Milestone 4 publication (completed local-provider portion through 2026-07-20 17:20Z: authenticated narrow Git bridge; allow-listed local bare remotes; mirror sync and exact-base worktrees; deterministic commit recovery; upstream movement checks; exact-SHA append-only approvals; idempotent intended-branch push and local draft identity; controller restart recovery; and a live single-publication acceptance. Remaining: real GitHub App token/API adapter, fake GitHub API expiry tests, webhook HMAC and polling fallback, and final publication-policy rejection coverage).
 - [ ] Milestone 5 memory and scheduling: implement repository-scoped memory namespaces, quarantine and promotion, provenance, retrieval traces and context budgets, OpenViking adapter/profile, Hermes tools, schedules, and reviewed skill proposals.
-- [ ] Milestone 6 product completion: finish every dashboard workflow, RBAC and reauthentication, backup/restore, upgrades and rollback, diagnostics, observability, accessibility, documentation, SBOM/license inventory, hardened Compose profiles, and the full acceptance suite.
+- [ ] Milestone 6 product completion (completed through 2026-07-20 15:35Z: one-time administrator bootstrap; Argon2id password storage; random hash-only server sessions and CSRF tokens; HttpOnly SameSite cookies with explicit TLS-mode secure flag; 12-hour expiry; bounded authentication attempts; exact non-hierarchical operator/reviewer RBAC; server-recorded five-minute reauthentication; append-only bootstrap/login/logout/reauth audit; forged-header rejection; authenticated CLI session file; and accessible bootstrap/login UI. Remaining: user administration, every non-foundation dashboard page, backup/restore, upgrades and rollback, diagnostics, observability, full accessibility pass, documentation, SBOM/license inventory, hardened optional profiles, and the final acceptance suite).
 - [ ] Run a requirement-by-requirement completion audit against every item in `project.md`, recording commands, results, limitations, and operator-only tests; do not claim completion while any evidence is missing.
 
 ## Surprises & Discoveries
@@ -58,6 +58,8 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: the contract's default sequence says sync, worktree, dependencies, then criteria. The coordinator follows that explicit default while keeping every completion durable and independently resumable.
 - Observation: the distroless browser-facing controller cannot and should not contain Git or repository credentials.
   Evidence: repository synchronization, commits, and publication moved into an authenticated internal Git bridge with narrowly validated project/job/SHA operations; only that process receives mirror/worktree/remote mounts.
+- Observation: changing `maintainctl doctor` from a public status probe to an authenticated diagnostic made the controller's original self-healthcheck fail closed before bootstrap.
+  Evidence: the rebuilt controller correctly returned 401 for `/api/v1/system/status`, so Compose marked it unhealthy and would not start the CLI bootstrap container. A separate minimal `maintainctl health` command now probes only public `/healthz`; `doctor` remains authenticated.
 
 ## Decision Log
 
@@ -114,6 +116,12 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-20 / Codex
 - Decision: keep the credential-free local provider in the Git bridge and accept only an allow-listed remote basename below the configured remote root.
   Rationale: the mock lifecycle needs real Git semantics without network credentials, but callers must not turn repository registration into arbitrary filesystem or URL access. The same narrow bridge interface can later host a disabled-by-default GitHub App adapter.
+  Date/Author: 2026-07-20 / Codex
+- Decision: use opaque random cookie sessions backed by SHA-256 token hashes, independently rotated hash-only CSRF tokens, and Argon2id local password hashes rather than browser bearer tokens or self-contained JWTs.
+  Rationale: HttpOnly cookies keep session authority out of JavaScript and server-side records permit immediate revocation, expiry, exact roles, and recent-reauthentication checks. CSRF tokens, SameSite cookies, Fetch Metadata/origin checks, and disabled CORS protect ambient-cookie mutations without storing long-lived credentials in browser storage.
+  Date/Author: 2026-07-20 / Codex
+- Decision: keep operator and reviewer capabilities separate instead of treating roles as a simple privilege ladder; only administrators include every permission.
+  Rationale: code execution and publication approval are distinct duties. A reviewer must not silently gain task-execution authority, and an operator must not gain approval authority merely because both can read job evidence.
   Date/Author: 2026-07-20 / Codex
 
 ## Outcomes & Retrospective
@@ -340,6 +348,15 @@ Durable workflow and local-publication evidence:
 
 The live mock stack repeated the lifecycle through the real controller and Git bridge. Job `job_942d3de1c48a4c3aa0ab651f1e41ed54` began at `c9e823f34999dfed6589163cae3327395813eb49`, produced initial result `acb9fee8ad063ea1da70b64f242bc578323402ce`, repaired result `9174b6a74c3fd1725f854178b9ab35f93fb33bec`, and waited for an operator with review cycle `1`. The controller was rebuilt and restarted before approval. Approval `approval_856eb93b07d9416abee38357593a821f` was bound to the repaired SHA with reviewer role and reauthentication recorded, after which the job completed and the bare remote contained exactly branch `maintainer/job_942d3de1c48a4c3aa0ab651f1e41ed54` at the repaired SHA. This is credential-free local publication only; no real GitHub action was attempted.
 
+Authentication-boundary evidence:
+
+    $ go test -race ./internal/auth ./internal/storage/sqlite ./internal/api ./cmd/maintainctl
+    all packages passed
+
+Unit and API integration tests prove a single atomic bootstrap, case-normalized users, Argon2id verification, random session and CSRF rotation, revocation/expiry, five-failure rate limiting, forged actor/administrator-header rejection, missing-token and cross-site mutation rejection, and exact role separation. Browser tests render both the bootstrap form and authenticated overview with no automated WCAG A/AA violations. The generated OpenAPI contract declares cookie authentication and never exposes a session token in JSON.
+
+The existing live database upgraded to migration v8 and reported `bootstrapped=false`. `maintainctl bootstrap` consumed a generated mock password only from stdin, stored a mode-0600 session record under `.data/cli`, and reported the resulting administrator identity without printing either token or password. An unauthenticated system-status request then returned 401, the same authenticated CLI returned the healthy bounded component report, public `/healthz` kept the container healthy, and `/api/v1/auth/status` reported `bootstrapped=true`. The disposable first validation account was removed only after a failed CLI mount check, with an append-only `auth.bootstrap_reset` audit event; the final mock administrator is the successfully persisted account.
+
 ## Interfaces and Dependencies
 
 `internal/jobs` defines `type State string`, every required state constant, `CanTransition(from, to State) bool`, and terminal/resumable predicates. `internal/storage` defines transactional repository methods for jobs, transitions, findings, approvals, idempotency, audit, configuration, artifacts, and leases. Storage methods accept `context.Context`, return typed domain errors, and never expose SQL rows outside the adapter.
@@ -363,3 +380,5 @@ Revision note (2026-07-20 11:15Z): completed the trusted worktree, deterministic
 Revision note (2026-07-20 13:05Z): implemented the production Unix-socket Docker API executor, strict bootstrap policy file, immutable verification worker, all required language runner targets, production Compose separation, real-daemon offline fixture, and writable disk-growth watchdog. Recorded the exact rootful-development evidence and retained the dedicated-rootless-daemon check as an operator production validation. Milestone 2 remains open until dependency acquisition, controller dispatch, and the Milestone 3 implementation/QC images complete every job kind.
 
 Revision note (2026-07-20 17:20Z): closed Milestone 3 and recorded the completed local-provider portion of Milestone 4. Added deterministic runner reconciliation, idempotent artifacts, atomic durable workflow phases, registered projects, the authenticated Git bridge, dependency worker, production container backend, full coordinator and repair loop, exact-SHA approvals, local publication, and both in-process and live restart-spanning lifecycle evidence. Real GitHub App, browser authentication, memory/Hermes, and product-operations work remain explicitly open.
+
+Revision note (2026-07-20 15:35Z): completed the core Milestone 6 authentication boundary before expanding operator UI actions. Replaced caller-supplied identity headers in the running controller with one-time bootstrap, server-side sessions, CSRF, exact RBAC, recent reauthentication, rate limits, private CLI session persistence, audited lifecycle operations, and accessible bootstrap/login screens. Kept user administration and every remaining product-operations page open.

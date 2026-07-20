@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -19,8 +20,16 @@ var version = "dev"
 const maxConfigDocumentBytes = 2 << 20
 
 type client struct {
-	baseURL string
-	http    *http.Client
+	baseURL     string
+	http        *http.Client
+	sessionFile string
+	session     cliSession
+}
+
+type cliSession struct {
+	Token     string    `json:"token"`
+	CSRFToken string    `json:"csrf_token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func main() {
@@ -36,13 +45,25 @@ func run(arguments []string) error {
 		return errors.New("a command is required")
 	}
 	baseURL := env("MAINTAINER_URL", "http://127.0.0.1:8080")
-	api := client{baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: 30 * time.Second}}
+	api := client{
+		baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: 30 * time.Second},
+		sessionFile: env("MAINTAINER_SESSION_FILE", "/var/lib/maintainctl/session.json"),
+	}
+	_ = api.loadSession()
 	switch arguments[0] {
 	case "version":
 		fmt.Println(version)
 		return nil
 	case "doctor":
 		return api.printJSON(http.MethodGet, "/api/v1/system/status", nil)
+	case "health":
+		return api.printJSON(http.MethodGet, "/healthz", nil)
+	case "bootstrap":
+		return api.bootstrap(arguments[1:])
+	case "login":
+		return api.login(arguments[1:])
+	case "logout":
+		return api.logout()
 	case "status":
 		if len(arguments) > 1 {
 			return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1]), nil)
@@ -216,7 +237,12 @@ func (c client) request(method, path string, body any) (*http.Response, error) {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("X-Maintainer-Actor", env("MAINTAINER_ACTOR", "maintainctl"))
+	if c.session.Token != "" {
+		request.AddCookie(&http.Cookie{Name: "maintainer_session", Value: c.session.Token})
+	}
+	if c.session.CSRFToken != "" && method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions {
+		request.Header.Set("X-CSRF-Token", c.session.CSRFToken)
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -233,6 +259,9 @@ func (c client) streamEvents(jobID string) error {
 		return err
 	}
 	request.Header.Set("Accept", "text/event-stream")
+	if c.session.Token != "" {
+		request.AddCookie(&http.Cookie{Name: "maintainer_session", Value: c.session.Token})
+	}
 	streamClient := *c.http
 	streamClient.Timeout = 0
 	response, err := streamClient.Do(request)
@@ -251,7 +280,10 @@ func (c client) streamEvents(jobID string) error {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: maintainctl <command>
 
-Foundation commands:
+Commands:
+  bootstrap --username <name> --display-name <name> --password-file <file|->
+  login --username <name> --password-file <file|->
+  logout
   doctor
   run <owner/repository> --task <text> | --issue <number>
   status [job-id]
@@ -264,6 +296,199 @@ Foundation commands:
   config apply --reason <text> <file|->
   config rollback --reason <text> <revision-id>
   version`)
+}
+
+func (c *client) bootstrap(arguments []string) error {
+	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
+	username := flags.String("username", "", "local administrator username")
+	displayName := flags.String("display-name", "", "local administrator display name")
+	passwordFile := flags.String("password-file", "", "protected password file, or - for stdin")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *username == "" || *displayName == "" || *passwordFile == "" {
+		return errors.New("usage: maintainctl bootstrap --username <name> --display-name <name> --password-file <file|->")
+	}
+	password, err := readPassword(*passwordFile)
+	if err != nil {
+		return err
+	}
+	return c.authenticate("/api/v1/auth/bootstrap", map[string]string{
+		"username": *username, "display_name": *displayName, "password": password,
+	})
+}
+
+func (c *client) login(arguments []string) error {
+	flags := flag.NewFlagSet("login", flag.ContinueOnError)
+	username := flags.String("username", "", "local username")
+	passwordFile := flags.String("password-file", "", "protected password file, or - for stdin")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *username == "" || *passwordFile == "" {
+		return errors.New("usage: maintainctl login --username <name> --password-file <file|->")
+	}
+	password, err := readPassword(*passwordFile)
+	if err != nil {
+		return err
+	}
+	return c.authenticate("/api/v1/auth/login", map[string]string{"username": *username, "password": password})
+}
+
+func (c *client) authenticate(path string, body any) error {
+	response, err := c.request(http.MethodPost, path, body)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode >= 300 {
+		return fmt.Errorf("controller returned %s: %s", response.Status, strings.TrimSpace(string(payload)))
+	}
+	var result struct {
+		CSRFToken string `json:"csrf_token"`
+		Principal struct {
+			ExpiresAt time.Time `json:"expires_at"`
+			User      struct {
+				Username string `json:"username"`
+				Role     string `json:"role"`
+			} `json:"user"`
+		} `json:"principal"`
+	}
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return fmt.Errorf("decode authentication response: %w", err)
+	}
+	var token string
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == "maintainer_session" {
+			token = cookie.Value
+		}
+	}
+	if token == "" || result.CSRFToken == "" || result.Principal.ExpiresAt.IsZero() {
+		return errors.New("controller returned an incomplete authentication session")
+	}
+	c.session = cliSession{Token: token, CSRFToken: result.CSRFToken, ExpiresAt: result.Principal.ExpiresAt}
+	if err := c.saveSession(); err != nil {
+		return err
+	}
+	fmt.Printf("Authenticated as %s (%s); session expires %s\n", result.Principal.User.Username, result.Principal.User.Role, result.Principal.ExpiresAt.Format(time.RFC3339))
+	return nil
+}
+
+func (c *client) logout() error {
+	if c.session.Token == "" {
+		return errors.New("no maintainctl session is stored")
+	}
+	response, err := c.request(http.MethodPost, "/api/v1/auth/logout", nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		return fmt.Errorf("controller returned %s: %s", response.Status, strings.TrimSpace(string(payload)))
+	}
+	if err := os.Remove(c.sessionFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove session file: %w", err)
+	}
+	c.session = cliSession{}
+	fmt.Println("Session revoked.")
+	return nil
+}
+
+func (c *client) loadSession() error {
+	file, err := os.Open(c.sessionFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() > 16<<10 {
+		return errors.New("maintainctl session file must be a private regular file")
+	}
+	if err := json.NewDecoder(io.LimitReader(file, 16<<10)).Decode(&c.session); err != nil {
+		return err
+	}
+	if !time.Now().Before(c.session.ExpiresAt) {
+		c.session = cliSession{}
+	}
+	return nil
+}
+
+func (c *client) saveSession() error {
+	directory := filepath.Dir(c.sessionFile)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("create session directory: %w", err)
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return fmt.Errorf("protect session directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(directory, ".session-*")
+	if err != nil {
+		return fmt.Errorf("create temporary session: %w", err)
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	encoder := json.NewEncoder(temporary)
+	if err := encoder.Encode(c.session); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryName, c.sessionFile); err != nil {
+		return fmt.Errorf("publish session file: %w", err)
+	}
+	return nil
+}
+
+func readPassword(path string) (string, error) {
+	var reader io.Reader = os.Stdin
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return "", fmt.Errorf("open password file: %w", err)
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+			return "", errors.New("password file must be a private regular file")
+		}
+		reader = file
+	}
+	payload, err := io.ReadAll(io.LimitReader(reader, 1026))
+	if err != nil {
+		return "", err
+	}
+	if len(payload) > 1025 {
+		return "", errors.New("password exceeds 1024 bytes")
+	}
+	password := strings.TrimSuffix(strings.TrimSuffix(string(payload), "\n"), "\r")
+	if len(password) < 14 {
+		return "", errors.New("password must contain at least 14 characters")
+	}
+	return password, nil
 }
 
 func env(key, fallback string) string {

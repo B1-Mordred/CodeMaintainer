@@ -9,9 +9,7 @@ dist/
 node_modules/
 web/node_modules/
 web/coverage/
-internal/ui/dist/assets/
 !internal/ui/dist/
-!internal/ui/dist/index.html
 bin/
 *.tmp
 *.part

@@ -7,10 +7,105 @@ info:
     name: Unlicensed foundation build
 servers:
   - url: http://127.0.0.1:8080/api/v1
-# Milestone 1 is localhost-only and has no session bootstrap yet. Authenticated
-# cookie security replaces this explicit empty declaration in Milestone 6.
-security: []
+security:
+  - sessionCookie: []
 paths:
+  /auth/status:
+    get:
+      security: []
+      summary: Report whether one-time administrator bootstrap is complete
+      operationId: getAuthenticationStatus
+      responses:
+        "200":
+          description: Authentication bootstrap status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bootstrapped, authentication_enabled]
+                properties:
+                  bootstrapped: { type: boolean }
+                  authentication_enabled: { type: boolean }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /auth/bootstrap:
+    post:
+      security: []
+      summary: Create the one-time local administrator and authenticated session
+      operationId: bootstrapAdministrator
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BootstrapRequest" } } }
+      responses:
+        "201":
+          description: Bootstrap administrator session
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthenticationResult" } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "429": { $ref: "#/components/responses/ErrorResponse" }
+  /auth/login:
+    post:
+      security: []
+      summary: Create a bounded local session
+      operationId: login
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoginRequest" } } }
+      responses:
+        "200":
+          description: Authenticated session
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthenticationResult" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "429": { $ref: "#/components/responses/ErrorResponse" }
+  /auth/session:
+    get:
+      summary: Get the current principal and rotate its CSRF token
+      operationId: getAuthenticationSession
+      responses:
+        "200":
+          description: Current principal and fresh CSRF token
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthenticationResult" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /auth/reauthenticate:
+    post:
+      summary: Reauthenticate the current session for a five-minute sensitive-action window
+      operationId: reauthenticate
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, minLength: 14, maxLength: 1024, writeOnly: true }
+      responses:
+        "200":
+          description: Recently reauthenticated principal
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [principal]
+                properties:
+                  principal: { $ref: "#/components/schemas/Principal" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "429": { $ref: "#/components/responses/ErrorResponse" }
+  /auth/logout:
+    post:
+      summary: Revoke the current session
+      operationId: logout
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "204": { description: Session revoked and cookie expired }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /system/status:
     get:
       summary: Get bounded system and component status
@@ -214,6 +309,7 @@ paths:
     post:
       summary: Approve exact-result draft publication after recent reauthentication
       operationId: approvePublication
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       requestBody:
         required: true
         content:
@@ -221,10 +317,9 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [rationale, reauthenticated]
+              required: [rationale]
               properties:
                 rationale: { type: string, minLength: 1, maxLength: 4000 }
-                reauthenticated: { type: boolean, const: true }
       responses:
         "200":
           description: Exact-SHA approval and publishing job
@@ -342,6 +437,11 @@ paths:
         default: { $ref: "#/components/responses/ErrorResponse" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: maintainer_session
   parameters:
     JobID:
       name: jobID
@@ -358,6 +458,11 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^artifact_[0-9a-f]{32}$" }
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string, minLength: 32, maxLength: 256 }
   responses:
     ErrorResponse:
       description: Structured error
@@ -374,6 +479,45 @@ components:
                   code: { type: string }
                   message: { type: string }
   schemas:
+    User:
+      type: object
+      required: [id, username, display_name, role, disabled, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^user_[0-9a-f]{32}$" }
+        username: { type: string, minLength: 3, maxLength: 64, pattern: "^[a-z0-9._-]+$" }
+        display_name: { type: string, minLength: 1, maxLength: 128 }
+        role: { type: string, enum: [viewer, operator, reviewer, administrator] }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Principal:
+      type: object
+      required: [user, expires_at]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        expires_at: { type: string, format: date-time }
+        reauthenticated_until: { type: string, format: date-time }
+    AuthenticationResult:
+      type: object
+      required: [principal, csrf_token]
+      properties:
+        principal: { $ref: "#/components/schemas/Principal" }
+        csrf_token: { type: string, minLength: 32, maxLength: 256, writeOnly: true }
+    BootstrapRequest:
+      type: object
+      additionalProperties: false
+      required: [username, display_name, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64, pattern: "^[A-Za-z0-9._-]+$" }
+        display_name: { type: string, minLength: 1, maxLength: 128 }
+        password: { type: string, minLength: 14, maxLength: 1024, writeOnly: true }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64 }
+        password: { type: string, minLength: 14, maxLength: 1024, writeOnly: true }
     UpsertProjectRequest:
       type: object
       additionalProperties: false

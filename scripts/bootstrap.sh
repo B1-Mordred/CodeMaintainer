@@ -31,8 +31,8 @@ fi
 mkdir -p \
   .data/models .data/mirrors .data/remotes .data/worktrees .data/artifacts \
   .data/database .data/memory .data/caches .data/config \
-  .data/secrets .data/backups .data/run .cache/go/build .cache/go/mod .cache/npm
-chmod 700 .data .data/database .data/secrets .data/backups
+  .data/secrets .data/backups .data/run .data/cli .cache/go/build .cache/go/mod .cache/npm
+chmod 700 .data .data/database .data/secrets .data/backups .data/cli
 
 runnerd_token=.data/secrets/runnerd.token
 if [[ ! -e "$runnerd_token" ]]; then

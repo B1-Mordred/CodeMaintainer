@@ -6,7 +6,9 @@ export default defineConfig({
   build: {
     outDir: "../internal/ui/dist",
     emptyOutDir: true,
-    sourcemap: true,
+    // Browser-facing source maps expose internal implementation details. Keep
+    // them out of the production static bundle; CI retains original sources.
+    sourcemap: false,
   },
   test: {
     environment: "jsdom",

@@ -8,6 +8,7 @@ import (
 
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	"github.com/local-code-maintainer/appliance/internal/audit"
+	"github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -160,6 +161,7 @@ type FindingStore interface {
 }
 
 type Store interface {
+	auth.Store
 	WorkflowStore
 	AuditStore
 	ConfigStore
