@@ -1,0 +1,133 @@
+name: local-code-maintainer
+
+x-runtime-security: &runtime-security
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  init: true
+  restart: unless-stopped
+
+services:
+  controller:
+    <<: *runtime-security
+    image: local/code-maintainer-controller:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: controller
+      args:
+        VERSION: 0.1.0-dev
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    environment:
+      MAINTAINER_DATA_ROOT: /var/lib/maintainer
+      MAINTAINER_DATABASE: /var/lib/maintainer/database/controller.db
+      MAINTAINER_LISTEN: 0.0.0.0:8080
+      MAINTAINER_PROFILE: mock
+    volumes:
+      - type: bind
+        source: ./.data
+        target: /var/lib/maintainer
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - frontend
+      - control
+    healthcheck:
+      test: ["CMD", "/maintainctl", "doctor"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    mem_limit: 1g
+    cpus: 2.0
+
+  maintainctl:
+    <<: *runtime-security
+    image: local/code-maintainer-cli:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: maintainctl
+      args:
+        VERSION: 0.1.0-dev
+    environment:
+      MAINTAINER_URL: http://controller:8080
+    depends_on:
+      controller:
+        condition: service_healthy
+    networks:
+      - control
+    profiles:
+      - tools
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.5
+
+  go-tool:
+    image: golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    working_dir: /src
+    command: ["go", "test", "./..."]
+    environment:
+      GOCACHE: /cache/build
+      GOMODCACHE: /cache/mod
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+      - type: bind
+        source: ./.cache/go
+        target: /cache
+    tmpfs:
+      # The Go tool executes test binaries from its work directory and the
+      # pure-Go SQLite compiler needs more than 128 MiB. This exception is
+      # limited to the developer tool container, never a runtime service.
+      - /tmp:rw,exec,nosuid,nodev,size=1g,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: bridge
+    profiles:
+      - tools
+    restart: "no"
+
+  web-tool:
+    image: node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    working_dir: /src/web
+    command: ["npm", "test"]
+    environment:
+      npm_config_cache: /cache/npm
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+      - type: bind
+        source: ./.cache/npm
+        target: /cache/npm
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: bridge
+    profiles:
+      - tools
+    restart: "no"
+
+networks:
+  # Docker Engine 29 does not activate host port publishing for a container
+  # attached only to an internal network. Only the trusted controller joins
+  # this ingress network; untrusted workers never do.
+  frontend: {}
+  control:
+    internal: true

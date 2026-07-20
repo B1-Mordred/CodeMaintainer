@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "deployment": {
+    "listen_address": "127.0.0.1:8080",
+    "data_root": ".data",
+    "profile": "mock"
+  },
+  "workflow": {
+    "max_review_cycles": 2,
+    "max_wall_seconds": 14400,
+    "max_log_bytes": 8388608
+  },
+  "qc": {
+    "block_on": ["blocker", "must_fix"],
+    "require_evidence_for_blocking": true,
+    "require_verification_method": true,
+    "human_waiver_enabled": true,
+    "waiver_rationale_required": true
+  },
+  "protected_paths": {
+    "patterns": [".github/workflows/**", "CODEOWNERS", ".gitmodules"]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-code-maintainer.invalid/schemas/qc-report-v1.schema.json",
+  "title": "Independent QC report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "job_id", "base_sha", "result_sha", "verdict", "findings", "verification_requests"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "job_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "base_sha": { "$ref": "#/$defs/gitSHA" },
+    "result_sha": { "$ref": "#/$defs/gitSHA" },
+    "verdict": { "enum": ["pass", "blocking_findings", "malformed_evidence"] },
+    "findings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "verification_requests": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command_class", "reason"],
+        "properties": {
+          "command_class": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$" },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 4000 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitSHA": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "category", "claim", "location", "evidence", "required_resolution", "verification_method"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^QC-[A-Z0-9][A-Z0-9_-]{2,63}$" },
+        "severity": { "enum": ["blocker", "must_fix", "should_fix", "note"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "claim": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "line": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "evidence": { "type": "string", "minLength": 1, "maxLength": 16000 },
+        "required_resolution": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "verification_method": { "type": "string", "minLength": 1, "maxLength": 8000 }
+      }
+    }
+  }
+}

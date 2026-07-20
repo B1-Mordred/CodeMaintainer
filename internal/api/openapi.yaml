@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Local Code Maintainer Controller API
+  version: 0.1.0
+  description: Trusted workflow control API. No endpoint accepts arbitrary commands, images, mounts, model paths, or container options.
+  license:
+    name: Unlicensed foundation build
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+# Milestone 1 is localhost-only and has no session bootstrap yet. Authenticated
+# cookie security replaces this explicit empty declaration in Milestone 6.
+security: []
+paths:
+  /system/status:
+    get:
+      summary: Get bounded system and component status
+      operationId: getSystemStatus
+      responses:
+        "200":
+          description: Current bounded component status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemStatus" }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /workflow/states:
+    get:
+      summary: List stable workflow state names
+      operationId: listWorkflowStates
+      responses:
+        "200":
+          description: Stable workflow state names
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/JobState" } }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs:
+    get:
+      summary: List a bounded page of jobs
+      operationId: listJobs
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: Bounded job page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Submit a maintenance job
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateJobRequest" }
+      responses:
+        "201":
+          description: Durable queued job
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: Inspect one job and its durable timeline
+      operationId: getJob
+      responses:
+        "200":
+          description: Job plus durable state timeline
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job, transitions]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+                  transitions: { type: array, items: { $ref: "#/components/schemas/Transition" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/events:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+      - { name: after, in: query, schema: { type: integer, minimum: 0 } }
+    get:
+      summary: Stream replayable job transition events
+      operationId: streamJobEvents
+      responses:
+        "200":
+          description: Bounded replayable server-sent transition events; Last-Event-ID is supported.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/actions/cancel:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    post:
+      summary: Cancel an active or waiting job
+      operationId: cancelJob
+      responses:
+        "200":
+          description: Cancelled job
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/actions/retry:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    post:
+      summary: Requeue a failed or cancelled job
+      operationId: retryJob
+      responses:
+        "200":
+          description: Requeued failed or cancelled job
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /config:
+    get:
+      summary: Get the current validated configuration
+      operationId: getConfig
+      responses:
+        "200":
+          description: Current validated configuration and revision metadata
+          content: { application/json: { schema: { type: object } } }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /config/revisions:
+    get:
+      summary: List configuration revision history
+      operationId: listConfigRevisions
+      responses:
+        "200":
+          description: Newest-first configuration revisions
+          content: { application/json: { schema: { type: object } } }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /audit:
+    get:
+      summary: List append-only audit events
+      operationId: listAuditEvents
+      responses:
+        "200":
+          description: Bounded append-only audit page
+          content: { application/json: { schema: { type: object } } }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+components:
+  parameters:
+    JobID:
+      name: jobID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^job_[0-9a-f]{32}$" }
+  responses:
+    ErrorResponse:
+      description: Structured error
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+  schemas:
+    JobState:
+      type: string
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+    CreateJobRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, repository, task]
+      properties:
+        project_id: { type: string, minLength: 1, maxLength: 200 }
+        repository: { type: string, pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", maxLength: 200 }
+        task: { type: string, minLength: 1, maxLength: 1048576 }
+        issue_number: { type: integer, minimum: 1 }
+    Job:
+      type: object
+      required: [id, project_id, repository, task, state, acceptance_criteria, review_cycle, version, created_at, updated_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        repository: { type: string }
+        task: { type: string }
+        issue_number: { type: integer }
+        state: { $ref: "#/components/schemas/JobState" }
+        base_sha: { type: string }
+        result_sha: { type: string }
+        acceptance_criteria: { type: array, items: { type: object } }
+        acceptance_criteria_hash: { type: string }
+        review_cycle: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Transition:
+      type: object
+      required: [sequence, job_id, to, actor_id, reason, details, created_at]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        job_id: { type: string }
+        from: { $ref: "#/components/schemas/JobState" }
+        to: { $ref: "#/components/schemas/JobState" }
+        actor_id: { type: string }
+        reason: { type: string }
+        details: { type: object }
+        created_at: { type: string, format: date-time }
+    SystemStatus:
+      type: object
+      required: [status, profile, uptime_seconds, components]
+      properties:
+        status: { type: string }
+        profile: { type: string }
+        uptime_seconds: { type: integer, minimum: 0 }
+        components: { type: object, additionalProperties: { type: string } }

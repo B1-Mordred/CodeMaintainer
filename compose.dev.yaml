@@ -1,0 +1,5 @@
+services:
+  controller:
+    environment:
+      MAINTAINER_PROFILE: mock
+      MAINTAINER_LOG_LEVEL: debug

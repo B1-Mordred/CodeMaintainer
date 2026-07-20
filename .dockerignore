@@ -1,0 +1,14 @@
+.git
+.data
+.cache
+bin
+coverage
+execplan
+docs
+test
+web/node_modules
+web/coverage
+internal/ui/dist/assets
+*.db
+*.db-shm
+*.db-wal

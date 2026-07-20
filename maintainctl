@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$repo_root"
+
+case "${1:-}" in
+  bootstrap)
+    shift
+    exec ./scripts/bootstrap.sh "$@"
+    ;;
+  up)
+    shift
+    exec docker compose -f compose.yaml -f compose.dev.yaml up -d --build "$@"
+    ;;
+  down)
+    shift
+    exec docker compose -f compose.yaml -f compose.dev.yaml down "$@"
+    ;;
+  open)
+    shift
+    job_id="${1:-}"
+    target="http://127.0.0.1:8080"
+    if [[ -n "$job_id" ]]; then
+      target="$target/jobs/$job_id"
+    fi
+    if command -v xdg-open >/dev/null 2>&1; then
+      exec xdg-open "$target"
+    fi
+    printf '%s\n' "$target"
+    ;;
+  "")
+    exec docker compose run --rm maintainctl
+    ;;
+  *)
+    exec docker compose run --rm maintainctl "$@"
+    ;;
+esac
