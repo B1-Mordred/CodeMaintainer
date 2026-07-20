@@ -55,6 +55,9 @@ var migration010 string
 //go:embed migrations/011_automation.sql
 var migration011 string
 
+//go:embed migrations/012_job_budgets.sql
+var migration012 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -111,7 +114,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {
@@ -169,11 +172,21 @@ func (s *Store) CreateJob(ctx context.Context, params storage.CreateJobParams) (
 		}
 		params.ID = id
 	}
+	if params.MaxWallSeconds == 0 {
+		params.MaxWallSeconds = 14_400
+	}
+	if params.MaxTokens == 0 {
+		params.MaxTokens = 262_144
+	}
+	if params.MaxWallSeconds < 60 || params.MaxWallSeconds > 604_800 || params.MaxTokens < 1 || params.MaxTokens > 10_000_000 {
+		return jobs.Job{}, storage.ErrInvalid
+	}
 	now := s.now()
 	job := jobs.Job{
 		ID: params.ID, ProjectID: params.ProjectID, Repository: params.Repository,
 		Task: params.Task, IssueNumber: params.IssueNumber, State: jobs.StateQueued,
-		AcceptanceCriteria: json.RawMessage(`[]`), Version: 1,
+		AcceptanceCriteria: json.RawMessage(`[]`), Version: 1, MaxWallSeconds: params.MaxWallSeconds,
+		DeadlineAt: now.Add(time.Duration(params.MaxWallSeconds) * time.Second), MaxTokens: params.MaxTokens,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -183,10 +196,10 @@ func (s *Store) CreateJob(ctx context.Context, params storage.CreateJobParams) (
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO jobs(id, project_id, repository, task, issue_number, state,
-			acceptance_criteria, version, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			acceptance_criteria, version, max_wall_seconds, deadline_at, max_tokens, reserved_tokens, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		job.ID, job.ProjectID, job.Repository, job.Task, job.IssueNumber,
-		job.State, string(job.AcceptanceCriteria), job.Version,
+		job.State, string(job.AcceptanceCriteria), job.Version, job.MaxWallSeconds, job.DeadlineAt.Format(timestampFormat), job.MaxTokens,
 		now.Format(timestampFormat), now.Format(timestampFormat))
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -227,18 +240,18 @@ func (s *Store) GetJob(ctx context.Context, id string) (jobs.Job, error) {
 
 const jobSelect = `SELECT id, project_id, repository, task, issue_number, state,
 	base_sha, result_sha, acceptance_criteria, acceptance_criteria_hash,
-	review_cycle, version, created_at, updated_at FROM jobs`
+	review_cycle, version, max_wall_seconds, deadline_at, max_tokens, reserved_tokens, created_at, updated_at FROM jobs`
 
 type scanner interface{ Scan(...any) error }
 
 func scanJob(row scanner) (jobs.Job, error) {
 	var job jobs.Job
 	var issue sql.NullInt64
-	var state, criteria, created, updated string
+	var state, criteria, deadline, created, updated string
 	err := row.Scan(
 		&job.ID, &job.ProjectID, &job.Repository, &job.Task, &issue, &state,
 		&job.BaseSHA, &job.ResultSHA, &criteria, &job.AcceptanceCriteriaHash,
-		&job.ReviewCycle, &job.Version, &created, &updated,
+		&job.ReviewCycle, &job.Version, &job.MaxWallSeconds, &deadline, &job.MaxTokens, &job.ReservedTokens, &created, &updated,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return jobs.Job{}, storage.ErrNotFound
@@ -248,6 +261,12 @@ func scanJob(row scanner) (jobs.Job, error) {
 	}
 	job.State = jobs.State(state)
 	job.AcceptanceCriteria = json.RawMessage(criteria)
+	if deadline != "" {
+		job.DeadlineAt, err = time.Parse(timestampFormat, deadline)
+		if err != nil {
+			return jobs.Job{}, fmt.Errorf("parse job deadline_at: %w", err)
+		}
+	}
 	if issue.Valid {
 		job.IssueNumber = &issue.Int64
 	}

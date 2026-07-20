@@ -17,6 +17,10 @@ type Job struct {
 	AcceptanceCriteria     json.RawMessage `json:"acceptance_criteria"`
 	AcceptanceCriteriaHash string          `json:"acceptance_criteria_hash,omitempty"`
 	ReviewCycle            int             `json:"review_cycle"`
+	MaxWallSeconds         int             `json:"max_wall_seconds"`
+	DeadlineAt             time.Time       `json:"deadline_at"`
+	MaxTokens              int             `json:"max_tokens"`
+	ReservedTokens         int             `json:"reserved_tokens"`
 	Version                int64           `json:"version"`
 	CreatedAt              time.Time       `json:"created_at"`
 	UpdatedAt              time.Time       `json:"updated_at"`

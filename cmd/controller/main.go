@@ -73,6 +73,11 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	worker := queue.NewWorker(store, queue.ProcessorFunc(func(processContext context.Context, job jobs.Job) error {
+		cancel := func() {}
+		if !job.DeadlineAt.IsZero() {
+			processContext, cancel = context.WithDeadline(processContext, job.DeadlineAt)
+		}
+		defer cancel()
 		_, stepErr := engine.Step(processContext, job.ID)
 		return stepErr
 	}), "controller-workflow", 30*time.Second, 250*time.Millisecond, logger.With("component", "workflow"))

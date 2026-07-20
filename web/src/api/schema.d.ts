@@ -1090,6 +1090,11 @@ export interface components {
             acceptance_criteria: Record<string, never>[];
             acceptance_criteria_hash?: string;
             review_cycle: number;
+            max_wall_seconds: number;
+            /** Format: date-time */
+            deadline_at: string;
+            max_tokens: number;
+            reserved_tokens: number;
             version: number;
             /** Format: date-time */
             created_at: string;

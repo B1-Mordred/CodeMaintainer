@@ -681,6 +681,8 @@ func (s *Server) storageError(w http.ResponseWriter, r *http.Request, err error)
 		writeError(w, http.StatusConflict, "conflict", "resource changed; refresh and retry")
 	case errors.Is(err, storage.ErrInvalid), errors.Is(err, memory.ErrInvalid), errors.Is(err, memory.ErrScope), errors.Is(err, automation.ErrInvalid):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_transition", err.Error())
+	case errors.Is(err, storage.ErrBudgetExceeded):
+		writeError(w, http.StatusUnprocessableEntity, "budget_exceeded", "the job token or wall-time budget is exhausted")
 	default:
 		s.internalError(w, r, err)
 	}

@@ -37,7 +37,8 @@ func TestSchedulesDispatchAtomicallyIntoTheSerialJobQueue(t *testing.T) {
 		t.Fatalf("dispatch = %+v, %v", run, err)
 	}
 	job, err := store.GetJob(ctx, run.JobID)
-	if err != nil || job.ProjectID != "owner-repo" || job.Repository != "owner/repo" || job.State != "queued" {
+	if err != nil || job.ProjectID != "owner-repo" || job.Repository != "owner/repo" || job.State != "queued" ||
+		job.MaxWallSeconds != 1800 || job.MaxTokens != 20000 || !job.DeadlineAt.Equal(clock.Add(30*time.Minute)) {
 		t.Fatalf("scheduled job = %+v, %v", job, err)
 	}
 	updated, err := store.GetSchedule(ctx, schedule.ID)

@@ -126,6 +126,35 @@ func TestPhaseFailurePersistsFailedState(t *testing.T) {
 	}
 }
 
+func TestModelPhaseCannotExceedDurableTokenBudget(t *testing.T) {
+	ctx := context.Background()
+	store, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ProjectID: "p", Repository: "o/r", Task: "task", ActorID: "test", MaxTokens: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []jobs.State{
+		jobs.StateSyncing, jobs.StateCreatingWorktree, jobs.StatePreparingDependencies,
+		jobs.StateLockingAcceptanceCriteria, jobs.StateLoadingImplementationModel,
+		jobs.StateReproducing, jobs.StateImplementing,
+	} {
+		job, err = store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{To: state, ActorID: "test", Reason: "seed", ExpectedVersion: job.Version})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	failed, err := New(store, FakeExecutor{}).Step(ctx, job.ID)
+	if !errors.Is(err, storage.ErrBudgetExceeded) || failed.State != jobs.StateFailed {
+		t.Fatalf("budget result = %+v, %v", failed, err)
+	}
+}
+
 func TestRepairOutcomeCannotBypassTransitionPolicy(t *testing.T) {
 	if _, err := nextState(jobs.StateQueued, Outcome{NeedsRepair: true}); err == nil {
 		t.Fatal("queued job was allowed to request repair")

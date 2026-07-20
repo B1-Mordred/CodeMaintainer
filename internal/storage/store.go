@@ -24,16 +24,19 @@ var (
 	ErrIdempotencyKey   = errors.New("idempotency key reused with different input")
 	ErrNoLeaseAvailable = errors.New("no resumable job lease is available")
 	ErrLeaseLost        = errors.New("job lease is expired or owned by another worker")
+	ErrBudgetExceeded   = errors.New("job budget exceeded")
 )
 
 type CreateJobParams struct {
-	ID          string
-	ProjectID   string
-	Repository  string
-	Task        string
-	IssueNumber *int64
-	ActorID     string
-	Details     json.RawMessage
+	ID             string
+	ProjectID      string
+	Repository     string
+	Task           string
+	IssueNumber    *int64
+	ActorID        string
+	Details        json.RawMessage
+	MaxWallSeconds int
+	MaxTokens      int
 }
 
 type JobStore interface {
@@ -74,6 +77,7 @@ type PhaseRecord struct {
 
 type WorkflowStore interface {
 	JobStore
+	ReserveJobTokens(context.Context, string, int64, jobs.State, int) (jobs.Job, error)
 	CompletePhase(context.Context, PhaseCompletion) (jobs.Job, error)
 	ListPhaseRecords(context.Context, string, int) ([]PhaseRecord, error)
 }

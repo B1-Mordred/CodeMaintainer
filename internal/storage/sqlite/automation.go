@@ -191,8 +191,10 @@ func (s *Store) DispatchDueSchedule(ctx context.Context, actor string) (automati
 		}
 		run.JobID, run.Status, run.Reason = jobID, "enqueued", "scheduled task entered the serial controller queue"
 		_, err = tx.ExecContext(ctx, `INSERT INTO jobs(id, project_id, repository, task, state, acceptance_criteria,
-			version, created_at, updated_at) VALUES(?, ?, ?, ?, ?, '[]', 1, ?, ?)`, jobID, project.ID,
-			project.Repository, schedule.Task, jobs.StateQueued, formatTime(now), formatTime(now))
+			version, max_wall_seconds, deadline_at, max_tokens, reserved_tokens, created_at, updated_at)
+			VALUES(?, ?, ?, ?, ?, '[]', 1, ?, ?, ?, 0, ?, ?)`, jobID, project.ID,
+			project.Repository, schedule.Task, jobs.StateQueued, schedule.MaxWallSeconds,
+			formatTime(now.Add(time.Duration(schedule.MaxWallSeconds)*time.Second)), schedule.MaxTokens, formatTime(now), formatTime(now))
 		if err == nil {
 			details, _ := json.Marshal(map[string]any{"source": "schedule", "schedule_id": schedule.ID, "task_type": schedule.TaskType, "max_wall_seconds": schedule.MaxWallSeconds, "max_tokens": schedule.MaxTokens})
 			_, err = tx.ExecContext(ctx, `INSERT INTO job_transitions(job_id, from_state, to_state, actor_id, reason, details, created_at)

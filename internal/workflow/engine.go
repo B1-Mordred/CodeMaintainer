@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -37,19 +38,19 @@ func (e *Engine) Step(ctx context.Context, jobID string) (jobs.Job, error) {
 	if !job.State.Resumable() {
 		return job, fmt.Errorf("state %s is not automatically resumable", job.State)
 	}
+	if !job.DeadlineAt.IsZero() && !time.Now().UTC().Before(job.DeadlineAt) {
+		return e.fail(ctx, job, storage.ErrBudgetExceeded, "job wall-time budget expired")
+	}
+	if tokens := phaseTokenReservation(job.State); tokens != 0 {
+		reserved, reserveErr := e.store.ReserveJobTokens(ctx, job.ID, job.Version, job.State, tokens)
+		if reserveErr != nil {
+			return e.fail(ctx, job, reserveErr, "job token budget exhausted")
+		}
+		job = reserved
+	}
 	outcome, err := e.executor.Execute(ctx, job)
 	if err != nil {
-		if jobs.CanTransition(job.State, jobs.StateFailed) {
-			details, _ := json.Marshal(map[string]string{"error": err.Error()})
-			failed, transitionErr := e.store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{
-				To: jobs.StateFailed, ActorID: "workflow-engine", Reason: "phase failed",
-				ExpectedVersion: job.Version, Details: details,
-			})
-			if transitionErr == nil {
-				return failed, err
-			}
-		}
-		return jobs.Job{}, err
+		return e.fail(ctx, job, err, "phase failed")
 	}
 	next, err := nextState(job.State, outcome)
 	if err != nil {
@@ -64,6 +65,36 @@ func (e *Engine) Step(ctx context.Context, jobID string) (jobs.Job, error) {
 		To: next, ActorID: "workflow-engine", Reason: "phase completed",
 		Details: outcome.Details, Outcome: recorded, Metadata: outcome.Metadata,
 	})
+}
+
+func (e *Engine) fail(ctx context.Context, job jobs.Job, cause error, reason string) (jobs.Job, error) {
+	if !jobs.CanTransition(job.State, jobs.StateFailed) {
+		return jobs.Job{}, cause
+	}
+	transitionContext := ctx
+	cancel := func() {}
+	if ctx.Err() != nil {
+		transitionContext, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	}
+	defer cancel()
+	details, _ := json.Marshal(map[string]string{"error": cause.Error()})
+	failed, transitionErr := e.store.TransitionJob(transitionContext, job.ID, jobs.TransitionRequest{
+		To: jobs.StateFailed, ActorID: "workflow-engine", Reason: reason,
+		ExpectedVersion: job.Version, Details: details,
+	})
+	if transitionErr == nil {
+		return failed, cause
+	}
+	return jobs.Job{}, cause
+}
+
+func phaseTokenReservation(state jobs.State) int {
+	switch state {
+	case jobs.StateImplementing, jobs.StateQCReview, jobs.StateRepairing:
+		return 16_384
+	default:
+		return 0
+	}
 }
 
 func (e *Engine) Resume(ctx context.Context, limit int) ([]jobs.Job, error) {

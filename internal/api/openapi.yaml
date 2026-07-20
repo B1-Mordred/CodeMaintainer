@@ -1159,7 +1159,7 @@ components:
         issue_number: { type: integer, minimum: 1 }
     Job:
       type: object
-      required: [id, project_id, repository, task, state, acceptance_criteria, review_cycle, version, created_at, updated_at]
+      required: [id, project_id, repository, task, state, acceptance_criteria, review_cycle, max_wall_seconds, deadline_at, max_tokens, reserved_tokens, version, created_at, updated_at]
       properties:
         id: { type: string }
         project_id: { type: string }
@@ -1172,6 +1172,10 @@ components:
         acceptance_criteria: { type: array, items: { type: object } }
         acceptance_criteria_hash: { type: string }
         review_cycle: { type: integer, minimum: 0 }
+        max_wall_seconds: { type: integer, minimum: 60, maximum: 604800 }
+        deadline_at: { type: string, format: date-time }
+        max_tokens: { type: integer, minimum: 1, maximum: 10000000 }
+        reserved_tokens: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
