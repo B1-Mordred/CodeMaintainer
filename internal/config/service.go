@@ -65,6 +65,29 @@ func (service *RegistryService) Scope(ctx context.Context, scope ScopeRef) (Scop
 	return service.repository.GetConfigScope(ctx, scope)
 }
 
+func (service *RegistryService) Draft(ctx context.Context, id string) (Draft, error) {
+	return service.repository.GetConfigDraft(ctx, id)
+}
+
+func (service *RegistryService) Drafts(ctx context.Context, scope ScopeRef, limit int) ([]Draft, error) {
+	return service.repository.ListConfigDrafts(ctx, scope, limit)
+}
+
+func (service *RegistryService) Checks(ctx context.Context, draftID string, limit int) ([]CheckResult, error) {
+	return service.repository.ListConfigChecks(ctx, draftID, limit)
+}
+
+func (service *RegistryService) Revisions(ctx context.Context, scope ScopeRef, limit int) ([]RegistryRevision, error) {
+	return service.repository.ListConfigRegistryRevisions(ctx, scope, limit)
+}
+
+func (service *RegistryService) DiscardDraft(ctx context.Context, request TransitionDraftRequest) (Draft, error) {
+	if request.Target != DraftDiscarded {
+		return Draft{}, errors.New("discard operation requires discarded target")
+	}
+	return service.repository.TransitionConfigDraft(ctx, request)
+}
+
 func (service *RegistryService) EnsureSystemScope(ctx context.Context, active System, sourceRevision string) (ScopeState, error) {
 	scope := ScopeRef{Kind: ScopeSystem}
 	state, err := service.repository.GetConfigScope(ctx, scope)

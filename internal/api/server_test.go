@@ -41,11 +41,25 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 	}
 	document := appconfig.Default(".data")
 	after, _ := json.Marshal(document)
-	_, err = store.CreateConfigRevision(context.Background(), appconfig.Revision{
+	configRevision, err := store.CreateConfigRevision(context.Background(), appconfig.Revision{
 		ActorID: "system", SchemaVersion: 1, Before: json.RawMessage(`{}`), After: after,
 		Diff: json.RawMessage(`[]`), ValidationResult: json.RawMessage(`{"valid":true}`),
 	})
 	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	registry, err := appconfig.BuiltInRegistry(document)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	configRegistry, err := appconfig.NewRegistryService(store, registry)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if _, err := configRegistry.EnsureSystemScope(context.Background(), document, configRevision.ID); err != nil {
 		store.Close()
 		t.Fatal(err)
 	}
@@ -62,7 +76,7 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		store.Close()
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore)))
+	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry)))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { store.Close() })
 	return server, store, artifactStore
@@ -83,6 +97,143 @@ func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
 		if response.Header.Get("X-Frame-Options") != "DENY" || response.Header.Get("Content-Security-Policy") == "" {
 			t.Fatalf("GET %s missing security headers", path)
 		}
+	}
+}
+
+func TestConfigurationRegistryAPIUsesTypedDraftsETagsAndRollback(t *testing.T) {
+	server, store := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/config/descriptors?advanced=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var descriptors struct {
+		SchemaVersion int                    `json:"schema_version"`
+		Items         []appconfig.Descriptor `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&descriptors); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || descriptors.SchemaVersion != 1 || len(descriptors.Items) != 13 {
+		t.Fatalf("descriptors returned %d: %#v", response.StatusCode, descriptors)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/config/values?scope_kind=system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scope appconfig.ScopeState
+	if err := json.NewDecoder(response.Body).Decode(&scope); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"config-scope-1"` || len(scope.Values) != 10 {
+		t.Fatalf("system scope returned %d %q: %#v", response.StatusCode, response.Header.Get("ETag"), scope)
+	}
+
+	draftPayload := `{"scope":{"kind":"system"},"reason":"increase review depth","entries":[{"key":"workflow.max_review_cycles","value":4,"configured":true,"secret":false,"reset":false}]}`
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/config/drafts", strings.NewReader(draftPayload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusPreconditionRequired {
+		t.Fatalf("draft without If-Match returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/config/drafts", strings.NewReader(draftPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", `"config-scope-1"`)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Draft      appconfig.Draft            `json:"draft"`
+		Validation appconfig.ValidationReport `json:"validation"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || response.Header.Get("ETag") != `"config-draft-1"` || !created.Validation.Valid {
+		t.Fatalf("create draft returned %d %q: %#v", response.StatusCode, response.Header.Get("ETag"), created)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/config/drafts/"+created.Draft.ID+"/actions/dry-run", nil)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checks struct {
+		Items []appconfig.CheckResult `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&checks); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(checks.Items) != 2 || checks.Items[0].DraftVersion != 1 {
+		t.Fatalf("dry run returned %d: %#v", response.StatusCode, checks)
+	}
+
+	action := func(path, etag, reason string) (*http.Response, []byte) {
+		t.Helper()
+		request, _ := http.NewRequest(http.MethodPost, server.URL+path, strings.NewReader(`{"reason":"`+reason+`"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("If-Match", etag)
+		result, actionErr := http.DefaultClient.Do(request)
+		if actionErr != nil {
+			t.Fatal(actionErr)
+		}
+		payload, _ := io.ReadAll(result.Body)
+		result.Body.Close()
+		return result, payload
+	}
+	response, payload := action("/api/v1/config/drafts/"+created.Draft.ID+"/actions/review", `"config-draft-1"`, "review exact draft")
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"config-draft-2"` {
+		t.Fatalf("review returned %d %q: %s", response.StatusCode, response.Header.Get("ETag"), payload)
+	}
+	response, payload = action("/api/v1/config/drafts/"+created.Draft.ID+"/actions/apply", `"config-draft-1"`, "stale apply")
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("stale apply returned %d: %s", response.StatusCode, payload)
+	}
+	response, payload = action("/api/v1/config/drafts/"+created.Draft.ID+"/actions/apply", `"config-draft-2"`, "apply exact draft")
+	if response.StatusCode != http.StatusCreated || response.Header.Get("ETag") != `"config-scope-2"` {
+		t.Fatalf("apply returned %d %q: %s", response.StatusCode, response.Header.Get("ETag"), payload)
+	}
+	current, err := store.CurrentConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var system appconfig.System
+	if err := json.Unmarshal(current.After, &system); err != nil || system.Workflow.MaxReviewCycles != 4 {
+		t.Fatalf("Increment 1 projection = %#v %v", system, err)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/config/registry-revisions?scope_kind=system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revisions struct {
+		Items []appconfig.RegistryRevision `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&revisions); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(revisions.Items) != 2 || revisions.Items[0].Operation != "apply" || revisions.Items[1].Operation != "import" {
+		t.Fatalf("registry revisions = %#v", revisions.Items)
+	}
+	response, payload = action("/api/v1/config/registry-revisions/"+revisions.Items[1].ID+"/actions/rollback", `"config-scope-2"`, "restore imported values")
+	if response.StatusCode != http.StatusCreated || response.Header.Get("ETag") != `"config-scope-3"` {
+		t.Fatalf("rollback returned %d %q: %s", response.StatusCode, response.Header.Get("ETag"), payload)
+	}
+	current, _ = store.CurrentConfig(context.Background())
+	_ = json.Unmarshal(current.After, &system)
+	if system.Workflow.MaxReviewCycles != 2 {
+		t.Fatalf("rollback did not restore Increment 1 effective behavior: %#v", system.Workflow)
 	}
 }
 

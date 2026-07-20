@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -218,9 +219,75 @@ func (c client) model(arguments []string) error {
 
 func (c client) config(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: maintainctl config <export|validate|apply|rollback>")
+		return errors.New("usage: maintainctl config <descriptors|values|effective|draft|history|registry-rollback|export|validate|apply|rollback>")
 	}
 	switch arguments[0] {
+	case "descriptors":
+		flags := flag.NewFlagSet("config descriptors", flag.ContinueOnError)
+		search := flags.String("search", "", "search keys, labels, help, and groups")
+		basic := flags.Bool("basic", false, "hide bootstrap and advanced descriptors")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 {
+			return errors.New("usage: maintainctl config descriptors [--search text] [--basic]")
+		}
+		query := url.Values{}
+		if *search != "" {
+			query.Set("q", *search)
+		}
+		query.Set("advanced", strconv.FormatBool(!*basic))
+		return c.printJSON(http.MethodGet, "/api/v1/config/descriptors?"+query.Encode(), nil)
+	case "values":
+		flags := flag.NewFlagSet("config values", flag.ContinueOnError)
+		scope := flags.String("scope", "", "scope as system or kind:id")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 || *scope == "" {
+			return errors.New("usage: maintainctl config values --scope <system|kind:id>")
+		}
+		query, err := configScopeQuery(*scope)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/config/values?"+query.Encode(), nil)
+	case "effective":
+		flags := flag.NewFlagSet("config effective", flag.ContinueOnError)
+		var scopes repeatedFlag
+		flags.Var(&scopes, "scope", "scope as system or kind:id; repeat in precedence order")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 {
+			return errors.New("usage: maintainctl config effective [--scope <system|kind:id>]...")
+		}
+		bodyScopes := make([]map[string]string, 0, len(scopes))
+		for _, value := range scopes {
+			kind, id, err := parseConfigScope(value)
+			if err != nil {
+				return err
+			}
+			scope := map[string]string{"kind": kind}
+			if id != "" {
+				scope["id"] = id
+			}
+			bodyScopes = append(bodyScopes, scope)
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/config/effective", map[string]any{"scopes": bodyScopes})
+	case "draft":
+		return c.configDraft(arguments[1:])
+	case "history":
+		flags := flag.NewFlagSet("config history", flag.ContinueOnError)
+		scope := flags.String("scope", "", "scope as system or kind:id")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 || *scope == "" {
+			return errors.New("usage: maintainctl config history --scope <system|kind:id>")
+		}
+		query, err := configScopeQuery(*scope)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/config/registry-revisions?"+query.Encode(), nil)
+	case "registry-rollback":
+		flags := flag.NewFlagSet("config registry-rollback", flag.ContinueOnError)
+		version := flags.Int64("scope-version", -1, "current scope version from the ETag")
+		reason := flags.String("reason", "", "audited rollback reason")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 1 || *version < 0 || *reason == "" {
+			return errors.New("usage: maintainctl config registry-rollback --scope-version <n> --reason <text> <revision-id>")
+		}
+		path := "/api/v1/config/registry-revisions/" + url.PathEscape(flags.Arg(0)) + "/actions/rollback"
+		return c.printJSONWithHeaders(http.MethodPost, path, map[string]any{"reason": *reason}, map[string]string{"If-Match": configCLIETag("scope", *version)})
 	case "export":
 		if len(arguments) != 1 {
 			return errors.New("usage: maintainctl config export")
@@ -267,6 +334,134 @@ func (c client) config(arguments []string) error {
 	default:
 		return fmt.Errorf("unknown config command %q", arguments[0])
 	}
+}
+
+func (c client) configDraft(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl config draft <list|create|get|update|checks|validate|dry-run|review|apply|discard>")
+	}
+	switch arguments[0] {
+	case "list":
+		flags := flag.NewFlagSet("config draft list", flag.ContinueOnError)
+		scope := flags.String("scope", "", "scope as system or kind:id")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 || *scope == "" {
+			return errors.New("usage: maintainctl config draft list --scope <system|kind:id>")
+		}
+		query, err := configScopeQuery(*scope)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/config/drafts?"+query.Encode(), nil)
+	case "get", "checks":
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: maintainctl config draft %s <draft-id>", arguments[0])
+		}
+		path := "/api/v1/config/drafts/" + url.PathEscape(arguments[1])
+		if arguments[0] == "checks" {
+			path += "/checks"
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	case "create":
+		flags := flag.NewFlagSet("config draft create", flag.ContinueOnError)
+		scope := flags.String("scope", "", "scope as system or kind:id")
+		version := flags.Int64("scope-version", -1, "current scope version from the ETag")
+		reason := flags.String("reason", "", "audited draft reason")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 1 || *scope == "" || *version < 0 || *reason == "" {
+			return errors.New("usage: maintainctl config draft create --scope <system|kind:id> --scope-version <n> --reason <text> <entries-file|->")
+		}
+		kind, id, err := parseConfigScope(*scope)
+		if err != nil {
+			return err
+		}
+		entries, err := readJSONDocument(flags.Arg(0))
+		if err != nil {
+			return err
+		}
+		var entryList []any
+		if err := json.Unmarshal(entries, &entryList); err != nil {
+			return errors.New("configuration draft entries must be a JSON array")
+		}
+		bodyScope := map[string]string{"kind": kind}
+		if id != "" {
+			bodyScope["id"] = id
+		}
+		body := map[string]any{"scope": bodyScope, "reason": *reason, "entries": entryList}
+		return c.printJSONWithHeaders(http.MethodPost, "/api/v1/config/drafts", body, map[string]string{"If-Match": configCLIETag("scope", *version)})
+	case "update":
+		flags := flag.NewFlagSet("config draft update", flag.ContinueOnError)
+		version := flags.Int64("version", 0, "current draft version from the ETag")
+		reason := flags.String("reason", "", "audited draft reason")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 2 || *version < 1 || *reason == "" {
+			return errors.New("usage: maintainctl config draft update --version <n> --reason <text> <draft-id> <entries-file|->")
+		}
+		entries, err := readJSONDocument(flags.Arg(1))
+		if err != nil {
+			return err
+		}
+		var entryList []any
+		if err := json.Unmarshal(entries, &entryList); err != nil {
+			return errors.New("configuration draft entries must be a JSON array")
+		}
+		path := "/api/v1/config/drafts/" + url.PathEscape(flags.Arg(0))
+		return c.printJSONWithHeaders(http.MethodPut, path, map[string]any{"reason": *reason, "entries": entryList}, map[string]string{"If-Match": configCLIETag("draft", *version)})
+	case "validate", "dry-run":
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: maintainctl config draft %s <draft-id>", arguments[0])
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/config/drafts/"+url.PathEscape(arguments[1])+"/actions/"+arguments[0], map[string]any{})
+	case "review", "apply", "discard":
+		flags := flag.NewFlagSet("config draft "+arguments[0], flag.ContinueOnError)
+		version := flags.Int64("version", 0, "current draft version from the ETag")
+		reason := flags.String("reason", "", "audited action reason")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 1 || *version < 1 || *reason == "" {
+			return fmt.Errorf("usage: maintainctl config draft %s --version <n> --reason <text> <draft-id>", arguments[0])
+		}
+		path := "/api/v1/config/drafts/" + url.PathEscape(flags.Arg(0)) + "/actions/" + arguments[0]
+		return c.printJSONWithHeaders(http.MethodPost, path, map[string]any{"reason": *reason}, map[string]string{"If-Match": configCLIETag("draft", *version)})
+	default:
+		return fmt.Errorf("unknown config draft command %q", arguments[0])
+	}
+}
+
+type repeatedFlag []string
+
+func (values *repeatedFlag) String() string { return strings.Join(*values, ",") }
+func (values *repeatedFlag) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+func parseConfigScope(value string) (string, string, error) {
+	kind, id, hasID := strings.Cut(strings.TrimSpace(value), ":")
+	switch kind {
+	case "system":
+		if hasID || id != "" {
+			return "", "", errors.New("system scope must not have an id")
+		}
+	case "capability_pack", "project", "environment", "job_template", "job_override":
+		if !hasID || strings.TrimSpace(id) == "" || len(id) > 256 {
+			return "", "", fmt.Errorf("scope %s requires a bounded id", kind)
+		}
+	default:
+		return "", "", fmt.Errorf("unsupported configuration scope %q", kind)
+	}
+	return kind, id, nil
+}
+
+func configScopeQuery(value string) (url.Values, error) {
+	kind, id, err := parseConfigScope(value)
+	if err != nil {
+		return nil, err
+	}
+	query := url.Values{"scope_kind": []string{kind}}
+	if id != "" {
+		query.Set("scope_id", id)
+	}
+	return query, nil
+}
+
+func configCLIETag(kind string, version int64) string {
+	return fmt.Sprintf(`"config-%s-%d"`, kind, version)
 }
 
 func readJSONDocument(path string) (json.RawMessage, error) {
@@ -338,7 +533,11 @@ func (c client) runJob(arguments []string) error {
 }
 
 func (c client) printJSON(method, path string, body any) error {
-	response, err := c.request(method, path, body)
+	return c.printJSONWithHeaders(method, path, body, nil)
+}
+
+func (c client) printJSONWithHeaders(method, path string, body any, headers map[string]string) error {
+	response, err := c.requestWithHeaders(method, path, body, headers)
 	if err != nil {
 		return err
 	}
@@ -360,6 +559,10 @@ func (c client) printJSON(method, path string, body any) error {
 }
 
 func (c client) request(method, path string, body any) (*http.Response, error) {
+	return c.requestWithHeaders(method, path, body, nil)
+}
+
+func (c client) requestWithHeaders(method, path string, body any, headers map[string]string) (*http.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -373,6 +576,9 @@ func (c client) request(method, path string, body any) (*http.Response, error) {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
 	if c.session.Token != "" {
 		request.AddCookie(&http.Cookie{Name: "maintainer_session", Value: c.session.Token})
 	}
@@ -441,6 +647,17 @@ Commands:
   config validate [file|-]
   config apply --reason <text> <file|->
   config rollback --reason <text> <revision-id>
+  config descriptors [--search text] [--basic]
+  config values --scope <system|kind:id>
+  config effective [--scope <system|kind:id>]...
+  config draft list --scope <system|kind:id>
+  config draft create --scope <scope> --scope-version <n> --reason <text> <entries-file|->
+  config draft get <draft-id>
+  config draft update --version <n> --reason <text> <draft-id> <entries-file|->
+  config draft checks|validate|dry-run <draft-id>
+  config draft review|apply|discard --version <n> --reason <text> <draft-id>
+  config history --scope <system|kind:id>
+  config registry-rollback --scope-version <n> --reason <text> <revision-id>
   model list
   model benchmark <profile>
   version`)

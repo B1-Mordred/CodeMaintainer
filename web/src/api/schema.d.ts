@@ -1237,6 +1237,245 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/descriptors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search trusted typed configuration descriptors and UI metadata */
+        get: operations["listConfigDescriptors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read configured values and optimistic version at one mutable scope */
+        get: operations["getConfigScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/effective": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve typed effective values and provenance across selected scopes */
+        post: operations["resolveEffectiveConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List versioned configuration drafts at one scope */
+        get: operations["listConfigDrafts"];
+        put?: never;
+        /** Save a typed configuration draft against an exact scope version */
+        post: operations["createConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        /** Read one redacted configuration draft */
+        get: operations["getConfigDraft"];
+        /** Replace an open draft using optimistic concurrency */
+        put: operations["updateConfigDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        /** List append-only validation, dry-run, and prerequisite evidence */
+        get: operations["listConfigDraftChecks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/actions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate the exact current draft without applying it */
+        post: operations["validateConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/actions/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run registered validation and side-effect-free prerequisite checks */
+        post: operations["dryRunConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/actions/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bind review approval to the exact validated draft version */
+        post: operations["reviewConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/actions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Atomically apply the exact reviewed draft */
+        post: operations["applyConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/drafts/{draftID}/actions/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard an open or reviewed draft without changing effective values */
+        post: operations["discardConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/registry-revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List immutable scoped configuration revision history */
+        get: operations["listConfigRegistryRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/registry-revisions/{revisionID}/actions/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revisionID: components["parameters"]["ConfigRegistryRevisionID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a new scoped revision restoring an exact historical state */
+        post: operations["rollbackConfigRegistryRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit": {
         parameters: {
             query?: never;
@@ -1749,6 +1988,200 @@ export interface components {
             duration: number;
             healthy: boolean;
         };
+        /** @enum {string} */
+        ConfigScopeKind: "built_in" | "system" | "capability_pack" | "project" | "environment" | "job_template" | "job_override";
+        ConfigScopeRef: {
+            kind: components["schemas"]["ConfigScopeKind"];
+            id?: string;
+        };
+        ConfigUIMetadata: {
+            label: string;
+            help: string;
+            group: string;
+            order: number;
+            /** @enum {string} */
+            widget: "checkbox" | "number" | "string_list" | "path_pattern_list" | "text";
+            units?: string;
+            examples?: string[];
+            warnings?: string[];
+            documentation_link: string;
+            advanced: boolean;
+        };
+        ConfigDependency: {
+            key: string;
+            operator: string;
+            value?: unknown;
+            message: string;
+        };
+        ConfigDescriptor: {
+            key: string;
+            namespace: string;
+            schema_version: number;
+            /** @enum {string} */
+            value_kind: "boolean" | "integer" | "string" | "string_array";
+            json_schema: {
+                [key: string]: unknown;
+            };
+            ui: components["schemas"]["ConfigUIMetadata"];
+            permitted_scopes: components["schemas"]["ConfigScopeKind"][];
+            default: unknown;
+            recommended?: unknown;
+            secret: boolean;
+            required_permission: string;
+            /** @enum {string} */
+            apply: "live" | "new_jobs" | "service_reload" | "operator_restart";
+            dependencies?: components["schemas"]["ConfigDependency"][];
+            incompatibilities?: components["schemas"]["ConfigDependency"][];
+            prerequisites?: string[];
+            dry_run_handler?: string;
+            exportable: boolean;
+            importable: boolean;
+            migration: string;
+            audit_redaction: string;
+            bootstrap_controlled: boolean;
+        };
+        ConfigStoredValue: {
+            key: string;
+            scope: components["schemas"]["ConfigScopeRef"];
+            value?: unknown;
+            configured: boolean;
+            secret: boolean;
+            version: number;
+            revision_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ConfigScopeState: {
+            scope: components["schemas"]["ConfigScopeRef"];
+            version: number;
+            revision_id: string;
+            values: components["schemas"]["ConfigStoredValue"][];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ConfigDraftEntry: {
+            key: string;
+            value?: unknown;
+            reset: boolean;
+            secret: boolean;
+            configured: boolean;
+        };
+        ConfigDraft: {
+            id: string;
+            scope: components["schemas"]["ConfigScopeRef"];
+            /** @enum {string} */
+            state: "draft" | "reviewed" | "applied" | "discarded";
+            base_scope_version: number;
+            version: number;
+            author_id: string;
+            reviewer_id?: string;
+            reason?: string;
+            applied_revision_id?: string;
+            entries: components["schemas"]["ConfigDraftEntry"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ConfigDraftCreateRequest: {
+            scope: components["schemas"]["ConfigScopeRef"];
+            reason: string;
+            entries: components["schemas"]["ConfigDraftEntry"][];
+        };
+        ConfigDraftUpdateRequest: {
+            reason: string;
+            entries: components["schemas"]["ConfigDraftEntry"][];
+        };
+        ConfigReasonRequest: {
+            reason: string;
+        };
+        ConfigValidationIssue: {
+            key?: string;
+            code: string;
+            message: string;
+            /** @enum {string} */
+            severity: "error" | "warning";
+        };
+        ConfigValidationReport: {
+            valid: boolean;
+            issues: components["schemas"]["ConfigValidationIssue"][];
+            apply_modes: ("live" | "new_jobs" | "service_reload" | "operator_restart")[];
+            requires_reauthentication: boolean;
+        };
+        ConfigDraftResult: {
+            draft: components["schemas"]["ConfigDraft"];
+            validation: components["schemas"]["ConfigValidationReport"];
+        };
+        ConfigCheckResult: {
+            id: string;
+            sequence: number;
+            draft_id: string;
+            draft_version: number;
+            /** @enum {string} */
+            kind: "validation" | "dry_run" | "prerequisite";
+            handler: string;
+            /** @enum {string} */
+            status: "passed" | "failed" | "unavailable";
+            result: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        ConfigRevisionEntry: {
+            key: string;
+            before_value?: unknown;
+            after_value?: unknown;
+            before_configured: boolean;
+            after_configured: boolean;
+            secret: boolean;
+        };
+        ConfigRegistryRevision: {
+            id: string;
+            sequence: number;
+            scope: components["schemas"]["ConfigScopeRef"];
+            scope_version: number;
+            actor_id: string;
+            actor_role: string;
+            /** @enum {string} */
+            operation: "apply" | "rollback" | "import" | "reset";
+            reason: string;
+            rollback_of?: string;
+            draft_id?: string;
+            entries: components["schemas"]["ConfigRevisionEntry"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        ConfigContribution: {
+            scope: components["schemas"]["ConfigScopeRef"];
+            value?: unknown;
+            configured: boolean;
+            source_revision: string;
+            version: number;
+            effective: boolean;
+            higher_priority_override: boolean;
+        };
+        ConfigEffectiveValue: {
+            key: string;
+            value?: unknown;
+            configured: boolean;
+            source_scope: components["schemas"]["ConfigScopeRef"];
+            source_revision: string;
+            contributions: components["schemas"]["ConfigContribution"][];
+            /** @enum {string} */
+            apply: "live" | "new_jobs" | "service_reload" | "operator_restart";
+            secret: boolean;
+        };
+        EffectiveConfiguration: {
+            /** @constant */
+            schema_version: 1;
+            scopes: components["schemas"]["ConfigScopeRef"][];
+            values: {
+                [key: string]: components["schemas"]["ConfigEffectiveValue"];
+            };
+        };
         SystemConfig: {
             /** @constant */
             schema_version: 1;
@@ -1828,6 +2261,11 @@ export interface components {
         ProjectID: string;
         MemoryID: string;
         CSRFToken: string;
+        IfMatch: string;
+        ConfigScopeKind: components["schemas"]["ConfigScopeKind"];
+        ConfigScopeID: string;
+        ConfigDraftID: string;
+        ConfigRegistryRevisionID: string;
     };
     requestBodies: never;
     headers: never;
@@ -3889,6 +4327,451 @@ export interface operations {
             404: components["responses"]["ErrorResponse"];
             409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listConfigDescriptors: {
+        parameters: {
+            query?: {
+                q?: string;
+                advanced?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stable controller-owned descriptor inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        schema_version: 1;
+                        items: components["schemas"]["ConfigDescriptor"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            default: components["responses"]["ErrorResponse"];
+        };
+    };
+    getConfigScope: {
+        parameters: {
+            query: {
+                scope_kind: components["parameters"]["ConfigScopeKind"];
+                scope_id?: components["parameters"]["ConfigScopeID"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted scope state; ETag identifies its current version */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigScopeState"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            default: components["responses"]["ErrorResponse"];
+        };
+    };
+    resolveEffectiveConfig: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    scopes: components["schemas"]["ConfigScopeRef"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Complete effective configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveConfiguration"];
+                };
+            };
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listConfigDrafts: {
+        parameters: {
+            query: {
+                scope_kind: components["parameters"]["ConfigScopeKind"];
+                scope_id?: components["parameters"]["ConfigScopeID"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration drafts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ConfigDraft"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            default: components["responses"]["ErrorResponse"];
+        };
+    };
+    createConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigDraftCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Validated draft */
+            201: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraftResult"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    getConfigDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration draft */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraft"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigDraftUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated validated draft */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraftResult"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    listConfigDraftChecks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration checks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ConfigCheckResult"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    validateConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation report and append-only check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        validation: components["schemas"]["ConfigValidationReport"];
+                        check: components["schemas"]["ConfigCheckResult"];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    dryRunConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Append-only dry-run results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ConfigCheckResult"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    reviewConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Reviewed draft */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraftResult"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    applyConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Applied revision and new scope state */
+            201: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revision: components["schemas"]["ConfigRegistryRevision"];
+                        scope: components["schemas"]["ConfigScopeState"];
+                        validation: components["schemas"]["ConfigValidationReport"];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    discardConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                draftID: components["parameters"]["ConfigDraftID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Discarded draft */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraft"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    listConfigRegistryRevisions: {
+        parameters: {
+            query: {
+                scope_kind: components["parameters"]["ConfigScopeKind"];
+                scope_id?: components["parameters"]["ConfigScopeID"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped revisions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ConfigRegistryRevision"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            default: components["responses"]["ErrorResponse"];
+        };
+    };
+    rollbackConfigRegistryRevision: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                revisionID: components["parameters"]["ConfigRegistryRevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Rollback revision and resulting scope */
+            201: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revision: components["schemas"]["ConfigRegistryRevision"];
+                        scope: components["schemas"]["ConfigScopeState"];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
         };
     };
     listAuditEvents: {

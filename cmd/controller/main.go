@@ -63,6 +63,25 @@ func run(logger *slog.Logger) error {
 	if err := ensureDefaultConfig(ctx, store, dataRoot, listen, profile); err != nil {
 		return err
 	}
+	activeRevision, err := store.CurrentConfig(ctx)
+	if err != nil {
+		return err
+	}
+	var activeConfig appconfig.System
+	if err := json.Unmarshal(activeRevision.After, &activeConfig); err != nil {
+		return errors.New("decode active configuration for registry initialization")
+	}
+	registry, err := appconfig.BuiltInRegistry(activeConfig)
+	if err != nil {
+		return err
+	}
+	configRegistry, err := appconfig.NewRegistryService(store, registry)
+	if err != nil {
+		return err
+	}
+	if _, err := configRegistry.EnsureSystemScope(ctx, activeConfig, activeRevision.ID); err != nil {
+		return err
+	}
 	artifactStore, err := artifactfiles.New(filepath.Join(dataRoot, "artifacts"), store)
 	if err != nil {
 		return err
@@ -113,7 +132,7 @@ func run(logger *slog.Logger) error {
 		go func() { indexErrors <- synchronizer.Run(ctx) }()
 	}
 
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithVersion(version)}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithVersion(version)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err

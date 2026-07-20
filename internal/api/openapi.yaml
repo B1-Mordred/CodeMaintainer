@@ -1206,6 +1206,185 @@ paths:
         "404": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /config/descriptors:
+    get:
+      summary: Search trusted typed configuration descriptors and UI metadata
+      operationId: listConfigDescriptors
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 256 } }
+        - { name: advanced, in: query, schema: { type: boolean, default: true } }
+      responses:
+        "200":
+          description: Stable controller-owned descriptor inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  items: { type: array, items: { $ref: "#/components/schemas/ConfigDescriptor" } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+  /config/values:
+    get:
+      summary: Read configured values and optimistic version at one mutable scope
+      operationId: getConfigScope
+      parameters:
+        - { $ref: "#/components/parameters/ConfigScopeKind" }
+        - { $ref: "#/components/parameters/ConfigScopeID" }
+      responses:
+        "200":
+          description: Redacted scope state; ETag identifies its current version
+          headers: { ETag: { schema: { type: string } } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ConfigScopeState" } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+  /config/effective:
+    post:
+      summary: Resolve typed effective values and provenance across selected scopes
+      operationId: resolveEffectiveConfig
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [scopes]
+              properties: { scopes: { type: array, maxItems: 6, items: { $ref: "#/components/schemas/ConfigScopeRef" } } }
+      responses:
+        "200": { description: Complete effective configuration, content: { application/json: { schema: { $ref: "#/components/schemas/EffectiveConfiguration" } } } }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts:
+    get:
+      summary: List versioned configuration drafts at one scope
+      operationId: listConfigDrafts
+      parameters:
+        - { $ref: "#/components/parameters/ConfigScopeKind" }
+        - { $ref: "#/components/parameters/ConfigScopeID" }
+      responses:
+        "200": { description: Configuration drafts, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ConfigDraft" } } } } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Save a typed configuration draft against an exact scope version
+      operationId: createConfigDraft
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IfMatch" }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraftCreateRequest" } } } }
+      responses:
+        "201": { description: Validated draft, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraftResult" } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    get:
+      summary: Read one redacted configuration draft
+      operationId: getConfigDraft
+      responses:
+        "200": { description: Configuration draft, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraft" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+    put:
+      summary: Replace an open draft using optimistic concurrency
+      operationId: updateConfigDraft
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+        - { $ref: "#/components/parameters/IfMatch" }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraftUpdateRequest" } } } }
+      responses:
+        "200": { description: Updated validated draft, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraftResult" } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/checks:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    get:
+      summary: List append-only validation, dry-run, and prerequisite evidence
+      operationId: listConfigDraftChecks
+      responses:
+        "200": { description: Configuration checks, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ConfigCheckResult" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/actions/validate:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    post:
+      summary: Validate the exact current draft without applying it
+      operationId: validateConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Validation report and append-only check, content: { application/json: { schema: { type: object, required: [validation, check], properties: { validation: { $ref: "#/components/schemas/ConfigValidationReport" }, check: { $ref: "#/components/schemas/ConfigCheckResult" } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/actions/dry-run:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    post:
+      summary: Run registered validation and side-effect-free prerequisite checks
+      operationId: dryRunConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Append-only dry-run results, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ConfigCheckResult" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/actions/review:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    post:
+      summary: Bind review approval to the exact validated draft version
+      operationId: reviewConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigReasonRequest" } } } }
+      responses:
+        "200": { description: Reviewed draft, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraftResult" } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/actions/apply:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    post:
+      summary: Atomically apply the exact reviewed draft
+      operationId: applyConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigReasonRequest" } } } }
+      responses:
+        "201": { description: Applied revision and new scope state, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { type: object, required: [revision, scope, validation], properties: { revision: { $ref: "#/components/schemas/ConfigRegistryRevision" }, scope: { $ref: "#/components/schemas/ConfigScopeState" }, validation: { $ref: "#/components/schemas/ConfigValidationReport" } } } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/drafts/{draftID}/actions/discard:
+    parameters: [{ $ref: "#/components/parameters/ConfigDraftID" }]
+    post:
+      summary: Discard an open or reviewed draft without changing effective values
+      operationId: discardConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigReasonRequest" } } } }
+      responses:
+        "200": { description: Discarded draft, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigDraft" } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/registry-revisions:
+    get:
+      summary: List immutable scoped configuration revision history
+      operationId: listConfigRegistryRevisions
+      parameters:
+        - { $ref: "#/components/parameters/ConfigScopeKind" }
+        - { $ref: "#/components/parameters/ConfigScopeID" }
+      responses:
+        "200": { description: Scoped revisions, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ConfigRegistryRevision" } } } } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        default: { $ref: "#/components/responses/ErrorResponse" }
+  /config/registry-revisions/{revisionID}/actions/rollback:
+    parameters: [{ $ref: "#/components/parameters/ConfigRegistryRevisionID" }]
+    post:
+      summary: Create a new scoped revision restoring an exact historical state
+      operationId: rollbackConfigRegistryRevision
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigReasonRequest" } } } }
+      responses:
+        "201": { description: Rollback revision and resulting scope, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { type: object, required: [revision, scope], properties: { revision: { $ref: "#/components/schemas/ConfigRegistryRevision" }, scope: { $ref: "#/components/schemas/ConfigScopeState" } } } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
   /audit:
     get:
       summary: List append-only audit events
@@ -1257,6 +1436,31 @@ components:
       in: header
       required: true
       schema: { type: string, minLength: 32, maxLength: 256 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, pattern: '^"config-(scope|draft)-[0-9]+"$' }
+    ConfigScopeKind:
+      name: scope_kind
+      in: query
+      required: true
+      schema: { $ref: "#/components/schemas/ConfigScopeKind" }
+    ConfigScopeID:
+      name: scope_id
+      in: query
+      required: false
+      schema: { type: string, maxLength: 256 }
+    ConfigDraftID:
+      name: draftID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^configdraft_[0-9a-f]{32}$" }
+    ConfigRegistryRevisionID:
+      name: revisionID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^configreg_[0-9a-f]{32}$|^config_registry_system_v16$" }
   responses:
     ErrorResponse:
       description: Structured error
@@ -1825,6 +2029,237 @@ components:
         profile_id: { type: string }
         duration: { type: integer, minimum: 0, description: Nanoseconds elapsed }
         healthy: { type: boolean }
+    ConfigScopeKind:
+      type: string
+      enum: [built_in, system, capability_pack, project, environment, job_template, job_override]
+    ConfigScopeRef:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/ConfigScopeKind" }
+        id: { type: string, maxLength: 256 }
+    ConfigUIMetadata:
+      type: object
+      additionalProperties: false
+      required: [label, help, group, order, widget, documentation_link, advanced]
+      properties:
+        label: { type: string }
+        help: { type: string }
+        group: { type: string }
+        order: { type: integer }
+        widget: { type: string, enum: [checkbox, number, string_list, path_pattern_list, text] }
+        units: { type: string }
+        examples: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+        documentation_link: { type: string }
+        advanced: { type: boolean }
+    ConfigDependency:
+      type: object
+      additionalProperties: false
+      required: [key, operator, message]
+      properties:
+        key: { type: string }
+        operator: { type: string }
+        value: {}
+        message: { type: string }
+    ConfigDescriptor:
+      type: object
+      additionalProperties: false
+      required: [key, namespace, schema_version, value_kind, json_schema, ui, permitted_scopes, default, secret, required_permission, apply, exportable, importable, migration, audit_redaction, bootstrap_controlled]
+      properties:
+        key: { type: string, pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$" }
+        namespace: { type: string }
+        schema_version: { type: integer, minimum: 1 }
+        value_kind: { type: string, enum: [boolean, integer, string, string_array] }
+        json_schema: { type: object, additionalProperties: true }
+        ui: { $ref: "#/components/schemas/ConfigUIMetadata" }
+        permitted_scopes: { type: array, minItems: 1, uniqueItems: true, items: { $ref: "#/components/schemas/ConfigScopeKind" } }
+        default: {}
+        recommended: {}
+        secret: { type: boolean }
+        required_permission: { type: string }
+        apply: { type: string, enum: [live, new_jobs, service_reload, operator_restart] }
+        dependencies: { type: array, items: { $ref: "#/components/schemas/ConfigDependency" } }
+        incompatibilities: { type: array, items: { $ref: "#/components/schemas/ConfigDependency" } }
+        prerequisites: { type: array, items: { type: string } }
+        dry_run_handler: { type: string }
+        exportable: { type: boolean }
+        importable: { type: boolean }
+        migration: { type: string }
+        audit_redaction: { type: string }
+        bootstrap_controlled: { type: boolean }
+    ConfigStoredValue:
+      type: object
+      additionalProperties: false
+      required: [key, scope, configured, secret, version, revision_id, updated_at]
+      properties:
+        key: { type: string }
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        value: {}
+        configured: { type: boolean }
+        secret: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        revision_id: { type: string }
+        updated_at: { type: string, format: date-time }
+    ConfigScopeState:
+      type: object
+      additionalProperties: false
+      required: [scope, version, revision_id, values, updated_at]
+      properties:
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        version: { type: integer, minimum: 0 }
+        revision_id: { type: string }
+        values: { type: array, items: { $ref: "#/components/schemas/ConfigStoredValue" } }
+        updated_at: { type: string, format: date-time }
+    ConfigDraftEntry:
+      type: object
+      additionalProperties: false
+      required: [key, reset, secret, configured]
+      properties:
+        key: { type: string, maxLength: 256 }
+        value: {}
+        reset: { type: boolean }
+        secret: { type: boolean }
+        configured: { type: boolean }
+    ConfigDraft:
+      type: object
+      additionalProperties: false
+      required: [id, scope, state, base_scope_version, version, author_id, entries, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^configdraft_[0-9a-f]{32}$" }
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        state: { type: string, enum: [draft, reviewed, applied, discarded] }
+        base_scope_version: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        author_id: { type: string }
+        reviewer_id: { type: string }
+        reason: { type: string }
+        applied_revision_id: { type: string }
+        entries: { type: array, minItems: 1, maxItems: 500, items: { $ref: "#/components/schemas/ConfigDraftEntry" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ConfigDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [scope, reason, entries]
+      properties:
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        entries: { type: array, minItems: 1, maxItems: 500, items: { $ref: "#/components/schemas/ConfigDraftEntry" } }
+    ConfigDraftUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, entries]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        entries: { type: array, minItems: 1, maxItems: 500, items: { $ref: "#/components/schemas/ConfigDraftEntry" } }
+    ConfigReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 1, maxLength: 1000 } }
+    ConfigValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, message, severity]
+      properties:
+        key: { type: string }
+        code: { type: string }
+        message: { type: string }
+        severity: { type: string, enum: [error, warning] }
+    ConfigValidationReport:
+      type: object
+      additionalProperties: false
+      required: [valid, issues, apply_modes, requires_reauthentication]
+      properties:
+        valid: { type: boolean }
+        issues: { type: array, items: { $ref: "#/components/schemas/ConfigValidationIssue" } }
+        apply_modes: { type: array, uniqueItems: true, items: { type: string, enum: [live, new_jobs, service_reload, operator_restart] } }
+        requires_reauthentication: { type: boolean }
+    ConfigDraftResult:
+      type: object
+      additionalProperties: false
+      required: [draft, validation]
+      properties:
+        draft: { $ref: "#/components/schemas/ConfigDraft" }
+        validation: { $ref: "#/components/schemas/ConfigValidationReport" }
+    ConfigCheckResult:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, draft_id, draft_version, kind, handler, status, result, created_at]
+      properties:
+        id: { type: string, pattern: "^configcheck_[0-9a-f]{32}$" }
+        sequence: { type: integer, minimum: 1 }
+        draft_id: { type: string }
+        draft_version: { type: integer, minimum: 1 }
+        kind: { type: string, enum: [validation, dry_run, prerequisite] }
+        handler: { type: string }
+        status: { type: string, enum: [passed, failed, unavailable] }
+        result: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    ConfigRevisionEntry:
+      type: object
+      additionalProperties: false
+      required: [key, before_configured, after_configured, secret]
+      properties:
+        key: { type: string }
+        before_value: {}
+        after_value: {}
+        before_configured: { type: boolean }
+        after_configured: { type: boolean }
+        secret: { type: boolean }
+    ConfigRegistryRevision:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, scope, scope_version, actor_id, actor_role, operation, reason, entries, created_at]
+      properties:
+        id: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        scope_version: { type: integer, minimum: 1 }
+        actor_id: { type: string }
+        actor_role: { type: string }
+        operation: { type: string, enum: [apply, rollback, import, reset] }
+        reason: { type: string }
+        rollback_of: { type: string }
+        draft_id: { type: string }
+        entries: { type: array, items: { $ref: "#/components/schemas/ConfigRevisionEntry" } }
+        created_at: { type: string, format: date-time }
+    ConfigContribution:
+      type: object
+      additionalProperties: false
+      required: [scope, configured, source_revision, version, effective, higher_priority_override]
+      properties:
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        value: {}
+        configured: { type: boolean }
+        source_revision: { type: string }
+        version: { type: integer, minimum: 1 }
+        effective: { type: boolean }
+        higher_priority_override: { type: boolean }
+    ConfigEffectiveValue:
+      type: object
+      additionalProperties: false
+      required: [key, configured, source_scope, source_revision, contributions, apply, secret]
+      properties:
+        key: { type: string }
+        value: {}
+        configured: { type: boolean }
+        source_scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        source_revision: { type: string }
+        contributions: { type: array, items: { $ref: "#/components/schemas/ConfigContribution" } }
+        apply: { type: string, enum: [live, new_jobs, service_reload, operator_restart] }
+        secret: { type: boolean }
+    EffectiveConfiguration:
+      type: object
+      additionalProperties: false
+      required: [schema_version, scopes, values]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        scopes: { type: array, items: { $ref: "#/components/schemas/ConfigScopeRef" } }
+        values: { type: object, additionalProperties: { $ref: "#/components/schemas/ConfigEffectiveValue" } }
     SystemConfig:
       type: object
       additionalProperties: false

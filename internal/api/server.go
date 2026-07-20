@@ -35,21 +35,22 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	store        storage.Store
-	artifacts    ArtifactReader
-	logger       *slog.Logger
-	profile      string
-	started      time.Time
-	version      string
-	handler      http.Handler
-	auth         *maintainerauth.Service
-	memoryIndex  memory.Index
-	secureCookie bool
-	hermesToken  []byte
-	githubEvents GitHubWebhookValidator
-	gitOperator  GitOperator
-	modelManager models.Manager
-	backups      BackupService
+	store          storage.Store
+	artifacts      ArtifactReader
+	logger         *slog.Logger
+	profile        string
+	started        time.Time
+	version        string
+	handler        http.Handler
+	auth           *maintainerauth.Service
+	memoryIndex    memory.Index
+	secureCookie   bool
+	hermesToken    []byte
+	githubEvents   GitHubWebhookValidator
+	gitOperator    GitOperator
+	modelManager   models.Manager
+	backups        BackupService
+	configRegistry *appconfig.RegistryService
 }
 
 type ArtifactReader interface {
@@ -108,6 +109,10 @@ func WithModelManager(manager models.Manager) Option {
 
 func WithBackupService(service BackupService) Option {
 	return func(server *Server) { server.backups = service }
+}
+
+func WithConfigRegistry(service *appconfig.RegistryService) Option {
+	return func(server *Server) { server.configRegistry = service }
 }
 
 func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
@@ -198,6 +203,21 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)
 	mux.HandleFunc("POST /api/v1/config/revisions", s.createConfigRevision)
 	mux.HandleFunc("POST /api/v1/config/revisions/{revisionID}/rollback", s.rollbackConfigRevision)
+	mux.HandleFunc("GET /api/v1/config/descriptors", s.configDescriptors)
+	mux.HandleFunc("GET /api/v1/config/values", s.configScopeValues)
+	mux.HandleFunc("POST /api/v1/config/effective", s.configEffective)
+	mux.HandleFunc("GET /api/v1/config/drafts", s.listRegistryDrafts)
+	mux.HandleFunc("POST /api/v1/config/drafts", s.createRegistryDraft)
+	mux.HandleFunc("GET /api/v1/config/drafts/{draftID}", s.getRegistryDraft)
+	mux.HandleFunc("PUT /api/v1/config/drafts/{draftID}", s.updateRegistryDraft)
+	mux.HandleFunc("GET /api/v1/config/drafts/{draftID}/checks", s.listRegistryDraftChecks)
+	mux.HandleFunc("POST /api/v1/config/drafts/{draftID}/actions/validate", s.validateRegistryDraft)
+	mux.HandleFunc("POST /api/v1/config/drafts/{draftID}/actions/dry-run", s.dryRunRegistryDraft)
+	mux.HandleFunc("POST /api/v1/config/drafts/{draftID}/actions/review", s.reviewRegistryDraft)
+	mux.HandleFunc("POST /api/v1/config/drafts/{draftID}/actions/apply", s.applyRegistryDraft)
+	mux.HandleFunc("POST /api/v1/config/drafts/{draftID}/actions/discard", s.discardRegistryDraft)
+	mux.HandleFunc("GET /api/v1/config/registry-revisions", s.listRegistryRevisions)
+	mux.HandleFunc("POST /api/v1/config/registry-revisions/{revisionID}/actions/rollback", s.rollbackRegistryRevision)
 	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
 	mux.Handle("GET /", s.staticHandler())
 	s.handler = s.middleware(s.hermesAuthenticationMiddleware(s.authenticationMiddleware(mux)))
