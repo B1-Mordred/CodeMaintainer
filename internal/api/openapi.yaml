@@ -361,6 +361,219 @@ paths:
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /schedules:
+    get:
+      summary: List administrator-managed serial schedules
+      operationId: listSchedules
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Schedule" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create or version-update a bounded serial schedule
+      operationId: saveSchedule
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleRequest" } } }
+      responses:
+        "201":
+          description: Saved schedule
+          content: { application/json: { schema: { $ref: "#/components/schemas/Schedule" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /schedule-runs:
+    get:
+      summary: List append-only schedule dispatch and window-skip history
+      operationId: listScheduleRuns
+      responses:
+        "200":
+          description: Schedule run history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ScheduleRun" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /skill-proposals:
+    get:
+      summary: List inert Hermes skill proposals and administrator decisions
+      operationId: listSkillProposals
+      responses:
+        "200":
+          description: Skill proposal queue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SkillProposal" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /skill-proposals/{proposalID}/actions/review:
+    parameters:
+      - name: proposalID
+        in: path
+        required: true
+        schema: { type: string, pattern: "^skillproposal_[0-9a-f]{32}$" }
+    post:
+      summary: Approve-as-inert or reject a proposed skill without activating it
+      operationId: reviewSkillProposal
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SkillReviewRequest" } } }
+      responses:
+        "200":
+          description: Reviewed but never automatically activated proposal
+          content: { application/json: { schema: { $ref: "#/components/schemas/SkillProposal" } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /automation-requests:
+    get:
+      summary: List append-only Hermes review and publication-approval requests
+      operationId: listAutomationRequests
+      responses:
+        "200":
+          description: Requests that confer no approval authority
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/AutomationRequest" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/submit:
+    post:
+      security: [{ hermesBearer: [] }]
+      summary: Submit a bounded job to an enabled registered project
+      operationId: hermesSubmitJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [project_id, task]
+              properties:
+                project_id: { type: string }
+                task: { type: string, minLength: 1, maxLength: 1048576 }
+                issue_number: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: Durable queued job
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs:
+    get:
+      security: [{ hermesBearer: [] }]
+      summary: List bounded job status for Hermes
+      operationId: hermesListJobs
+      responses:
+        "200": { description: Jobs, content: { application/json: { schema: { type: object } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/{jobID}:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    get:
+      security: [{ hermesBearer: [] }]
+      summary: Retrieve one job status
+      operationId: hermesGetJobStatus
+      responses:
+        "200": { description: Job status, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/{jobID}/cancel:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    post:
+      security: [{ hermesBearer: [] }]
+      summary: Request cancellation through the normal workflow state machine
+      operationId: hermesCancelJob
+      responses:
+        "200": { description: Cancelled job, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/{jobID}/report:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    get:
+      security: [{ hermesBearer: [] }]
+      summary: Retrieve bounded report, phase, finding, and artifact metadata
+      operationId: hermesGetJobReport
+      responses:
+        "200": { description: Job report, content: { application/json: { schema: { type: object } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/{jobID}/request-review:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    post:
+      security: [{ hermesBearer: [] }]
+      summary: Create a non-authoritative human review request
+      operationId: hermesRequestReview
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequestInput" } } }
+      responses:
+        "202": { description: Append-only request, content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequest" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/jobs/{jobID}/request-publication-approval:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    post:
+      security: [{ hermesBearer: [] }]
+      summary: Request an operator decision without granting publication approval
+      operationId: hermesRequestPublicationApproval
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequestInput" } } }
+      responses:
+        "202": { description: Append-only request, content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequest" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/projects/{projectID}/memory:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      security: [{ hermesBearer: [] }]
+      summary: Read only project-scoped canonical memory through the controller
+      operationId: hermesReadProjectMemory
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 4096 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200": { description: Project-scoped memory, content: { application/json: { schema: { type: object } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/schedules:
+    get:
+      security: [{ hermesBearer: [] }]
+      summary: Read administrator-configured schedule status
+      operationId: hermesListSchedules
+      responses:
+        "200": { description: Schedules, content: { application/json: { schema: { type: object } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /hermes/tools/skill-proposals:
+    post:
+      security: [{ hermesBearer: [] }]
+      summary: Submit a secret-scanned inert skill proposal for administrator review
+      operationId: hermesCreateSkillProposal
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SkillProposalInput" } } }
+      responses:
+        "201": { description: Inert proposal, content: { application/json: { schema: { $ref: "#/components/schemas/SkillProposal" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /jobs:
     get:
       summary: List a bounded page of jobs
@@ -635,6 +848,10 @@ components:
       type: apiKey
       in: cookie
       name: maintainer_session
+    hermesBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-token
   parameters:
     JobID:
       name: jobID
@@ -838,6 +1055,95 @@ components:
         budget_tokens: { type: integer, minimum: 0, maximum: 8192 }
         allocated_tokens: { type: integer, minimum: 0, maximum: 8192 }
         trajectory: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    ScheduleRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, name, task_type, task, interval_seconds, window_start_minute, window_end_minute, max_wall_seconds, max_tokens, enabled]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        task_type: { type: string, enum: [maintenance, sync, audit] }
+        task: { type: string, minLength: 1, maxLength: 65536 }
+        interval_seconds: { type: integer, minimum: 60, maximum: 2678400 }
+        window_start_minute: { type: integer, minimum: 0, maximum: 1439 }
+        window_end_minute: { type: integer, minimum: 0, maximum: 1439 }
+        max_wall_seconds: { type: integer, minimum: 60, maximum: 604800 }
+        max_tokens: { type: integer, minimum: 1, maximum: 10000000 }
+        enabled: { type: boolean }
+        next_run_at: { type: string, format: date-time }
+        expected_version: { type: integer, minimum: 1 }
+    Schedule:
+      allOf:
+        - { $ref: "#/components/schemas/ScheduleRequest" }
+        - type: object
+          required: [id, next_run_at, version, created_at, updated_at]
+          properties:
+            id: { type: string, pattern: "^schedule_[0-9a-f]{32}$" }
+            next_run_at: { type: string, format: date-time }
+            version: { type: integer, minimum: 1 }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    ScheduleRun:
+      type: object
+      required: [sequence, id, schedule_id, status, reason, due_at, created_at]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        id: { type: string }
+        schedule_id: { type: string }
+        job_id: { type: string }
+        status: { type: string, enum: [enqueued, skipped] }
+        reason: { type: string }
+        due_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    SkillProposalInput:
+      type: object
+      additionalProperties: false
+      required: [name, description, content]
+      properties:
+        name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        description: { type: string, minLength: 1, maxLength: 4096 }
+        content: { type: string, minLength: 1, maxLength: 65536 }
+    SkillReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, rationale, expected_version]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+        expected_version: { type: integer, minimum: 1 }
+    SkillProposal:
+      allOf:
+        - { $ref: "#/components/schemas/SkillProposalInput" }
+        - type: object
+          required: [id, content_hash, status, version, proposed_by, activated, created_at, updated_at]
+          properties:
+            id: { type: string, pattern: "^skillproposal_[0-9a-f]{32}$" }
+            content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+            status: { type: string, enum: [proposed, approved_inert, rejected] }
+            version: { type: integer, minimum: 1 }
+            proposed_by: { type: string }
+            reviewed_by: { type: string }
+            review_reason: { type: string }
+            activated: { type: boolean, const: false }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    AutomationRequestInput:
+      type: object
+      additionalProperties: false
+      required: [rationale]
+      properties:
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+    AutomationRequest:
+      type: object
+      required: [id, job_id, kind, requested_by, rationale, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        kind: { type: string, enum: [review, publication_approval] }
+        requested_by: { type: string }
+        rationale: { type: string }
         created_at: { type: string, format: date-time }
     JobState:
       type: string

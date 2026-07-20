@@ -9,6 +9,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	"github.com/local-code-maintainer/appliance/internal/audit"
 	"github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/automation"
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -162,6 +163,7 @@ type FindingStore interface {
 }
 
 type Store interface {
+	automation.Store
 	auth.Store
 	memory.DurableStore
 	memory.IndexQueue

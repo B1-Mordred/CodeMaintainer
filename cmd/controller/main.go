@@ -17,6 +17,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/api"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/automation"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -77,6 +78,12 @@ func run(logger *slog.Logger) error {
 	}), "controller-workflow", 30*time.Second, 250*time.Millisecond, logger.With("component", "workflow"))
 	workerErrors := make(chan error, 1)
 	go func() { workerErrors <- worker.Run(ctx) }()
+	scheduler, err := automation.NewScheduler(store, time.Second, logger.With("component", "scheduler"))
+	if err != nil {
+		return err
+	}
+	schedulerErrors := make(chan error, 1)
+	go func() { schedulerErrors <- scheduler.Run(ctx) }()
 	memoryIndex, err := newMemoryIndex(profile, dataRoot)
 	if err != nil {
 		return err
@@ -93,6 +100,13 @@ func run(logger *slog.Logger) error {
 	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie)}
 	if memoryIndex != nil {
 		serverOptions = append(serverOptions, api.WithMemoryIndex(memoryIndex))
+	}
+	if tokenFile := strings.TrimSpace(os.Getenv("MAINTAINER_HERMES_TOKEN_FILE")); tokenFile != "" {
+		hermesToken, tokenErr := readToken(tokenFile)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		serverOptions = append(serverOptions, api.WithHermesToken(hermesToken))
 	}
 	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile, serverOptions...)
 	server := &http.Server{
@@ -127,6 +141,11 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	case err := <-indexErrors:
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	case err := <-schedulerErrors:
 		if ctx.Err() != nil {
 			return nil
 		}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/automation"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
@@ -34,6 +35,7 @@ type Server struct {
 	auth         *maintainerauth.Service
 	memoryIndex  memory.Index
 	secureCookie bool
+	hermesToken  []byte
 }
 
 type ArtifactReader interface {
@@ -55,6 +57,10 @@ func WithAuthentication(service *maintainerauth.Service, secureCookie bool) Opti
 
 func WithMemoryIndex(index memory.Index) Option {
 	return func(server *Server) { server.memoryIndex = index }
+}
+
+func WithHermesToken(token []byte) Option {
+	return func(server *Server) { server.hermesToken = append([]byte(nil), token...) }
 }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -88,6 +94,22 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/correct", s.correctProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/invalidate", s.invalidateProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory/{memoryID}/actions/delete", s.deleteProjectMemory)
+	mux.HandleFunc("GET /api/v1/schedules", s.listSchedules)
+	mux.HandleFunc("POST /api/v1/schedules", s.saveSchedule)
+	mux.HandleFunc("GET /api/v1/schedule-runs", s.listScheduleRuns)
+	mux.HandleFunc("GET /api/v1/skill-proposals", s.listSkillProposals)
+	mux.HandleFunc("POST /api/v1/skill-proposals/{proposalID}/actions/review", s.reviewSkillProposal)
+	mux.HandleFunc("GET /api/v1/automation-requests", s.listAutomationRequests)
+	mux.HandleFunc("POST /api/v1/hermes/tools/jobs/submit", s.hermesSubmitJob)
+	mux.HandleFunc("GET /api/v1/hermes/tools/jobs", s.hermesListJobs)
+	mux.HandleFunc("GET /api/v1/hermes/tools/jobs/{jobID}", s.hermesJobStatus)
+	mux.HandleFunc("POST /api/v1/hermes/tools/jobs/{jobID}/cancel", s.hermesCancelJob)
+	mux.HandleFunc("GET /api/v1/hermes/tools/jobs/{jobID}/report", s.hermesJobReport)
+	mux.HandleFunc("POST /api/v1/hermes/tools/jobs/{jobID}/request-review", s.hermesRequestReview)
+	mux.HandleFunc("POST /api/v1/hermes/tools/jobs/{jobID}/request-publication-approval", s.hermesRequestPublicationApproval)
+	mux.HandleFunc("GET /api/v1/hermes/tools/projects/{projectID}/memory", s.hermesProjectMemory)
+	mux.HandleFunc("GET /api/v1/hermes/tools/schedules", s.hermesListSchedules)
+	mux.HandleFunc("POST /api/v1/hermes/tools/skill-proposals", s.hermesCreateSkillProposal)
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
@@ -104,7 +126,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/config/revisions/{revisionID}/rollback", s.rollbackConfigRevision)
 	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
 	mux.Handle("GET /", s.staticHandler())
-	s.handler = s.middleware(s.authenticationMiddleware(mux))
+	s.handler = s.middleware(s.hermesAuthenticationMiddleware(s.authenticationMiddleware(mux)))
 	return s
 }
 
@@ -601,6 +623,9 @@ func (s *Server) staticHandler() http.Handler {
 }
 
 func actorID(r *http.Request) string {
+	if actor, ok := serviceActorFromRequest(r); ok {
+		return actor
+	}
 	if principal, ok := principalFromRequest(r); ok {
 		return principal.User.ID
 	}
@@ -650,11 +675,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 
 func (s *Server) storageError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, storage.ErrNotFound), errors.Is(err, memory.ErrNotFound):
+	case errors.Is(err, storage.ErrNotFound), errors.Is(err, memory.ErrNotFound), errors.Is(err, automation.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
-	case errors.Is(err, storage.ErrConflict), errors.Is(err, memory.ErrConflict):
+	case errors.Is(err, storage.ErrConflict), errors.Is(err, memory.ErrConflict), errors.Is(err, automation.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "resource changed; refresh and retry")
-	case errors.Is(err, storage.ErrInvalid), errors.Is(err, memory.ErrInvalid), errors.Is(err, memory.ErrScope):
+	case errors.Is(err, storage.ErrInvalid), errors.Is(err, memory.ErrInvalid), errors.Is(err, memory.ErrScope), errors.Is(err, automation.ErrInvalid):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_transition", err.Error())
 	default:
 		s.internalError(w, r, err)

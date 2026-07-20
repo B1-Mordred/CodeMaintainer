@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net"
 	"net/http"
@@ -15,12 +16,17 @@ import (
 const sessionCookieName = "maintainer_session"
 
 type principalContextKey struct{}
+type serviceActorContextKey struct{}
 
 func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
 	if s.auth == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := serviceActorFromRequest(r); ok {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if isPublicRoute(r) {
 			if isStateChanging(r.Method) && !csrfRequestOriginAllowed(r) {
 				writeError(w, http.StatusForbidden, "request_origin_rejected", "the cross-site authentication request was rejected")
@@ -62,6 +68,36 @@ func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (s *Server) hermesAuthenticationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/hermes/tools/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if len(s.hermesToken) < 32 {
+			writeError(w, http.StatusServiceUnavailable, "hermes_disabled", "the optional Hermes controller boundary is disabled")
+			return
+		}
+		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+		if !strings.HasPrefix(authorization, "Bearer ") {
+			writeError(w, http.StatusUnauthorized, "service_authentication_required", "a Hermes service token is required")
+			return
+		}
+		provided := []byte(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")))
+		if len(provided) != len(s.hermesToken) || subtle.ConstantTimeCompare(provided, s.hermesToken) != 1 {
+			writeError(w, http.StatusUnauthorized, "service_authentication_required", "the Hermes service token is invalid")
+			return
+		}
+		ctx := context.WithValue(r.Context(), serviceActorContextKey{}, "hermes-service")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func serviceActorFromRequest(r *http.Request) (string, bool) {
+	actor, ok := r.Context().Value(serviceActorContextKey{}).(string)
+	return actor, ok && actor != ""
 }
 
 func isPublicRoute(r *http.Request) bool {
@@ -110,6 +146,9 @@ func routePermission(r *http.Request) maintainerauth.Permission {
 		if strings.Contains(path, "/actions/promote") || strings.Contains(path, "/actions/correct") || strings.Contains(path, "/actions/invalidate") {
 			return maintainerauth.PermissionReview
 		}
+		return maintainerauth.PermissionAdminister
+	}
+	if strings.HasPrefix(path, "/api/v1/schedules") || strings.HasPrefix(path, "/api/v1/schedule-runs") || strings.HasPrefix(path, "/api/v1/skill-proposals") || strings.HasPrefix(path, "/api/v1/automation-requests") {
 		return maintainerauth.PermissionAdminister
 	}
 	if strings.HasPrefix(path, "/api/v1/projects") || strings.HasPrefix(path, "/api/v1/config") || strings.HasPrefix(path, "/api/v1/admin") {

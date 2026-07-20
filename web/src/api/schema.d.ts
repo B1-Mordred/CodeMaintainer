@@ -336,6 +336,276 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List administrator-managed serial schedules */
+        get: operations["listSchedules"];
+        put?: never;
+        /** Create or version-update a bounded serial schedule */
+        post: operations["saveSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedule-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List append-only schedule dispatch and window-skip history */
+        get: operations["listScheduleRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skill-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List inert Hermes skill proposals and administrator decisions */
+        get: operations["listSkillProposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skill-proposals/{proposalID}/actions/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve-as-inert or reject a proposed skill without activating it */
+        post: operations["reviewSkillProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automation-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List append-only Hermes review and publication-approval requests */
+        get: operations["listAutomationRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a bounded job to an enabled registered project */
+        post: operations["hermesSubmitJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List bounded job status for Hermes */
+        get: operations["hermesListJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/{jobID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** Retrieve one job status */
+        get: operations["hermesGetJobStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/{jobID}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request cancellation through the normal workflow state machine */
+        post: operations["hermesCancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/{jobID}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** Retrieve bounded report, phase, finding, and artifact metadata */
+        get: operations["hermesGetJobReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/{jobID}/request-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a non-authoritative human review request */
+        post: operations["hermesRequestReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/jobs/{jobID}/request-publication-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request an operator decision without granting publication approval */
+        post: operations["hermesRequestPublicationApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/projects/{projectID}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Read only project-scoped canonical memory through the controller */
+        get: operations["hermesReadProjectMemory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read administrator-configured schedule status */
+        get: operations["hermesListSchedules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hermes/tools/skill-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a secret-scanned inert skill proposal for administrator review */
+        post: operations["hermesCreateSkillProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs": {
         parameters: {
             query?: never;
@@ -717,6 +987,86 @@ export interface components {
             trajectory: {
                 [key: string]: unknown;
             };
+            /** Format: date-time */
+            created_at: string;
+        };
+        ScheduleRequest: {
+            id?: string;
+            project_id: string;
+            name: string;
+            /** @enum {string} */
+            task_type: "maintenance" | "sync" | "audit";
+            task: string;
+            interval_seconds: number;
+            window_start_minute: number;
+            window_end_minute: number;
+            max_wall_seconds: number;
+            max_tokens: number;
+            enabled: boolean;
+            /** Format: date-time */
+            next_run_at?: string;
+            expected_version?: number;
+        };
+        Schedule: components["schemas"]["ScheduleRequest"] & {
+            id: string;
+            /** Format: date-time */
+            next_run_at: string;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ScheduleRun: {
+            sequence: number;
+            id: string;
+            schedule_id: string;
+            job_id?: string;
+            /** @enum {string} */
+            status: "enqueued" | "skipped";
+            reason: string;
+            /** Format: date-time */
+            due_at: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        SkillProposalInput: {
+            name: string;
+            description: string;
+            content: string;
+        };
+        SkillReviewRequest: {
+            /** @enum {string} */
+            decision: "approve" | "reject";
+            rationale: string;
+            expected_version: number;
+        };
+        SkillProposal: components["schemas"]["SkillProposalInput"] & {
+            id: string;
+            content_hash: string;
+            /** @enum {string} */
+            status: "proposed" | "approved_inert" | "rejected";
+            version: number;
+            proposed_by: string;
+            reviewed_by?: string;
+            review_reason?: string;
+            /** @constant */
+            activated: false;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AutomationRequestInput: {
+            rationale: string;
+        };
+        AutomationRequest: {
+            id: string;
+            job_id: string;
+            /** @enum {string} */
+            kind: "review" | "publication_approval";
+            requested_by: string;
+            rationale: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -1468,6 +1818,410 @@ export interface operations {
             };
             403: components["responses"]["ErrorResponse"];
             409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listSchedules: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Schedule"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    saveSchedule: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved schedule */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listScheduleRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedule run history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ScheduleRun"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listSkillProposals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill proposal queue */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SkillProposal"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    reviewSkillProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Reviewed but never automatically activated proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillProposal"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listAutomationRequests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requests that confer no approval authority */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AutomationRequest"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesSubmitJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project_id: string;
+                    task: string;
+                    issue_number?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Durable queued job */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesListJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Jobs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesGetJobStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesCancelJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesGetJobReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesRequestReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationRequestInput"];
+            };
+        };
+        responses: {
+            /** @description Append-only request */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRequest"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesRequestPublicationApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationRequestInput"];
+            };
+        };
+        responses: {
+            /** @description Append-only request */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRequest"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesReadProjectMemory: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project-scoped memory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesListSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    hermesCreateSkillProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillProposalInput"];
+            };
+        };
+        responses: {
+            /** @description Inert proposal */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillProposal"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
         };
     };

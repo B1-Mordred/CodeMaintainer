@@ -355,6 +355,82 @@ func TestAuthenticationBootstrapSessionCSRFAndHeaderForgeryRejection(t *testing.
 	}
 }
 
+func TestHermesBoundaryRequiresServiceTokenAndCannotApproveOrActivate(t *testing.T) {
+	_, store := testServer(t)
+	token := []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock", WithHermesToken(token)))
+	t.Cleanup(server.Close)
+
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/hermes/tools/jobs/submit", strings.NewReader(`{"project_id":"owner-repo","task":"inspect the registered repository"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated Hermes request returned %d", response.StatusCode)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/hermes/tools/jobs/submit", strings.NewReader(`{"project_id":"owner-repo","task":"inspect the registered repository"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+string(token))
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&job); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || job.ID == "" {
+		t.Fatalf("Hermes submit returned %d: %+v", response.StatusCode, job)
+	}
+	transitions, err := store.ListTransitions(context.Background(), job.ID, 0, 10)
+	if err != nil || len(transitions) != 1 || transitions[0].ActorID != "hermes-service" {
+		t.Fatalf("Hermes actor was not server-derived: %+v, %v", transitions, err)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/hermes/tools/jobs/"+job.ID+"/request-publication-approval", strings.NewReader(`{"rationale":"ready for an operator decision"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+string(token))
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("publication request returned %d", response.StatusCode)
+	}
+	approvals, err := store.ListApprovals(context.Background(), job.ID)
+	if err != nil || len(approvals) != 0 {
+		t.Fatalf("Hermes gained publication authority: %+v, %v", approvals, err)
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/hermes/tools/skill-proposals", strings.NewReader(
+		`{"name":"report-summary","description":"Summarize final reports.","content":"# Report summary\n\nUse only controller-provided evidence."}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+string(token))
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proposal struct {
+		Status    string `json:"status"`
+		Activated bool   `json:"activated"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&proposal); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || proposal.Status != "proposed" || proposal.Activated {
+		t.Fatalf("Hermes skill proposal gained authority: status=%d proposal=%+v", response.StatusCode, proposal)
+	}
+}
+
 func TestCreateInspectCancelRetryJob(t *testing.T) {
 	server, _ := testServer(t)
 	payload := []byte(`{"project_id":"owner-repo","repository":"owner/repo","task":"repair the seeded defect"}`)

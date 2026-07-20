@@ -125,6 +125,7 @@ services:
       MAINTAINER_OPENVIKING_API_KEY_FILE: /var/lib/maintainer/secrets/openviking.token
       MAINTAINER_OPENVIKING_ACCOUNT: ${MAINTAINER_OPENVIKING_ACCOUNT:-maintainer}
       MAINTAINER_OPENVIKING_USER: ${MAINTAINER_OPENVIKING_USER:-maintainer-controller}
+      MAINTAINER_HERMES_TOKEN_FILE: ${MAINTAINER_HERMES_TOKEN_FILE:-}
     volumes:
       - type: bind
         source: ./.data
