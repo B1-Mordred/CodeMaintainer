@@ -1,0 +1,307 @@
+{
+	"Path": "github.com/local-code-maintainer/appliance",
+	"Main": true,
+	"Dir": "/src",
+	"GoMod": "/src/go.mod",
+	"GoVersion": "1.25.12"
+}
+{
+	"Path": "github.com/dustin/go-humanize",
+	"Version": "v1.0.1",
+	"Time": "2023-01-10T06:44:38Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/dustin/go-humanize@v1.0.1",
+	"GoMod": "/cache/mod/cache/download/github.com/dustin/go-humanize/@v/v1.0.1.mod",
+	"GoVersion": "1.16",
+	"Sum": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+	"GoModSum": "h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto="
+}
+{
+	"Path": "github.com/google/pprof",
+	"Version": "v0.0.0-20250317173921-a4b03ec1a45e",
+	"Time": "2025-03-17T17:39:21Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/google/pprof@v0.0.0-20250317173921-a4b03ec1a45e",
+	"GoMod": "/cache/mod/cache/download/github.com/google/pprof/@v/v0.0.0-20250317173921-a4b03ec1a45e.mod",
+	"GoVersion": "1.23",
+	"Sum": "h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=",
+	"GoModSum": "h1:boTsfXsheKC2y+lKOCMpSfarhxDeIzfZG1jqGcPl3cA="
+}
+{
+	"Path": "github.com/google/uuid",
+	"Version": "v1.6.0",
+	"Time": "2024-01-23T18:54:04Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/google/uuid@v1.6.0",
+	"GoMod": "/cache/mod/cache/download/github.com/google/uuid/@v/v1.6.0.mod",
+	"Sum": "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+	"GoModSum": "h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo="
+}
+{
+	"Path": "github.com/hashicorp/golang-lru/v2",
+	"Version": "v2.0.7",
+	"Time": "2023-09-21T18:26:40Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/hashicorp/golang-lru/v2@v2.0.7",
+	"GoMod": "/cache/mod/cache/download/github.com/hashicorp/golang-lru/v2/@v/v2.0.7.mod",
+	"GoVersion": "1.18",
+	"Sum": "h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=",
+	"GoModSum": "h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM="
+}
+{
+	"Path": "github.com/mattn/go-isatty",
+	"Version": "v0.0.20",
+	"Time": "2023-10-17T07:28:21Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/mattn/go-isatty@v0.0.20",
+	"GoMod": "/cache/mod/cache/download/github.com/mattn/go-isatty/@v/v0.0.20.mod",
+	"GoVersion": "1.15",
+	"Sum": "h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=",
+	"GoModSum": "h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y="
+}
+{
+	"Path": "github.com/ncruces/go-strftime",
+	"Version": "v1.0.0",
+	"Time": "2025-10-08T11:45:18Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/ncruces/go-strftime@v1.0.0",
+	"GoMod": "/cache/mod/cache/download/github.com/ncruces/go-strftime/@v/v1.0.0.mod",
+	"GoVersion": "1.17",
+	"Sum": "h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=",
+	"GoModSum": "h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls="
+}
+{
+	"Path": "github.com/remyoudompheng/bigfft",
+	"Version": "v0.0.0-20230129092748-24d4a6f8daec",
+	"Time": "2023-01-29T09:27:48Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec",
+	"GoMod": "/cache/mod/cache/download/github.com/remyoudompheng/bigfft/@v/v0.0.0-20230129092748-24d4a6f8daec.mod",
+	"GoVersion": "1.12",
+	"Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=",
+	"GoModSum": "h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo="
+}
+{
+	"Path": "golang.org/x/crypto",
+	"Version": "v0.54.0",
+	"Time": "2026-07-08T18:22:26Z",
+	"Dir": "/cache/mod/golang.org/x/crypto@v0.54.0",
+	"GoMod": "/cache/mod/cache/download/golang.org/x/crypto/@v/v0.54.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=",
+	"GoModSum": "h1:KWL8ny2AZdGR2cWmzeHrp2azQPGogOv+HeQaVEXC2dk="
+}
+{
+	"Path": "golang.org/x/mod",
+	"Version": "v0.37.0",
+	"Time": "2026-06-08T15:10:58Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/golang.org/x/mod@v0.37.0",
+	"GoMod": "/cache/mod/cache/download/golang.org/x/mod/@v/v0.37.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:vF1DjpVEshcIqoEaauuHebaLk1O1forxjxBaVn884JQ=",
+	"GoModSum": "h1:m8S8VeM9r4dzDwjrKO0a1sZP3YjeMamRRlD+fmR2Q/0="
+}
+{
+	"Path": "golang.org/x/net",
+	"Version": "v0.56.0",
+	"Time": "2026-06-09T16:58:42Z",
+	"Indirect": true
+}
+{
+	"Path": "golang.org/x/sync",
+	"Version": "v0.21.0",
+	"Time": "2026-06-04T16:57:53Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/golang.org/x/sync@v0.21.0",
+	"GoMod": "/cache/mod/cache/download/golang.org/x/sync/@v/v0.21.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:HLII4xRRTtCRkxYp4HNFF0Js/Og6q2i++KXbg0gHCwM=",
+	"GoModSum": "h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0="
+}
+{
+	"Path": "golang.org/x/sys",
+	"Version": "v0.47.0",
+	"Time": "2026-06-30T17:07:31Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/golang.org/x/sys@v0.47.0",
+	"GoMod": "/cache/mod/cache/download/golang.org/x/sys/@v/v0.47.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+	"GoModSum": "h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw="
+}
+{
+	"Path": "golang.org/x/term",
+	"Version": "v0.45.0",
+	"Time": "2026-07-08T15:40:56Z",
+	"Indirect": true
+}
+{
+	"Path": "golang.org/x/text",
+	"Version": "v0.40.0",
+	"Time": "2026-07-08T15:41:08Z",
+	"Indirect": true
+}
+{
+	"Path": "golang.org/x/tools",
+	"Version": "v0.47.0",
+	"Time": "2026-06-25T17:02:32Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/golang.org/x/tools@v0.47.0",
+	"GoMod": "/cache/mod/cache/download/golang.org/x/tools/@v/v0.47.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:7Kn5x/d1svx/PzryTsqeoZN4TZwqeH5pGWjefhLi/1Q=",
+	"GoModSum": "h1:dFHnyTvFWY212G+h7ZY4Vsp/K3U4/7W9TyVaAul8uCA="
+}
+{
+	"Path": "modernc.org/cc/v4",
+	"Version": "v4.29.0",
+	"Time": "2026-06-12T13:26:26Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/cc/v4@v4.29.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/cc/v4/@v/v4.29.0.mod",
+	"GoVersion": "1.25",
+	"Sum": "h1:CXgwL8cvxmyzBQZzbSl/6xFtMCryb6u8IOqDci39cgc=",
+	"GoModSum": "h1:OnovgIhbbMXMu1aISnJ0wvVD1KnW+cAUJkIrAWh+kVI="
+}
+{
+	"Path": "modernc.org/ccgo/v4",
+	"Version": "v4.34.6",
+	"Time": "2026-06-26T14:54:35Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/ccgo/v4@v4.34.6",
+	"GoMod": "/cache/mod/cache/download/modernc.org/ccgo/v4/@v/v4.34.6.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:sBgfIwyN0TQ9C5hwIeuqyeAKyMWnbvj2fvpF4L11uzU=",
+	"GoModSum": "h1:SZ8YcN9NG7XVsQYdm6jYBvi8PQP1qi+kqB6OhjqI3Fk="
+}
+{
+	"Path": "modernc.org/fileutil",
+	"Version": "v1.4.0",
+	"Time": "2026-02-18T10:24:55Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/fileutil@v1.4.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/fileutil/@v/v1.4.0.mod",
+	"GoVersion": "1.24",
+	"Sum": "h1:j6ZzNTftVS054gi281TyLjHPp6CPHr2KCxEXjEbD6SM=",
+	"GoModSum": "h1:EqdKFDxiByqxLk8ozOxObDSfcVOv/54xDs/DUHdvCUU="
+}
+{
+	"Path": "modernc.org/gc/v2",
+	"Version": "v2.6.5",
+	"Time": "2025-03-12T16:49:23Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/gc/v2@v2.6.5",
+	"GoMod": "/cache/mod/cache/download/modernc.org/gc/v2/@v/v2.6.5.mod",
+	"GoVersion": "1.21",
+	"Sum": "h1:nyqdV8q46KvTpZlsw66kWqwXRHdjIlJOhG6kxiV/9xI=",
+	"GoModSum": "h1:YgIahr1ypgfe7chRuJi2gD7DBQiKSLMPgBQe9oIiito="
+}
+{
+	"Path": "modernc.org/gc/v3",
+	"Version": "v3.1.4",
+	"Time": "2026-05-18T09:50:34Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/gc/v3@v3.1.4",
+	"GoMod": "/cache/mod/cache/download/modernc.org/gc/v3/@v/v3.1.4.mod",
+	"GoVersion": "1.23.0",
+	"Sum": "h1:2g65LGVSmFQrXeITAw97x7hCRvZFcyE1uDP+7Vng7JI=",
+	"GoModSum": "h1:HFK/6AGESC7Ex+EZJhJ2Gni6cTaYpSMmU/cT9RmlfYY="
+}
+{
+	"Path": "modernc.org/goabi0",
+	"Version": "v0.2.0",
+	"Time": "2025-07-02T15:46:44Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/goabi0@v0.2.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/goabi0/@v/v0.2.0.mod",
+	"GoVersion": "1.23.0",
+	"Sum": "h1:HvEowk7LxcPd0eq6mVOAEMai46V+i7Jrj13t4AzuNks=",
+	"GoModSum": "h1:CEFRnnJhKvWT1c1JTI3Avm+tgOWbkOu5oPA8eH8LnMI="
+}
+{
+	"Path": "modernc.org/libc",
+	"Version": "v1.74.1",
+	"Time": "2026-07-08T13:46:53Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/libc@v1.74.1",
+	"GoMod": "/cache/mod/cache/download/modernc.org/libc/@v/v1.74.1.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:bdR4VTKFMC4966QSNZ05XLGI/VwzVa2kTUX51Dm0riQ=",
+	"GoModSum": "h1:uH4t5bOx3G3g9Xcmj10YKlTcVISlRDwv8VoQJG9n8Os="
+}
+{
+	"Path": "modernc.org/mathutil",
+	"Version": "v1.7.1",
+	"Time": "2024-12-26T12:13:25Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/mathutil@v1.7.1",
+	"GoMod": "/cache/mod/cache/download/modernc.org/mathutil/@v/v1.7.1.mod",
+	"GoVersion": "1.21",
+	"Sum": "h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+	"GoModSum": "h1:4p5IwJITfppl0G4sUEDtCr4DthTaT47/N3aT6MhfgJg="
+}
+{
+	"Path": "modernc.org/memory",
+	"Version": "v1.11.0",
+	"Time": "2025-05-17T20:55:10Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/memory@v1.11.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/memory/@v/v1.11.0.mod",
+	"GoVersion": "1.23.0",
+	"Sum": "h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+	"GoModSum": "h1:/JP4VbVC+K5sU2wZi9bHoq2MAkCnrt2r98UGeSK7Mjw="
+}
+{
+	"Path": "modernc.org/opt",
+	"Version": "v0.2.0",
+	"Time": "2026-03-24T16:14:02Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/opt@v0.2.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/opt/@v/v0.2.0.mod",
+	"GoVersion": "1.21",
+	"Sum": "h1:tGyef5ApycA7FSEOMraay9SaTk5zmbx7Tu+cJs4QKZg=",
+	"GoModSum": "h1:03fq9lsNfvkYSfxrfUhZCWPk1lm4cq4N+Bh//bEtgns="
+}
+{
+	"Path": "modernc.org/sortutil",
+	"Version": "v1.2.1",
+	"Time": "2024-12-28T00:09:37Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/sortutil@v1.2.1",
+	"GoMod": "/cache/mod/cache/download/modernc.org/sortutil/@v/v1.2.1.mod",
+	"GoVersion": "1.21",
+	"Sum": "h1:+xyoGf15mM3NMlPDnFqrteY07klSFxLElE2PVuWIJ7w=",
+	"GoModSum": "h1:7ZI3a3REbai7gzCLcotuw9AC4VZVpYMjDzETGsSMqJE="
+}
+{
+	"Path": "modernc.org/sqlite",
+	"Version": "v1.54.0",
+	"Time": "2026-07-15T15:36:03Z",
+	"Dir": "/cache/mod/modernc.org/sqlite@v1.54.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/sqlite/@v/v1.54.0.mod",
+	"GoVersion": "1.25.0",
+	"Sum": "h1:JCxR4qwkJvOaqAoYcgDoO25Nc+ROg6EJ2LfBVzdrgog=",
+	"GoModSum": "h1:4ntCLuNmnH8+GNqjka1wNg7KJd5/Hi5FYp8K+XQ7GZw="
+}
+{
+	"Path": "modernc.org/strutil",
+	"Version": "v1.2.1",
+	"Time": "2024-12-27T20:23:31Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/strutil@v1.2.1",
+	"GoMod": "/cache/mod/cache/download/modernc.org/strutil/@v/v1.2.1.mod",
+	"GoVersion": "1.21",
+	"Sum": "h1:UneZBkQA+DX2Rp35KcM69cSsNES9ly8mQWD71HKlOA0=",
+	"GoModSum": "h1:EHkiggD70koQxjVdSBM3JKM7k6L0FbGE5eymy9i3B9A="
+}
+{
+	"Path": "modernc.org/token",
+	"Version": "v1.1.0",
+	"Time": "2022-11-13T14:28:03Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/modernc.org/token@v1.1.0",
+	"GoMod": "/cache/mod/cache/download/modernc.org/token/@v/v1.1.0.mod",
+	"Sum": "h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=",
+	"GoModSum": "h1:UGzOrNV1mAFSEB63lOFHIpNRUVMvYTc6yu1SMY/XTDM="
+}
