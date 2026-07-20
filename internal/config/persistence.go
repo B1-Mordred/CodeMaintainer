@@ -86,26 +86,30 @@ type DraftEntry struct {
 }
 
 type Draft struct {
-	ID                string       `json:"id"`
-	Scope             ScopeRef     `json:"scope"`
-	State             DraftState   `json:"state"`
-	BaseScopeVersion  int64        `json:"base_scope_version"`
-	Version           int64        `json:"version"`
-	AuthorID          string       `json:"author_id"`
-	ReviewerID        string       `json:"reviewer_id,omitempty"`
-	Reason            string       `json:"reason,omitempty"`
-	AppliedRevisionID string       `json:"applied_revision_id,omitempty"`
-	Entries           []DraftEntry `json:"entries"`
-	CreatedAt         time.Time    `json:"created_at"`
-	UpdatedAt         time.Time    `json:"updated_at"`
+	ID                string        `json:"id"`
+	Scope             ScopeRef      `json:"scope"`
+	Operation         string        `json:"operation"`
+	State             DraftState    `json:"state"`
+	BaseScopeVersion  int64         `json:"base_scope_version"`
+	Version           int64         `json:"version"`
+	AuthorID          string        `json:"author_id"`
+	ReviewerID        string        `json:"reviewer_id,omitempty"`
+	Reason            string        `json:"reason,omitempty"`
+	AppliedRevisionID string        `json:"applied_revision_id,omitempty"`
+	Entries           []DraftEntry  `json:"entries"`
+	UnknownEntries    []ImportValue `json:"unknown_entries,omitempty"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 type CreateDraftRequest struct {
 	Scope            ScopeRef
+	Operation        string
 	BaseScopeVersion int64
 	AuthorID         string
 	Reason           string
 	Entries          []DraftEntry
+	UnknownEntries   []ImportValue
 }
 
 type UpdateDraftRequest struct {

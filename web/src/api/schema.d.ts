@@ -1288,6 +1288,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export a deterministic redacted declarative scope document */
+        get: operations["exportConfigScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate and preview a controlled declarative import without saving it */
+        post: operations["previewConfigImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a reviewed-before-apply import draft from a validated document */
+        post: operations["importConfigDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/prerequisites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered external prerequisites and their evaluation behavior */
+        get: operations["listConfigPrerequisites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/drafts": {
         parameters: {
             query?: never;
@@ -2070,6 +2138,8 @@ export interface components {
             id: string;
             scope: components["schemas"]["ConfigScopeRef"];
             /** @enum {string} */
+            operation: "apply" | "import";
+            /** @enum {string} */
             state: "draft" | "reviewed" | "applied" | "discarded";
             base_scope_version: number;
             version: number;
@@ -2078,6 +2148,7 @@ export interface components {
             reason?: string;
             applied_revision_id?: string;
             entries: components["schemas"]["ConfigDraftEntry"][];
+            unknown_entries?: components["schemas"]["ConfigImportValue"][];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2094,6 +2165,40 @@ export interface components {
         };
         ConfigReasonRequest: {
             reason: string;
+        };
+        ConfigImportValue: {
+            key: string;
+            value?: unknown;
+            configured: boolean;
+            secret: boolean;
+            redacted: boolean;
+        };
+        DeclarativeConfig: {
+            /** @constant */
+            schema_version: 1;
+            registry_hash: string;
+            scope: components["schemas"]["ConfigScopeRef"];
+            scope_version: number;
+            revision_id: string;
+            values: components["schemas"]["ConfigImportValue"][];
+            document_hash: string;
+        };
+        ConfigImportRequest: {
+            /** @enum {string} */
+            mode: "strict" | "forward_compatible";
+            target: components["schemas"]["ConfigScopeRef"];
+            reason?: string;
+            document: components["schemas"]["DeclarativeConfig"];
+        };
+        ConfigImportPreview: {
+            valid: boolean;
+            /** @enum {string} */
+            mode: "strict" | "forward_compatible";
+            scope: components["schemas"]["ConfigScopeRef"];
+            base_scope_version: number;
+            issues: components["schemas"]["ConfigValidationIssue"][];
+            entries: components["schemas"]["ConfigDraftEntry"][];
+            preserved_unknown: components["schemas"]["ConfigImportValue"][];
         };
         ConfigValidationIssue: {
             key?: string;
@@ -4411,6 +4516,122 @@ export interface operations {
                 };
             };
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    exportConfigScope: {
+        parameters: {
+            query: {
+                scope_kind: components["parameters"]["ConfigScopeKind"];
+                scope_id?: components["parameters"]["ConfigScopeID"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Hash-bound redacted export */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeclarativeConfig"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    previewConfigImport: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Import preview including never-applied unknown keys */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigImportPreview"];
+                };
+            };
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    importConfigDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Import draft and exact preview */
+            201: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        draft: components["schemas"]["ConfigDraft"];
+                        preview: components["schemas"]["ConfigImportPreview"];
+                    };
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            428: components["responses"]["ErrorResponse"];
+        };
+    };
+    listConfigPrerequisites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prerequisite registry; version-bound results are recorded on drafts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            key: string;
+                            prerequisite: string;
+                            /** @enum {string} */
+                            status: "passed" | "failed" | "unavailable";
+                            message: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
         };
     };
     listConfigDrafts: {

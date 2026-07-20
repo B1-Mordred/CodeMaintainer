@@ -1257,6 +1257,60 @@ paths:
       responses:
         "200": { description: Complete effective configuration, content: { application/json: { schema: { $ref: "#/components/schemas/EffectiveConfiguration" } } } }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /config/export:
+    get:
+      summary: Export a deterministic redacted declarative scope document
+      operationId: exportConfigScope
+      parameters:
+        - { $ref: "#/components/parameters/ConfigScopeKind" }
+        - { $ref: "#/components/parameters/ConfigScopeID" }
+      responses:
+        "200": { description: Hash-bound redacted export, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/DeclarativeConfig" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /config/import/preview:
+    post:
+      summary: Validate and preview a controlled declarative import without saving it
+      operationId: previewConfigImport
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigImportRequest" } } } }
+      responses:
+        "200": { description: Import preview including never-applied unknown keys, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigImportPreview" } } } }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/import:
+    post:
+      summary: Create a reviewed-before-apply import draft from a validated document
+      operationId: importConfigDraft
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }, { $ref: "#/components/parameters/IfMatch" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConfigImportRequest" } } } }
+      responses:
+        "201": { description: Import draft and exact preview, headers: { ETag: { schema: { type: string } } }, content: { application/json: { schema: { type: object, required: [draft, preview], properties: { draft: { $ref: "#/components/schemas/ConfigDraft" }, preview: { $ref: "#/components/schemas/ConfigImportPreview" } } } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "428": { $ref: "#/components/responses/ErrorResponse" }
+  /config/prerequisites:
+    get:
+      summary: List registered external prerequisites and their evaluation behavior
+      operationId: listConfigPrerequisites
+      responses:
+        "200":
+          description: Prerequisite registry; version-bound results are recorded on drafts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, prerequisite, status, message]
+                      properties:
+                        key: { type: string }
+                        prerequisite: { type: string }
+                        status: { type: string, enum: [passed, failed, unavailable] }
+                        message: { type: string }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
   /config/drafts:
     get:
       summary: List versioned configuration drafts at one scope
@@ -2125,10 +2179,11 @@ components:
     ConfigDraft:
       type: object
       additionalProperties: false
-      required: [id, scope, state, base_scope_version, version, author_id, entries, created_at, updated_at]
+      required: [id, scope, operation, state, base_scope_version, version, author_id, entries, created_at, updated_at]
       properties:
         id: { type: string, pattern: "^configdraft_[0-9a-f]{32}$" }
         scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        operation: { type: string, enum: [apply, import] }
         state: { type: string, enum: [draft, reviewed, applied, discarded] }
         base_scope_version: { type: integer, minimum: 0 }
         version: { type: integer, minimum: 1 }
@@ -2137,6 +2192,7 @@ components:
         reason: { type: string }
         applied_revision_id: { type: string }
         entries: { type: array, minItems: 1, maxItems: 500, items: { $ref: "#/components/schemas/ConfigDraftEntry" } }
+        unknown_entries: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/ConfigImportValue" } }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     ConfigDraftCreateRequest:
@@ -2159,6 +2215,49 @@ components:
       additionalProperties: false
       required: [reason]
       properties: { reason: { type: string, minLength: 1, maxLength: 1000 } }
+    ConfigImportValue:
+      type: object
+      additionalProperties: false
+      required: [key, configured, secret, redacted]
+      properties:
+        key: { type: string, maxLength: 256 }
+        value: {}
+        configured: { type: boolean }
+        secret: { type: boolean }
+        redacted: { type: boolean }
+    DeclarativeConfig:
+      type: object
+      additionalProperties: false
+      required: [schema_version, registry_hash, scope, scope_version, revision_id, values, document_hash]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        registry_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        scope_version: { type: integer, minimum: 0 }
+        revision_id: { type: string }
+        values: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/ConfigImportValue" } }
+        document_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+    ConfigImportRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, target, document]
+      properties:
+        mode: { type: string, enum: [strict, forward_compatible] }
+        target: { $ref: "#/components/schemas/ConfigScopeRef" }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        document: { $ref: "#/components/schemas/DeclarativeConfig" }
+    ConfigImportPreview:
+      type: object
+      additionalProperties: false
+      required: [valid, mode, scope, base_scope_version, issues, entries, preserved_unknown]
+      properties:
+        valid: { type: boolean }
+        mode: { type: string, enum: [strict, forward_compatible] }
+        scope: { $ref: "#/components/schemas/ConfigScopeRef" }
+        base_scope_version: { type: integer, minimum: 0 }
+        issues: { type: array, items: { $ref: "#/components/schemas/ConfigValidationIssue" } }
+        entries: { type: array, items: { $ref: "#/components/schemas/ConfigDraftEntry" } }
+        preserved_unknown: { type: array, items: { $ref: "#/components/schemas/ConfigImportValue" } }
     ConfigValidationIssue:
       type: object
       additionalProperties: false

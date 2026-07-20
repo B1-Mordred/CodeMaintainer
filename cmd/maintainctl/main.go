@@ -219,7 +219,7 @@ func (c client) model(arguments []string) error {
 
 func (c client) config(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: maintainctl config <descriptors|values|effective|draft|history|registry-rollback|export|validate|apply|rollback>")
+		return errors.New("usage: maintainctl config <descriptors|values|effective|registry-export|import-preview|import|draft|history|registry-rollback|export|validate|apply|rollback>")
 	}
 	switch arguments[0] {
 	case "descriptors":
@@ -266,6 +266,19 @@ func (c client) config(arguments []string) error {
 			bodyScopes = append(bodyScopes, scope)
 		}
 		return c.printJSON(http.MethodPost, "/api/v1/config/effective", map[string]any{"scopes": bodyScopes})
+	case "registry-export":
+		flags := flag.NewFlagSet("config registry-export", flag.ContinueOnError)
+		scope := flags.String("scope", "", "scope as system or kind:id")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 || *scope == "" {
+			return errors.New("usage: maintainctl config registry-export --scope <system|kind:id>")
+		}
+		query, err := configScopeQuery(*scope)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/config/export?"+query.Encode(), nil)
+	case "import-preview", "import":
+		return c.configImport(arguments[0], arguments[1:])
 	case "draft":
 		return c.configDraft(arguments[1:])
 	case "history":
@@ -334,6 +347,44 @@ func (c client) config(arguments []string) error {
 	default:
 		return fmt.Errorf("unknown config command %q", arguments[0])
 	}
+}
+
+func (c client) configImport(command string, arguments []string) error {
+	flags := flag.NewFlagSet("config "+command, flag.ContinueOnError)
+	scope := flags.String("scope", "", "target scope as system or kind:id")
+	version := flags.Int64("scope-version", -1, "current target scope version from the ETag")
+	mode := flags.String("mode", "strict", "strict or forward_compatible")
+	reason := flags.String("reason", "", "audited import reason")
+	if err := flags.Parse(arguments); err != nil || flags.NArg() != 1 || *scope == "" || *version < 0 || (command == "import" && *reason == "") {
+		reasonUsage := ""
+		if command == "import" {
+			reasonUsage = "--reason <text> "
+		}
+		return fmt.Errorf("usage: maintainctl config %s --scope <system|kind:id> --scope-version <n> --mode <strict|forward_compatible> %s<file|->", command, reasonUsage)
+	}
+	kind, id, err := parseConfigScope(*scope)
+	if err != nil {
+		return err
+	}
+	document, err := readJSONDocument(flags.Arg(0))
+	if err != nil {
+		return err
+	}
+	var decoded any
+	if err := json.Unmarshal(document, &decoded); err != nil {
+		return err
+	}
+	target := map[string]string{"kind": kind}
+	if id != "" {
+		target["id"] = id
+	}
+	body := map[string]any{"mode": *mode, "target": target, "document": decoded}
+	path := "/api/v1/config/import/preview"
+	if command == "import" {
+		path = "/api/v1/config/import"
+		body["reason"] = *reason
+	}
+	return c.printJSONWithHeaders(http.MethodPost, path, body, map[string]string{"If-Match": configCLIETag("scope", *version)})
 }
 
 func (c client) configDraft(arguments []string) error {
@@ -650,6 +701,9 @@ Commands:
   config descriptors [--search text] [--basic]
   config values --scope <system|kind:id>
   config effective [--scope <system|kind:id>]...
+  config registry-export --scope <system|kind:id>
+  config import-preview --scope <scope> --scope-version <n> --mode <mode> <file|->
+  config import --scope <scope> --scope-version <n> --mode <mode> --reason <text> <file|->
   config draft list --scope <system|kind:id>
   config draft create --scope <scope> --scope-version <n> --reason <text> <entries-file|->
   config draft get <draft-id>

@@ -237,6 +237,63 @@ func TestConfigurationRegistryAPIUsesTypedDraftsETagsAndRollback(t *testing.T) {
 	}
 }
 
+func TestConfigurationRegistryAPIExportsRedactedAndPreviewsUnknownImport(t *testing.T) {
+	server, _ := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/config/export?scope_kind=system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document appconfig.DeclarativeConfig
+	if err := json.NewDecoder(response.Body).Decode(&document); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("ETag") != `"config-scope-1"` || appconfig.VerifyDeclarativeConfig(document) != nil {
+		t.Fatalf("configuration export returned %d %q: %#v", response.StatusCode, response.Header.Get("ETag"), document)
+	}
+	document.Values = append(document.Values, appconfig.ImportValue{Key: "future.setting", Value: json.RawMessage(`{"opaque":true}`), Configured: true})
+	document.DocumentHash, err = appconfig.ComputeDeclarativeConfigHash(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"mode": "forward_compatible", "target": appconfig.ScopeRef{Kind: appconfig.ScopeSystem}, "reason": "API import fixture", "document": document,
+	})
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/config/import/preview", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", `"config-scope-1"`)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preview appconfig.ImportPreview
+	if err := json.NewDecoder(response.Body).Decode(&preview); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !preview.Valid || len(preview.PreservedUnknown) != 1 {
+		t.Fatalf("import preview returned %d: %#v", response.StatusCode, preview)
+	}
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/config/import", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", `"config-scope-1"`)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported struct {
+		Draft   appconfig.Draft         `json:"draft"`
+		Preview appconfig.ImportPreview `json:"preview"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&imported); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || imported.Draft.Operation != "import" || len(imported.Draft.UnknownEntries) != 1 {
+		t.Fatalf("import draft returned %d: %#v", response.StatusCode, imported)
+	}
+}
+
 type rejectingWebhookValidator struct{}
 
 func (rejectingWebhookValidator) ValidateWebhook(context.Context, gitbridge.WebhookValidationRequest) (gitbridge.PullRequestEvent, error) {

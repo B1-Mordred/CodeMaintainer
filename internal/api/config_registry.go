@@ -86,6 +86,98 @@ func (s *Server) configEffective(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, effective)
 }
 
+func (s *Server) exportRegistryConfig(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireConfigRegistry(w)
+	if !ok {
+		return
+	}
+	scope, err := configScopeFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_configuration_scope", err.Error())
+		return
+	}
+	document, err := service.ExportScope(r.Context(), scope)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", configETag("scope", document.ScopeVersion))
+	writeJSON(w, http.StatusOK, document)
+}
+
+type registryImportRequest struct {
+	Mode     string                      `json:"mode"`
+	Target   appconfig.ScopeRef          `json:"target"`
+	Reason   string                      `json:"reason,omitempty"`
+	Document appconfig.DeclarativeConfig `json:"document"`
+}
+
+func (s *Server) previewRegistryImport(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireConfigRegistry(w)
+	if !ok {
+		return
+	}
+	version, ok := requireConfigETag(w, r, "scope")
+	if !ok {
+		return
+	}
+	var request registryImportRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	preview := service.PreviewImport(request.Document, request.Mode, request.Target, version)
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (s *Server) importRegistryConfig(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireConfigRegistry(w)
+	if !ok {
+		return
+	}
+	version, ok := requireConfigETag(w, r, "scope")
+	if !ok {
+		return
+	}
+	var request registryImportRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 1000 {
+		writeError(w, http.StatusBadRequest, "invalid_reason", "a reason between 1 and 1000 characters is required")
+		return
+	}
+	draft, preview, err := service.ImportDraft(r.Context(), request.Document, request.Mode,
+		request.Target, version, actorID(r), request.Reason)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	if !preview.Valid {
+		writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{"preview": preview})
+		return
+	}
+	w.Header().Set("Location", "/api/v1/config/drafts/"+draft.ID)
+	w.Header().Set("ETag", configETag("draft", draft.Version))
+	writeJSON(w, http.StatusCreated, map[string]any{"draft": draft, "preview": preview})
+}
+
+func (s *Server) configPrerequisites(w http.ResponseWriter, _ *http.Request) {
+	service, ok := s.requireConfigRegistry(w)
+	if !ok {
+		return
+	}
+	items := make([]map[string]string, 0)
+	for _, descriptor := range service.Descriptors() {
+		for _, prerequisite := range descriptor.Prerequisites {
+			items = append(items, map[string]string{
+				"key": descriptor.Key, "prerequisite": prerequisite,
+				"status": "unavailable", "message": "Run a version-bound draft dry run to evaluate this prerequisite.",
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
 type registryDraftRequest struct {
 	Scope   appconfig.ScopeRef     `json:"scope"`
 	Reason  string                 `json:"reason"`

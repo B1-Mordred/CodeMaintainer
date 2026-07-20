@@ -347,9 +347,13 @@ func (service *RegistryService) ApplyDraft(ctx context.Context, draftID string, 
 		return RegistryRevision{}, ScopeState{}, report, errors.New("recent reauthentication is required for secret changes")
 	}
 	changes := draftEntriesToChanges(report.NormalizedEntries)
+	operation := draft.Operation
+	if operation == "" {
+		operation = "apply"
+	}
 	revision, state, err := service.repository.ApplyConfigScope(ctx, ApplyScopeRequest{
 		Scope: draft.Scope, ExpectedVersion: draft.BaseScopeVersion,
-		ActorID: actorID, ActorRole: actorRole, Operation: "apply", Reason: reason,
+		ActorID: actorID, ActorRole: actorRole, Operation: operation, Reason: reason,
 		DraftID: draft.ID, DraftVersion: draft.Version, Changes: changes,
 	})
 	return revision, state, report, err

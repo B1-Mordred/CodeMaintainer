@@ -19,6 +19,7 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - [x] (2026-07-20 21:09Z) Added forward-only migration 16 and transactional scoped-value persistence: active Increment 1 import, optimistic scope heads, redacted append-only revisions, atomic reset-to-inherited, immutable job snapshots, same-scope rollback binding, audit events, restart-safe reads, and regression tests; full Go tests pass.
 - [x] (2026-07-20 21:27Z) Added the shared registry application service and draft/check lifecycle: trusted normalization, exact-version create/update/review, append-only validation/dry-run results, review-to-apply content binding, reauthentication signal for secret descriptors, effective configuration, whole-scope historical rollback, complete job snapshots, and atomic Increment 1 system-document compatibility projection; full Go tests pass.
 - [x] (2026-07-20 21:38Z) Wired the registry into controller startup and added typed REST/OpenAPI and CLI surfaces for descriptors/search, scoped values, effective resolution, draft create/update/read/list/check/validate/dry-run/review/apply/discard, revision history, and rollback. ETags are mandatory for writes, API lifecycle/CLI header tests pass, Redocly reports a valid contract without warnings, and generated TypeScript bindings match.
+- [x] (2026-07-20 22:00Z) Added deterministic redacted declarative export, hash/schema/registry-bound strict and forward-compatible import previews, reviewed import drafts, immutable preservation of unknown forward keys that are never applied, prerequisite discovery, REST/OpenAPI/CLI parity, and forward-only migration 17. Restored migration 16 exactly and proved retained version-16 drafts upgrade with `operation=apply`. A patched `js-yaml` 4.3.0 override clears a newly published transitive advisory; Go tests/vet, npm audit/test/build, Redocly, generated API drift, and Compose validation pass.
 - [ ] Milestone 1 — replace the single-document configuration surface with the complete typed registry, seven-scope effective-value resolver, immutable job snapshots, drafts/review/apply/rollback/import/export/dry-run/prerequisite APIs, CLI parity, and dedicated accessible workbench.
 - [ ] Milestone 2 — add incremental code intelligence, deterministic Context Compiler, baseline/differential verification, test-impact analysis, isolated content-addressed caches, and their status/query/rebuild browser surfaces.
 - [ ] Milestone 3 — add evidence-backed Repo Doctor onboarding, signed/checksummed capability-pack lifecycle, PHP/R/security packs, and catalog/assignment/upgrade/rollback UI.
@@ -37,6 +38,10 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: `web/src/OperatorConsole.tsx` defines ten `PageID` values. Increment 2 requires 17 named, navigable operational areas plus typed configuration controls.
 - Observation: the tool containers intentionally use a fresh in-memory `/src/web/node_modules` for each run.
   Evidence: `npm run check:api` alone failed with `openapi-typescript: not found`; `npm ci && npm run check:api` passed. Every recorded frontend/container gate must install the locked dependencies in that invocation.
+- Observation: a high-severity `js-yaml` advisory appeared after the clean baseline without any lockfile change, and both `openapi-typescript`'s Redocly 1.x parser and the diff viewer consume the 4.x line.
+  Evidence: the first baseline `npm ci` reported zero vulnerabilities; the later audit identified 4.2.0. The official registry publishes patched legacy-line 4.3.0, and a root override deduplicates both consumers to that exact release while leaving the direct tool versions pinned; the rerun reports zero vulnerabilities.
+- Observation: migration 16 had already been committed before the export/import persistence extension was implemented.
+  Evidence: editing the migration in place would leave any database opened at the intermediate commit recorded at version 16 but missing the new columns and tables. Migration 16 is now byte-identical to its committed form, and migration 17 adds the import structures with a retained-draft upgrade fixture.
 
 ## Decision Log
 
@@ -54,6 +59,12 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Date/Author: 2026-07-20 / Codex
 - Decision: keep code intelligence controller-local and project-separated in SQLite, with derived blobs keyed by repository/blob/tool identity.
   Rationale: this matches the single-host deployment, existing durable store, backup/recovery model, and namespace boundary. Tree-sitter/SCIP/read-only LSP adapters can enrich data without becoming workflow authorities or receiving unrestricted execution.
+  Date/Author: 2026-07-20 / Codex
+- Decision: preserve unknown declarative-import entries only inside immutable import-draft evidence and never copy them into effective scoped values.
+  Rationale: forward compatibility must retain future keys losslessly enough for review without granting unregistered data any runtime authority. Known keys still pass current descriptor validation, and strict mode rejects every unknown key.
+  Date/Author: 2026-07-20 / Codex
+- Decision: pin a root npm override from vulnerable `js-yaml` 4.2.0 to the patched compatible 4.3.0 release.
+  Rationale: the current pinned `openapi-typescript` release fixes its Redocly 1.x parser dependency at 4.2.0 and no newer generator release exists. The narrow override removes the reachable advisory without adopting an incompatible js-yaml 5.x API or floating any production dependency.
   Date/Author: 2026-07-20 / Codex
 
 ## Outcomes & Retrospective
@@ -155,3 +166,5 @@ Revision note (2026-07-20 21:09Z): added migration 16 and the scoped persistence
 Revision note (2026-07-20 21:27Z): completed the registry application-service slice. Draft edits, validation/dry-run evidence, review, apply, discard-ready transitions, historical rollback, effective resolution, and job snapshot creation now share trusted controller logic; reviewed bytes are bound at the storage transaction and system-scope applies update the Increment 1 compatibility document atomically. API/OpenAPI, CLI, export/import, purpose-built external checks, and UI remain open.
 
 Revision note (2026-07-20 21:38Z): exposed the service through ETag-bound REST/OpenAPI and matching `maintainctl config` commands, initialized the system scope at controller startup, generated typed frontend bindings, and added API/CLI contract regressions. Redocly and generated-client drift pass. Redacted export/import, dependency/prerequisite views, and the browser workbench remain open before Milestone 1 can close.
+
+Revision note (2026-07-20 22:00Z): completed the redacted export/import backend and parity surfaces. Deterministic hashes detect tampering, strict mode rejects unknown keys, forward-compatible mode preserves them only as immutable draft evidence, and reviewed import applies registered values only. Kept committed migration 16 unchanged and introduced migration 17 with a retained-data regression. Also pinned the patched `js-yaml` 4.3.0 compatibility release after advisory-database drift made the unchanged lock fail; the full current Go/frontend/OpenAPI/Compose gate is clean. The browser workbench, setting-level inventory enforcement, dependency/prerequisite handlers, and automatic job-acceptance snapshots remain open.

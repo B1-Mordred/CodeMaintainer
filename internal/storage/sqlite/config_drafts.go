@@ -15,7 +15,10 @@ import (
 )
 
 func (s *Store) CreateConfigDraft(ctx context.Context, request appconfig.CreateDraftRequest) (appconfig.Draft, error) {
-	if err := validateStoredScope(request.Scope); err != nil || request.BaseScopeVersion < 0 || !validDraftActorReason(request.AuthorID, request.Reason) || validateDraftEntries(request.Entries) != nil {
+	if request.Operation == "" {
+		request.Operation = "apply"
+	}
+	if err := validateStoredScope(request.Scope); err != nil || request.BaseScopeVersion < 0 || !validDraftActorReason(request.AuthorID, request.Reason) || validateDraftEntries(request.Entries) != nil || validateDraftUnknownEntries(request.Operation, request.UnknownEntries) != nil {
 		return appconfig.Draft{}, storage.ErrInvalid
 	}
 	id, err := NewID("configdraft")
@@ -24,10 +27,11 @@ func (s *Store) CreateConfigDraft(ctx context.Context, request appconfig.CreateD
 	}
 	now := s.now()
 	draft := appconfig.Draft{
-		ID: id, Scope: request.Scope, State: appconfig.DraftOpen,
+		ID: id, Scope: request.Scope, Operation: request.Operation, State: appconfig.DraftOpen,
 		BaseScopeVersion: request.BaseScopeVersion, Version: 1, AuthorID: request.AuthorID,
 		Reason: strings.TrimSpace(request.Reason), Entries: cloneDraftEntries(request.Entries),
-		CreatedAt: now, UpdatedAt: now,
+		UnknownEntries: cloneImportValues(request.UnknownEntries),
+		CreatedAt:      now, UpdatedAt: now,
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -41,15 +45,18 @@ func (s *Store) CreateConfigDraft(ctx context.Context, request appconfig.CreateD
 	if currentVersion != request.BaseScopeVersion {
 		return appconfig.Draft{}, storage.ErrConflict
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO config_drafts(id, scope_kind, scope_id, state,
+	_, err = tx.ExecContext(ctx, `INSERT INTO config_drafts(id, scope_kind, scope_id, operation, state,
 		base_scope_version, version, author_id, reason, created_at, updated_at)
-		VALUES(?, ?, ?, 'draft', ?, 1, ?, ?, ?, ?)`, draft.ID, draft.Scope.Kind,
-		draft.Scope.ID, draft.BaseScopeVersion, draft.AuthorID, draft.Reason,
+		VALUES(?, ?, ?, ?, 'draft', ?, 1, ?, ?, ?, ?)`, draft.ID, draft.Scope.Kind,
+		draft.Scope.ID, draft.Operation, draft.BaseScopeVersion, draft.AuthorID, draft.Reason,
 		now.Format(timestampFormat), now.Format(timestampFormat))
 	if err != nil {
 		return appconfig.Draft{}, fmt.Errorf("insert configuration draft: %w", err)
 	}
 	if err := replaceDraftEntriesTx(ctx, tx, draft.ID, draft.Entries); err != nil {
+		return appconfig.Draft{}, err
+	}
+	if err := insertDraftUnknownEntriesTx(ctx, tx, draft.ID, draft.UnknownEntries); err != nil {
 		return appconfig.Draft{}, err
 	}
 	if err := appendDraftAuditTx(ctx, tx, s.now, draft.AuthorID, "create", draft, draft.Reason); err != nil {
@@ -73,16 +80,20 @@ func (s *Store) GetConfigDraft(ctx context.Context, id string) (appconfig.Draft,
 	if err != nil {
 		return appconfig.Draft{}, err
 	}
+	draft.UnknownEntries, err = s.configDraftUnknownEntries(ctx, draft.ID)
+	if err != nil {
+		return appconfig.Draft{}, err
+	}
 	return draft, nil
 }
 
-const configDraftSelect = `SELECT id, scope_kind, scope_id, state, base_scope_version,
+const configDraftSelect = `SELECT id, scope_kind, scope_id, operation, state, base_scope_version,
 	version, author_id, reviewer_id, reason, applied_revision_id, created_at, updated_at FROM config_drafts`
 
 func scanConfigDraft(row scanner) (appconfig.Draft, error) {
 	var draft appconfig.Draft
 	var scopeKind, state, created, updated string
-	if err := row.Scan(&draft.ID, &scopeKind, &draft.Scope.ID, &state,
+	if err := row.Scan(&draft.ID, &scopeKind, &draft.Scope.ID, &draft.Operation, &state,
 		&draft.BaseScopeVersion, &draft.Version, &draft.AuthorID, &draft.ReviewerID,
 		&draft.Reason, &draft.AppliedRevisionID, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -125,6 +136,10 @@ func (s *Store) ListConfigDrafts(ctx context.Context, scope appconfig.ScopeRef, 
 	}
 	for index := range result {
 		result[index].Entries, err = s.configDraftEntries(ctx, result[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		result[index].UnknownEntries, err = s.configDraftUnknownEntries(ctx, result[index].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +188,7 @@ func (s *Store) UpdateConfigDraft(ctx context.Context, request appconfig.UpdateD
 	if err := tx.Commit(); err != nil {
 		return appconfig.Draft{}, fmt.Errorf("commit configuration draft update: %w", err)
 	}
-	return draft, nil
+	return s.GetConfigDraft(ctx, draft.ID)
 }
 
 func (s *Store) TransitionConfigDraft(ctx context.Context, request appconfig.TransitionDraftRequest) (appconfig.Draft, error) {
@@ -230,6 +245,10 @@ func (s *Store) TransitionConfigDraft(ctx context.Context, request appconfig.Tra
 	if err != nil {
 		return appconfig.Draft{}, err
 	}
+	draft.UnknownEntries, err = s.configDraftUnknownEntries(ctx, draft.ID)
+	if err != nil {
+		return appconfig.Draft{}, err
+	}
 	return draft, nil
 }
 
@@ -267,8 +286,34 @@ func validateDraftEntries(entries []appconfig.DraftEntry) error {
 	return nil
 }
 
+func validateDraftUnknownEntries(operation string, entries []appconfig.ImportValue) error {
+	if (operation != "apply" && operation != "import") ||
+		(operation != "import" && len(entries) != 0) || len(entries) > 500 {
+		return storage.ErrInvalid
+	}
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		validOpaqueValue := len(entry.Value) > 0 && len(entry.Value) <= 1<<20 && json.Valid(entry.Value)
+		validRedactedSecret := len(entry.Value) == 0 && entry.Secret && entry.Redacted
+		if strings.TrimSpace(entry.Key) == "" || len(entry.Key) > 256 || seen[entry.Key] ||
+			(!validOpaqueValue && !validRedactedSecret) || (entry.Secret && len(entry.Value) != 0) {
+			return storage.ErrInvalid
+		}
+		seen[entry.Key] = true
+	}
+	return nil
+}
+
 func cloneDraftEntries(entries []appconfig.DraftEntry) []appconfig.DraftEntry {
 	result := append([]appconfig.DraftEntry(nil), entries...)
+	for index := range result {
+		result[index].Value = append(json.RawMessage(nil), result[index].Value...)
+	}
+	return result
+}
+
+func cloneImportValues(entries []appconfig.ImportValue) []appconfig.ImportValue {
+	result := append([]appconfig.ImportValue(nil), entries...)
 	for index := range result {
 		result[index].Value = append(json.RawMessage(nil), result[index].Value...)
 	}
@@ -293,6 +338,21 @@ func replaceDraftEntriesTx(ctx context.Context, tx *sql.Tx, draftID string, entr
 	return nil
 }
 
+func insertDraftUnknownEntriesTx(ctx context.Context, tx *sql.Tx, draftID string, entries []appconfig.ImportValue) error {
+	for _, entry := range entries {
+		var value any
+		if len(entry.Value) != 0 {
+			value = string(entry.Value)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO config_import_unknown_entries(
+			draft_id, setting_key, value_json, configured, secret, redacted)
+			VALUES(?, ?, ?, ?, ?, ?)`, draftID, entry.Key, value, entry.Configured, entry.Secret, entry.Redacted); err != nil {
+			return fmt.Errorf("preserve unknown configuration import entry %s: %w", entry.Key, err)
+		}
+	}
+	return nil
+}
+
 func (s *Store) configDraftEntries(ctx context.Context, draftID string) ([]appconfig.DraftEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT setting_key, value_json, reset_value, secret, configured
 		FROM config_draft_entries WHERE draft_id = ? ORDER BY setting_key`, draftID)
@@ -308,6 +368,28 @@ func (s *Store) configDraftEntries(ctx context.Context, draftID string) ([]appco
 			return nil, fmt.Errorf("scan configuration draft entry: %w", err)
 		}
 		if value.Valid && !entry.Secret {
+			entry.Value = json.RawMessage(value.String)
+		}
+		result = append(result, entry)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) configDraftUnknownEntries(ctx context.Context, draftID string) ([]appconfig.ImportValue, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT setting_key, value_json, configured, secret, redacted FROM config_import_unknown_entries
+		WHERE draft_id = ? ORDER BY setting_key`, draftID)
+	if err != nil {
+		return nil, fmt.Errorf("list preserved unknown configuration entries: %w", err)
+	}
+	defer rows.Close()
+	result := make([]appconfig.ImportValue, 0)
+	for rows.Next() {
+		var entry appconfig.ImportValue
+		var value sql.NullString
+		if err := rows.Scan(&entry.Key, &value, &entry.Configured, &entry.Secret, &entry.Redacted); err != nil {
+			return nil, fmt.Errorf("scan preserved unknown configuration entry: %w", err)
+		}
+		if value.Valid {
 			entry.Value = json.RawMessage(value.String)
 		}
 		result = append(result, entry)
@@ -336,6 +418,7 @@ func appendDraftAuditTx(ctx context.Context, tx *sql.Tx, now func() time.Time, a
 	details, _ := json.Marshal(map[string]any{
 		"scope": draft.Scope, "state": draft.State, "version": draft.Version,
 		"base_scope_version": draft.BaseScopeVersion, "reason": reason, "entries": keys,
+		"preserved_unknown_count": len(draft.UnknownEntries),
 	})
 	return appendAuditTx(ctx, tx, now, audit.AppendRequest{
 		ActorID: actorID, ActorRole: "administrator", Action: "config_draft." + action,

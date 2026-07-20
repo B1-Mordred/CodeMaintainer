@@ -221,8 +221,8 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 16 {
-		t.Fatalf("applied migration count = %d, want 16", migrations)
+	if migrations != 17 {
+		t.Fatalf("applied migration count = %d, want 17", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -235,6 +235,58 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	}
 	if registryValue != "2" {
 		t.Fatalf("migrated review-cycle value = %q, want 2", registryValue)
+	}
+}
+
+func TestMigration17PreservesVersion16DraftsAndAddsImportStorage(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "version-16.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := []string{
+		`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
+		`WITH RECURSIVE versions(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM versions WHERE value < 16)
+		 INSERT INTO schema_migrations SELECT value, '2026-07-20T00:00:00Z' FROM versions`,
+		`CREATE TABLE config_drafts (
+		 id TEXT PRIMARY KEY, scope_kind TEXT NOT NULL, scope_id TEXT NOT NULL,
+		 state TEXT NOT NULL, base_scope_version INTEGER NOT NULL, version INTEGER NOT NULL,
+		 author_id TEXT NOT NULL, reviewer_id TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL,
+		 applied_revision_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+		) STRICT`,
+		`INSERT INTO config_drafts(id, scope_kind, scope_id, state, base_scope_version, version,
+		 author_id, reason, created_at, updated_at) VALUES(
+		 'configdraft_existing', 'system', '', 'draft', 1, 2, 'operator', 'retained',
+		 '2026-07-20T00:00:00Z', '2026-07-20T00:00:00Z')`,
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var operation string
+	if err := store.db.QueryRowContext(ctx,
+		`SELECT operation FROM config_drafts WHERE id = 'configdraft_existing'`).Scan(&operation); err != nil {
+		t.Fatal(err)
+	}
+	if operation != "apply" {
+		t.Fatalf("retained draft operation = %q, want apply", operation)
+	}
+	var table string
+	if err := store.db.QueryRowContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'config_import_unknown_entries'`).Scan(&table); err != nil {
+		t.Fatalf("import preservation table missing: %v", err)
 	}
 }
 

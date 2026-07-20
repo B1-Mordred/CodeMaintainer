@@ -275,18 +275,18 @@ func validateApplyScopeRequest(request appconfig.ApplyScopeRequest) error {
 }
 
 func validateAppliedDraftTx(ctx context.Context, tx *sql.Tx, request appconfig.ApplyScopeRequest) error {
-	var scopeKind, scopeID, state string
+	var scopeKind, scopeID, operation, state string
 	var baseVersion, draftVersion int64
-	err := tx.QueryRowContext(ctx, `SELECT scope_kind, scope_id, state, base_scope_version, version
+	err := tx.QueryRowContext(ctx, `SELECT scope_kind, scope_id, operation, state, base_scope_version, version
 		FROM config_drafts WHERE id = ?`, request.DraftID).
-		Scan(&scopeKind, &scopeID, &state, &baseVersion, &draftVersion)
+		Scan(&scopeKind, &scopeID, &operation, &state, &baseVersion, &draftVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return storage.ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("read applied configuration draft: %w", err)
 	}
-	if scopeKind != string(request.Scope.Kind) || scopeID != request.Scope.ID || state != string(appconfig.DraftReviewed) || baseVersion != request.ExpectedVersion || draftVersion != request.DraftVersion {
+	if scopeKind != string(request.Scope.Kind) || scopeID != request.Scope.ID || operation != request.Operation || state != string(appconfig.DraftReviewed) || baseVersion != request.ExpectedVersion || draftVersion != request.DraftVersion {
 		return storage.ErrConflict
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT setting_key, value_json, reset_value, secret, configured
