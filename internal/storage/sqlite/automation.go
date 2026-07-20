@@ -452,3 +452,103 @@ func (s *Store) ListApprovalRequests(ctx context.Context, limit int) ([]automati
 	}
 	return items, rows.Err()
 }
+
+const notificationSelect = `SELECT sequence, id, kind, project_id, job_id, schedule_id, title, message,
+	delivery, state, created_at, read_at FROM notifications`
+
+func (s *Store) ListNotifications(ctx context.Context, state string, limit int) ([]automation.Notification, error) {
+	if state != "" && state != "delivered" && state != "read" {
+		return nil, automation.ErrInvalid
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := notificationSelect
+	arguments := []any{}
+	if state != "" {
+		query += " WHERE state = ?"
+		arguments = append(arguments, state)
+	}
+	query += " ORDER BY sequence DESC LIMIT ?"
+	arguments = append(arguments, limit)
+	rows, err := s.db.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []automation.Notification{}
+	for rows.Next() {
+		item, err := scanNotification(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) AcknowledgeNotification(ctx context.Context, id, actor string) (automation.Notification, error) {
+	if !strings.HasPrefix(id, "notification-") || strings.TrimSpace(actor) == "" {
+		return automation.Notification{}, automation.ErrInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return automation.Notification{}, err
+	}
+	defer tx.Rollback()
+	current, err := scanNotification(tx.QueryRowContext(ctx, notificationSelect+" WHERE id = ?", id))
+	if err != nil {
+		return automation.Notification{}, err
+	}
+	if current.State == "read" {
+		return current, nil
+	}
+	now := s.now()
+	result, err := tx.ExecContext(ctx, "UPDATE notifications SET state = 'read', read_at = ? WHERE id = ? AND state = 'delivered'", formatTime(now), id)
+	if err != nil {
+		return automation.Notification{}, err
+	}
+	if err := requireMemoryAffected(result); err != nil {
+		return automation.Notification{}, automation.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO notification_events(notification_id, action, actor_id, created_at)
+		VALUES(?, 'read', ?, ?)`, id, actor, formatTime(now)); err != nil {
+		return automation.Notification{}, err
+	}
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{
+		ActorID: actor, ActorRole: "operator", Action: "notification.read", TargetType: "notification", TargetID: id,
+	}); err != nil {
+		return automation.Notification{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return automation.Notification{}, err
+	}
+	current.State, current.ReadAt = "read", &now
+	return current, nil
+}
+
+func scanNotification(scanner interface{ Scan(...any) error }) (automation.Notification, error) {
+	var item automation.Notification
+	var created string
+	var read sql.NullString
+	err := scanner.Scan(&item.Sequence, &item.ID, &item.Kind, &item.ProjectID, &item.JobID, &item.ScheduleID,
+		&item.Title, &item.Message, &item.Delivery, &item.State, &created, &read)
+	if errors.Is(err, sql.ErrNoRows) {
+		return automation.Notification{}, automation.ErrNotFound
+	}
+	if err != nil {
+		return automation.Notification{}, err
+	}
+	item.CreatedAt, err = parseTime(created)
+	if err != nil {
+		return automation.Notification{}, err
+	}
+	if read.Valid {
+		value, parseErr := parseTime(read.String)
+		if parseErr != nil {
+			return automation.Notification{}, parseErr
+		}
+		item.ReadAt = &value
+	}
+	return item, nil
+}

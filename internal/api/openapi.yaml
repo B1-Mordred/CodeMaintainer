@@ -316,6 +316,32 @@ paths:
         "404": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
         "503": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/memory/actions/smoke-index:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+    post:
+      summary: Run a bounded scoped health/write/search/delete smoke test against the configured memory index
+      operationId: smokeProjectMemoryIndex
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200":
+          description: Configured index smoke test passed and the derived marker was deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, namespace, record_id, search_seen, duration_ns]
+                properties:
+                  status: { type: string, const: passed }
+                  namespace: { type: string }
+                  record_id: { type: string, pattern: "^memory_[a-f0-9]{32}$" }
+                  search_seen: { type: boolean, const: true }
+                  duration_ns: { type: integer, minimum: 0 }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "500": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory/{memoryID}:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -514,6 +540,39 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/AutomationRequest" } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /notifications:
+    get:
+      summary: List durably delivered local operator notifications
+      operationId: listNotifications
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [delivered, read] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Local notification inbox
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /notifications/{notificationID}/actions/read:
+    parameters:
+      - { name: notificationID, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    post:
+      summary: Idempotently acknowledge one delivered local notification
+      operationId: acknowledgeNotification
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200":
+          description: Read notification
+          content: { application/json: { schema: { $ref: "#/components/schemas/Notification" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /hermes/tools/jobs/submit:
     post:
       security: [{ hermesBearer: [] }]
@@ -1246,6 +1305,23 @@ components:
         requested_by: { type: string }
         rationale: { type: string }
         created_at: { type: string, format: date-time }
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [sequence, id, kind, title, message, delivery, state, created_at]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        id: { type: string }
+        kind: { type: string, enum: [job_attention, job_completed, job_failed, job_cancelled, schedule_dispatched, schedule_skipped, review_requested, publication_requested] }
+        project_id: { type: string }
+        job_id: { type: string }
+        schedule_id: { type: string }
+        title: { type: string }
+        message: { type: string }
+        delivery: { type: string, const: local_inbox }
+        state: { type: string, enum: [delivered, read] }
+        created_at: { type: string, format: date-time }
+        read_at: { type: string, format: date-time }
     GitHubDeliveryResult:
       type: object
       additionalProperties: false
@@ -1366,7 +1442,7 @@ components:
     SystemConfig:
       type: object
       additionalProperties: false
-      required: [schema_version, deployment, workflow, qc, protected_paths]
+      required: [schema_version, deployment, workflow, qc, protected_paths, notifications]
       properties:
         schema_version: { type: integer, const: 1 }
         deployment:
@@ -1401,6 +1477,12 @@ components:
           required: [patterns]
           properties:
             patterns: { type: array, minItems: 1, items: { type: string } }
+        notifications:
+          type: object
+          additionalProperties: false
+          required: [local_inbox_enabled]
+          properties:
+            local_inbox_enabled: { type: boolean }
     ConfigDocumentRequest:
       type: object
       additionalProperties: false

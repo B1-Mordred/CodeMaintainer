@@ -271,6 +271,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/memory/actions/smoke-index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a bounded scoped health/write/search/delete smoke test against the configured memory index */
+        post: operations["smokeProjectMemoryIndex"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory/{memoryID}": {
         parameters: {
             query?: never;
@@ -473,6 +492,42 @@ export interface paths {
         get: operations["listAutomationRequests"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List durably delivered local operator notifications */
+        get: operations["listNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{notificationID}/actions/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notificationID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Idempotently acknowledge one delivered local notification */
+        post: operations["acknowledgeNotification"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1160,6 +1215,25 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        Notification: {
+            sequence: number;
+            id: string;
+            /** @enum {string} */
+            kind: "job_attention" | "job_completed" | "job_failed" | "job_cancelled" | "schedule_dispatched" | "schedule_skipped" | "review_requested" | "publication_requested";
+            project_id?: string;
+            job_id?: string;
+            schedule_id?: string;
+            title: string;
+            message: string;
+            /** @constant */
+            delivery: "local_inbox";
+            /** @enum {string} */
+            state: "delivered" | "read";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            read_at?: string;
+        };
         GitHubDeliveryResult: {
             delivery_id: string;
             /** @enum {string} */
@@ -1300,6 +1374,9 @@ export interface components {
             };
             protected_paths: {
                 patterns: string[];
+            };
+            notifications: {
+                local_inbox_enabled: boolean;
             };
         };
         ConfigDocumentRequest: {
@@ -1845,6 +1922,42 @@ export interface operations {
             503: components["responses"]["ErrorResponse"];
         };
     };
+    smokeProjectMemoryIndex: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured index smoke test passed and the derived marker was deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "passed";
+                        namespace: string;
+                        record_id: string;
+                        /** @constant */
+                        search_seen: true;
+                        duration_ns: number;
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            500: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
+        };
+    };
     getProjectMemory: {
         parameters: {
             query?: never;
@@ -2175,6 +2288,60 @@ export interface operations {
                 };
             };
             403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listNotifications: {
+        parameters: {
+            query?: {
+                state?: "delivered" | "read";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local notification inbox */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Notification"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    acknowledgeNotification: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                notificationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read notification */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Notification"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
         };
     };
     hermesSubmitJob: {

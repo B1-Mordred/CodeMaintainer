@@ -68,3 +68,21 @@ func (s *Server) listAutomationRequests(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
+
+func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListNotifications(r.Context(), r.URL.Query().Get("state"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) acknowledgeNotification(w http.ResponseWriter, r *http.Request) {
+	notification, err := s.store.AcknowledgeNotification(r.Context(), r.PathValue("notificationID"), actorID(r))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notification)
+}

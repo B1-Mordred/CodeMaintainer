@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/automation"
+	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 )
@@ -141,5 +142,55 @@ func TestAutomationApprovalRequestsAreAppendOnlyAndDoNotApprove(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, "DELETE FROM automation_requests WHERE id = ?", request.ID); err == nil {
 		t.Fatal("append-only automation request was deleted")
+	}
+}
+
+func TestLocalNotificationInboxDeliversDurablyAndAcknowledgesIdempotently(t *testing.T) {
+	store, err := Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{ProjectID: "project", Repository: "owner/repo", Task: "task", ActorID: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{
+		To: jobs.StateFailed, ActorID: "controller", Reason: "fixture failure", ExpectedVersion: job.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.ListNotifications(ctx, "delivered", 10)
+	if err != nil || len(items) != 1 || items[0].Kind != "job_failed" || items[0].Delivery != "local_inbox" {
+		t.Fatalf("delivered notifications = %#v, %v", items, err)
+	}
+	read, err := store.AcknowledgeNotification(ctx, items[0].ID, "operator")
+	if err != nil || read.State != "read" || read.ReadAt == nil {
+		t.Fatalf("acknowledged notification = %#v, %v", read, err)
+	}
+	repeated, err := store.AcknowledgeNotification(ctx, items[0].ID, "operator")
+	if err != nil || repeated.State != "read" || !repeated.ReadAt.Equal(*read.ReadAt) {
+		t.Fatalf("repeated acknowledgement = %#v, %v", repeated, err)
+	}
+	var events int
+	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM notification_events WHERE notification_id = ?", items[0].ID).Scan(&events); err != nil || events != 2 {
+		t.Fatalf("notification events = %d, %v", events, err)
+	}
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO config_revisions(id, actor_id, schema_version, before_document,
+		after_document, document_diff, validation_result, created_at) VALUES('config_notifications_off', 'admin', 1,
+		'{}', '{"notifications":{"local_inbox_enabled":false}}', '[]', '{"valid":true}', ?)`, formatTime(store.now())); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateJob(ctx, storage.CreateJobParams{ProjectID: "project", Repository: "owner/repo", Task: "second", ActorID: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionJob(ctx, second.ID, jobs.TransitionRequest{To: jobs.StateFailed, ActorID: "controller", Reason: "fixture", ExpectedVersion: second.Version}); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.ListNotifications(ctx, "", 10)
+	if err != nil || len(all) != 1 {
+		t.Fatalf("disabled notification setting delivered records: %#v, %v", all, err)
 	}
 }

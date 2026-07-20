@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -93,6 +94,26 @@ func (s *Server) listProjectMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": selected, "namespace": scope.Namespace(), "retrieval": trace})
+}
+
+func (s *Server) smokeProjectMemoryIndex(w http.ResponseWriter, r *http.Request) {
+	if s.memoryIndex == nil {
+		writeError(w, http.StatusServiceUnavailable, "memory_index_disabled", "the replaceable memory index is disabled")
+		return
+	}
+	scope, err := s.projectMemoryScope(r)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	result, err := memory.SmokeIndex(ctx, s.memoryIndex, scope)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) reindexProjectMemory(w http.ResponseWriter, r *http.Request) {

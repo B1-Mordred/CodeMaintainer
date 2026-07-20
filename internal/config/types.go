@@ -8,11 +8,12 @@ import (
 const SchemaVersion = 1
 
 type System struct {
-	SchemaVersion int               `json:"schema_version"`
-	Deployment    Deployment        `json:"deployment"`
-	Workflow      WorkflowPolicy    `json:"workflow"`
-	QC            QCPolicy          `json:"qc"`
-	Protected     ProtectedPathRule `json:"protected_paths"`
+	SchemaVersion int                `json:"schema_version"`
+	Deployment    Deployment         `json:"deployment"`
+	Workflow      WorkflowPolicy     `json:"workflow"`
+	QC            QCPolicy           `json:"qc"`
+	Protected     ProtectedPathRule  `json:"protected_paths"`
+	Notifications NotificationPolicy `json:"notifications"`
 }
 
 type Deployment struct {
@@ -37,6 +38,10 @@ type QCPolicy struct {
 
 type ProtectedPathRule struct {
 	Patterns []string `json:"patterns"`
+}
+
+type NotificationPolicy struct {
+	LocalInboxEnabled bool `json:"local_inbox_enabled"`
 }
 
 type Revision struct {
@@ -78,6 +83,7 @@ func Default(dataRoot string) System {
 			"CODEOWNERS",
 			".gitmodules",
 		}},
+		Notifications: NotificationPolicy{LocalInboxEnabled: true},
 	}
 }
 

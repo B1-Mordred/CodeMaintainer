@@ -120,6 +120,21 @@ type ApprovalRequest struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type Notification struct {
+	Sequence   int64      `json:"sequence"`
+	ID         string     `json:"id"`
+	Kind       string     `json:"kind"`
+	ProjectID  string     `json:"project_id,omitempty"`
+	JobID      string     `json:"job_id,omitempty"`
+	ScheduleID string     `json:"schedule_id,omitempty"`
+	Title      string     `json:"title"`
+	Message    string     `json:"message"`
+	Delivery   string     `json:"delivery"`
+	State      string     `json:"state"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ReadAt     *time.Time `json:"read_at,omitempty"`
+}
+
 type Store interface {
 	SaveSchedule(context.Context, ScheduleRequest, string) (Schedule, error)
 	GetSchedule(context.Context, string) (Schedule, error)
@@ -131,4 +146,6 @@ type Store interface {
 	ListSkillProposals(context.Context, int) ([]SkillProposal, error)
 	CreateApprovalRequest(context.Context, string, string, string, string) (ApprovalRequest, error)
 	ListApprovalRequests(context.Context, int) ([]ApprovalRequest, error)
+	ListNotifications(context.Context, string, int) ([]Notification, error)
+	AcknowledgeNotification(context.Context, string, string) (Notification, error)
 }

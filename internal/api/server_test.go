@@ -18,6 +18,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -113,6 +114,50 @@ func TestGitHubWebhookIsPublicButFailsClosedAtIsolatedValidator(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("invalid public webhook returned %d", response.StatusCode)
+	}
+}
+
+func TestNotificationInboxListsAndAcknowledgesDeliveredEvents(t *testing.T) {
+	server, store := testServer(t)
+	job, err := store.CreateJob(context.Background(), storage.CreateJobParams{
+		ProjectID: "owner-repo", Repository: "owner/repo", Task: "fixture", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionJob(context.Background(), job.ID, jobs.TransitionRequest{
+		To: jobs.StateFailed, ActorID: "controller", Reason: "fixture", ExpectedVersion: job.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/notifications?state=delivered")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inbox struct {
+		Items []struct{ ID, State, Kind string } `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&inbox); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(inbox.Items) != 1 || inbox.Items[0].Kind != "job_failed" {
+		t.Fatalf("notification inbox returned %d: %#v", response.StatusCode, inbox)
+	}
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/notifications/"+inbox.Items[0].ID+"/actions/read", nil)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read struct {
+		State string `json:"state"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&read); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || read.State != "read" {
+		t.Fatalf("notification acknowledgement returned %d: %#v", response.StatusCode, read)
 	}
 }
 
@@ -332,6 +377,29 @@ func TestProjectMemoryReindexQueuesCanonicalRecords(t *testing.T) {
 	operation, err := store.ClaimMemoryIndexOperation(context.Background(), "test-indexer", 30*time.Second)
 	if err != nil || operation.RecordID != record.ID || operation.Action != "upsert" {
 		t.Fatalf("rebuild operation = %+v, %v", operation, err)
+	}
+}
+
+func TestConfiguredMemoryIndexSmokeEndpointIsScopedAndSelfCleaning(t *testing.T) {
+	_, store := testServer(t)
+	index := memory.NewFakeIndex()
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock", WithMemoryIndex(index)))
+	t.Cleanup(server.Close)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects/owner-repo/memory/actions/smoke-index", nil)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result memory.SmokeResult
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || result.Status != "passed" || !result.SearchSeen || result.Namespace != "viking://resources/projects/owner/repo/" {
+		t.Fatalf("smoke endpoint returned %d: %#v", response.StatusCode, result)
+	}
+	if matches, err := index.Find(context.Background(), memory.ProjectScope{Owner: "owner", Repository: "repo"}, "bounded OpenViking smoke marker", 10); err != nil || len(matches) != 0 {
+		t.Fatalf("smoke marker remained indexed: %#v, %v", matches, err)
 	}
 }
 

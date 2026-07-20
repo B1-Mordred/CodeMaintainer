@@ -188,6 +188,12 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	document, _ := json.Marshal(appconfig.Default(".data"))
+	var historicalDocument map[string]any
+	if err := json.Unmarshal(document, &historicalDocument); err != nil {
+		t.Fatal(err)
+	}
+	delete(historicalDocument, "notifications")
+	document, _ = json.Marshal(historicalDocument)
 	if _, err := db.ExecContext(ctx, `INSERT INTO config_revisions(
 		id, actor_id, schema_version, before_document, after_document,
 		document_diff, validation_result, rollback_of, created_at)
@@ -208,15 +214,15 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision.ID != "config_v1" || revision.Reason != "" {
+	if revision.ID != "config_notifications_v15" || !strings.Contains(string(revision.After), `"local_inbox_enabled":true`) {
 		t.Fatalf("unexpected migrated revision: %#v", revision)
 	}
 	var migrations int
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 14 {
-		t.Fatalf("applied migration count = %d, want 14", migrations)
+	if migrations != 15 {
+		t.Fatalf("applied migration count = %d, want 15", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -235,7 +241,16 @@ func TestMigration14PreservesHistoricalMemoryIndexQueueWithoutSequence(t *testin
 		`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
 		`WITH RECURSIVE versions(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM versions WHERE value < 13)
 		 INSERT INTO schema_migrations SELECT value, '2026-07-20T00:00:00Z' FROM versions`,
+		`CREATE TABLE config_revisions(sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
+		 actor_id TEXT NOT NULL, schema_version INTEGER NOT NULL, before_document TEXT NOT NULL, after_document TEXT NOT NULL,
+		 document_diff TEXT NOT NULL, validation_result TEXT NOT NULL, rollback_of TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)`,
+		`INSERT INTO config_revisions(id, actor_id, schema_version, before_document, after_document, document_diff,
+		 validation_result, created_at) VALUES('config_fixture', 'system', 1, '{}', '{"schema_version":1}', '[]', '{}', '2026-07-20T00:00:00Z')`,
 		`CREATE TABLE memory_records(id TEXT PRIMARY KEY)`,
+		`CREATE TABLE jobs(id TEXT PRIMARY KEY, project_id TEXT NOT NULL)`,
+		`CREATE TABLE job_transitions(sequence INTEGER PRIMARY KEY, job_id TEXT NOT NULL, to_state TEXT NOT NULL, created_at TEXT NOT NULL)`,
+		`CREATE TABLE schedule_runs(sequence INTEGER PRIMARY KEY, schedule_id TEXT NOT NULL, job_id TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL)`,
+		`CREATE TABLE automation_requests(sequence INTEGER PRIMARY KEY, kind TEXT NOT NULL, job_id TEXT NOT NULL, requested_by TEXT NOT NULL, created_at TEXT NOT NULL)`,
 		`CREATE TABLE memory_index_operations (
 		 id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES memory_records(id), owner TEXT NOT NULL,
 		 repository TEXT NOT NULL, action TEXT NOT NULL, record_version INTEGER NOT NULL, state TEXT NOT NULL,

@@ -19,5 +19,8 @@
   },
   "protected_paths": {
     "patterns": [".github/workflows/**", "CODEOWNERS", ".gitmodules"]
+  },
+  "notifications": {
+    "local_inbox_enabled": true
   }
 }

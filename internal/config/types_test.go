@@ -20,6 +20,9 @@ func TestDefaultConfigurationIsValidAndSecure(t *testing.T) {
 	if !value.QC.HumanWaiverEnabled || !value.QC.WaiverRationaleRequired {
 		t.Fatal("default waiver policy is incomplete")
 	}
+	if !value.Notifications.LocalInboxEnabled {
+		t.Fatal("durable local notifications are not enabled by default")
+	}
 }
 
 func TestInvalidLimitsAreRejected(t *testing.T) {

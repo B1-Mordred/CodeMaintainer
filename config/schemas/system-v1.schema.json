@@ -4,7 +4,7 @@
   "title": "Local Code Maintainer system configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "deployment", "workflow", "qc", "protected_paths"],
+  "required": ["schema_version", "deployment", "workflow", "qc", "protected_paths", "notifications"],
   "properties": {
     "schema_version": { "const": 1 },
     "deployment": {
@@ -56,6 +56,14 @@
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
         }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_inbox_enabled"],
+      "properties": {
+        "local_inbox_enabled": { "type": "boolean", "default": true }
       }
     }
   }
