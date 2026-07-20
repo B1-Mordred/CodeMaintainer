@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Activity, Box, Cpu, Database, LogOut, RefreshCw } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { api, getCSRFToken, setCSRFToken } from "./api/client";
 import type { components } from "./api/schema";
+import { OperatorConsole } from "./OperatorConsole";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -9,10 +10,6 @@ type Principal = components["schemas"]["Principal"];
 type AuthenticationResult = components["schemas"]["AuthenticationResult"];
 
 type AuthScreen = "checking" | "bootstrap" | "login" | "authenticated";
-
-function statusLabel(value: string): string {
-  return value.replaceAll("_", " ");
-}
 
 export function App() {
   const [authScreen, setAuthScreen] = useState<AuthScreen>("checking");
@@ -92,7 +89,7 @@ export function App() {
         {authScreen === "checking" && <p className="notice" role="status">Checking administrator bootstrap and session…</p>}
         {authScreen === "bootstrap" && <AuthenticationForm mode="bootstrap" onAuthenticated={establishSession} />}
         {authScreen === "login" && <AuthenticationForm mode="login" onAuthenticated={establishSession} />}
-        {authScreen === "authenticated" && <Dashboard status={status} jobs={jobs} loading={loading} error={error} reload={load} />}
+        {authScreen === "authenticated" && <OperatorConsole initialStatus={status} initialJobs={jobs} loading={loading} error={error} reloadOverview={load} />}
       </main>
     </>
   );
@@ -123,7 +120,7 @@ function AuthenticationForm({ mode, onAuthenticated }: { mode: "bootstrap" | "lo
   };
 
   return <section className="auth-card" aria-labelledby="auth-heading">
-    <p className="eyebrow">{bootstrap ? "First-run step 1 of 10" : "Authenticated access"}</p>
+    <p className="eyebrow">{bootstrap ? "First-run account setup" : "Authenticated access"}</p>
     <h1 id="auth-heading">{bootstrap ? "Create the local administrator" : "Sign in"}</h1>
     <p className="form-help">{bootstrap ? "This one-time account controls repositories, policies, backups, and upgrades. The password is Argon2id-hashed and never returned to the browser." : "Use a local account. Sessions expire after 12 hours."}</p>
     {error && <p className="error" role="alert">{error}</p>}
@@ -137,30 +134,4 @@ function AuthenticationForm({ mode, onAuthenticated }: { mode: "bootstrap" | "lo
       <button type="submit" disabled={submitting}>{submitting ? "Working…" : bootstrap ? "Create administrator" : "Sign in"}</button>
     </form>
   </section>;
-}
-
-function Dashboard({ status, jobs, loading, error, reload }: { status: SystemStatus | null; jobs: Job[]; loading: boolean; error: string | null; reload: () => Promise<void> }) {
-  return <>
-    <p className="notice" role="status">The durable maintenance workflow and local draft publication are active. External publication still requires an exact-commit reviewer approval.</p>
-    <section className="summary-grid" aria-label="System summary">
-      <SummaryCard icon={<Activity aria-hidden="true" />} label="Controller" value={error ? "Unavailable" : status?.status ?? "Checking…"} good={!error && status?.status === "healthy"} />
-      <SummaryCard icon={<Box aria-hidden="true" />} label="Deployment" value={status?.profile ?? "—"} />
-      <SummaryCard icon={<Database aria-hidden="true" />} label="Jobs" value={loading ? "—" : String(jobs.length)} />
-      <SummaryCard icon={<Cpu aria-hidden="true" />} label="Current model" value="Unloaded" />
-    </section>
-    <section aria-labelledby="jobs-heading">
-      <div className="section-heading"><div><p className="eyebrow">Queue and history</p><h1 id="jobs-heading">Maintenance jobs</h1></div><button type="button" onClick={() => void reload()} disabled={loading}><RefreshCw aria-hidden="true" size={17} /> {loading ? "Refreshing" : "Refresh"}</button></div>
-      <div className="table-scroll" tabIndex={0} aria-label="Scrollable maintenance jobs table">
-        <table><thead><tr><th scope="col">Job</th><th scope="col">Repository</th><th scope="col">State</th><th scope="col">Updated</th></tr></thead><tbody>
-          {!loading && jobs.length === 0 && <tr><td className="empty" colSpan={4}>No jobs submitted yet.</td></tr>}
-          {loading && <tr><td className="empty" colSpan={4}>Loading jobs…</td></tr>}
-          {jobs.map((job) => <tr key={job.id}><td><a href={`/api/v1/jobs/${encodeURIComponent(job.id)}`}>{job.id}</a></td><td>{job.repository}</td><td><span className="status-pill"><span aria-hidden="true">●</span> {statusLabel(job.state)}</span></td><td>{new Date(job.updated_at).toLocaleString()}</td></tr>)}
-        </tbody></table>
-      </div>
-    </section>
-  </>;
-}
-
-function SummaryCard({ icon, label, value, good = false }: { icon: React.ReactNode; label: string; value: string; good?: boolean }) {
-  return <article className="summary-card"><div className="card-label">{icon}<span>{label}</span></div><p className={good ? "card-value good" : "card-value"}>{value}</p></article>;
 }

@@ -106,6 +106,101 @@ paths:
         "204": { description: Session revoked and cookie expired }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /admin/users:
+    get:
+      summary: List local users and exact roles
+      operationId: listUsers
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Local users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/User" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create a local user after recent administrator reauthentication
+      operationId: createUser
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateUserRequest" } } }
+      responses:
+        "201": { description: Created user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /admin/users/{userID}:
+    parameters:
+      - { name: userID, in: path, required: true, schema: { type: string, pattern: "^user_[0-9a-f]{32}$" } }
+    put:
+      summary: Update a local user's display name, exact role, and enabled state
+      operationId: updateUser
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateUserRequest" } } }
+      responses:
+        "200": { description: Updated user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /admin/backups:
+    get:
+      summary: List locally retained checksum-bound backups
+      operationId: listBackups
+      responses:
+        "200":
+          description: Backup inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/BackupRecord" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create a consistent state backup after recent reauthentication
+      operationId: createBackup
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201": { description: Created backup, content: { application/json: { schema: { $ref: "#/components/schemas/BackupRecord" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /admin/backups/{backupID}/actions/restore:
+    parameters:
+      - { name: backupID, in: path, required: true, schema: { type: string, pattern: "^backup_[A-Za-z0-9.T:-]+$" } }
+    post:
+      summary: Validate backup checksums and schema compatibility without replacing live state
+      operationId: validateBackupRestore
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [dry_run]
+              properties:
+                dry_run: { type: boolean, const: true }
+      responses:
+        "200": { description: Restore dry-run report, content: { application/json: { schema: { $ref: "#/components/schemas/BackupRestoreReport" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /system/status:
     get:
       summary: Get bounded system and component status
@@ -190,6 +285,27 @@ paths:
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/actions/sync:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Synchronize a registered repository through the credential-isolated Git bridge
+      operationId: syncProject
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Exact synchronized default-branch commit, content: { application/json: { schema: { $ref: "#/components/schemas/RepositorySyncResult" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/diagnostics:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: Read credential-safe repository and provider diagnostics
+      operationId: getProjectDiagnostics
+      responses:
+        "200": { description: Repository diagnostics without credentials, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -856,6 +972,65 @@ paths:
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/actions/verify:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    post:
+      summary: Inspect the controller-owned deterministic verification record for a job
+      operationId: verifyJob
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Job and retained verification phases, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/actions/review:
+    parameters: [{ $ref: "#/components/parameters/JobID" }]
+    post:
+      summary: Create a non-authoritative human review request
+      operationId: requestJobReview
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "202": { description: Append-only review request, content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequest" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /models:
+    get:
+      summary: List allow-listed model profiles and current supervisor status
+      operationId: listModels
+      responses:
+        "200":
+          description: Model profiles and status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, status]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ModelProfile" } }
+                  status: { $ref: "#/components/schemas/ModelStatus" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /models/status:
+    get:
+      summary: Read current model load and timing status
+      operationId: getModelStatus
+      responses:
+        "200": { description: Supervisor status, content: { application/json: { schema: { $ref: "#/components/schemas/ModelStatus" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /models/{profileID}/actions/benchmark:
+    parameters:
+      - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" } }
+    post:
+      summary: Run the bounded smoke benchmark for an allow-listed model profile
+      operationId: benchmarkModel
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Benchmark result, content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmark" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /config:
     get:
       summary: Get the current validated configuration
@@ -1026,6 +1201,46 @@ components:
         disabled: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, display_name, password, role]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64, pattern: "^[A-Za-z0-9._-]+$" }
+        display_name: { type: string, minLength: 1, maxLength: 128 }
+        password: { type: string, minLength: 14, maxLength: 1024, writeOnly: true }
+        role: { type: string, enum: [viewer, operator, reviewer, administrator] }
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name, role, disabled]
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 128 }
+        role: { type: string, enum: [viewer, operator, reviewer, administrator] }
+        disabled: { type: boolean }
+    BackupRecord:
+      type: object
+      additionalProperties: false
+      required: [id, created_at, bytes, sha256, encrypted]
+      properties:
+        id: { type: string }
+        created_at: { type: string, format: date-time }
+        bytes: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        encrypted: { type: boolean }
+    BackupRestoreReport:
+      type: object
+      additionalProperties: false
+      required: [id, dry_run, compatible, schema_version, files, bytes, checksums_valid, excluded]
+      properties:
+        id: { type: string }
+        dry_run: { type: boolean }
+        compatible: { type: boolean }
+        schema_version: { type: integer }
+        files: { type: integer, minimum: 1 }
+        bytes: { type: integer, minimum: 1 }
+        checksums_valid: { type: boolean }
+        excluded: { type: array, items: { type: string } }
     Principal:
       type: object
       required: [user, expires_at]
@@ -1073,6 +1288,13 @@ components:
             enabled: { type: boolean }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+    RepositorySyncResult:
+      type: object
+      additionalProperties: false
+      required: [project_id, base_sha]
+      properties:
+        project_id: { type: string }
+        base_sha: { type: string, pattern: "^[a-f0-9]{40}$" }
     MemoryStatus:
       type: string
       enum: [quarantine, canonical, stale, deleted]
@@ -1433,12 +1655,53 @@ components:
         created_at: { type: string, format: date-time }
     SystemStatus:
       type: object
-      required: [status, profile, uptime_seconds, components]
+      required: [status, profile, uptime_seconds, components, host]
       properties:
         status: { type: string }
         profile: { type: string }
         uptime_seconds: { type: integer, minimum: 0 }
         components: { type: object, additionalProperties: { type: string } }
+        host:
+          type: object
+          additionalProperties: false
+          required: [logical_cpus, architecture, operating_system, disk_total_bytes, disk_available_bytes, benchmark_guidance]
+          properties:
+            logical_cpus: { type: integer, minimum: 1 }
+            architecture: { type: string }
+            operating_system: { type: string }
+            disk_total_bytes: { type: integer, minimum: 0 }
+            disk_available_bytes: { type: integer, minimum: 0 }
+            benchmark_guidance: { type: string }
+    ModelProfile:
+      type: object
+      additionalProperties: false
+      required: [id, role, model_family, context, quantization]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [implementation, qc] }
+        model_family: { type: string }
+        context: { type: integer, minimum: 1 }
+        quantization: { type: string }
+    ModelStatus:
+      type: object
+      additionalProperties: false
+      required: [state, memory_bytes, prompt_tokens_second, decode_tokens_second]
+      properties:
+        state: { type: string, enum: [loaded, unloaded] }
+        profile_id: { type: string }
+        model_family: { type: string }
+        context: { type: integer, minimum: 0 }
+        memory_bytes: { type: integer, minimum: 0 }
+        prompt_tokens_second: { type: number, minimum: 0 }
+        decode_tokens_second: { type: number, minimum: 0 }
+    ModelBenchmark:
+      type: object
+      additionalProperties: false
+      required: [profile_id, duration, healthy]
+      properties:
+        profile_id: { type: string }
+        duration: { type: integer, minimum: 0, description: Nanoseconds elapsed }
+        healthy: { type: boolean }
     SystemConfig:
       type: object
       additionalProperties: false

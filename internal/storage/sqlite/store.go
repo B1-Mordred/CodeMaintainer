@@ -115,6 +115,17 @@ func Open(ctx context.Context, path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+func (s *Store) Snapshot(ctx context.Context, target string) error {
+	if strings.TrimSpace(target) == "" || filepath.Ext(target) != ".db" {
+		return errors.New("invalid SQLite snapshot target")
+	}
+	quoted := strings.ReplaceAll(target, "'", "''")
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO '"+quoted+"'"); err != nil {
+		return fmt.Errorf("snapshot controller database: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {

@@ -87,12 +87,130 @@ func run(arguments []string) error {
 		return api.printJSON(http.MethodPost, path, map[string]any{})
 	case "run":
 		return api.runJob(arguments[1:])
+	case "repo":
+		return api.repo(arguments[1:])
+	case "verify", "review":
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: maintainctl %s <job-id>", arguments[0])
+		}
+		return api.printJSON(http.MethodPost, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/actions/"+arguments[0], map[string]any{})
+	case "publish":
+		return api.publish(arguments[1:])
+	case "open":
+		return api.open(arguments[1:])
+	case "backup":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl backup")
+		}
+		return api.printJSON(http.MethodPost, "/api/v1/admin/backups", map[string]any{})
+	case "restore":
+		return api.restore(arguments[1:])
+	case "model":
+		return api.model(arguments[1:])
 	case "config":
 		return api.config(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
 	}
+}
+
+func (c client) repo(arguments []string) error {
+	if len(arguments) < 2 {
+		return errors.New("usage: maintainctl repo <add|sync> <owner/repository>")
+	}
+	repository := arguments[1]
+	if !validRepositoryName(repository) {
+		return errors.New("repository must be owner/repository using letters, numbers, dot, underscore, or hyphen")
+	}
+	switch arguments[0] {
+	case "add":
+		flags := flag.NewFlagSet("repo add", flag.ContinueOnError)
+		provider := flags.String("provider", "local", "repository provider: local or github")
+		branch := flags.String("default-branch", "main", "exact default branch")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || (*provider != "local" && *provider != "github") {
+			return errors.New("usage: maintainctl repo add <owner/repository> [--provider local|github] [--default-branch branch]")
+		}
+		id := strings.ReplaceAll(repository, "/", "-")
+		body := map[string]any{"id": id, "provider": *provider, "repository": repository, "default_branch": *branch}
+		if *provider == "local" {
+			body["local_remote_name"] = id + ".git"
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/projects", body)
+	case "sync":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl repo sync <owner/repository>")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/projects/"+url.PathEscape(strings.ReplaceAll(repository, "/", "-"))+"/actions/sync", map[string]any{})
+	default:
+		return fmt.Errorf("unknown repo command %q", arguments[0])
+	}
+}
+
+func validRepositoryName(value string) bool {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || len(value) > 200 {
+		return false
+	}
+	for _, part := range parts {
+		for _, character := range part {
+			if !((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+				(character >= '0' && character <= '9') || strings.ContainsRune("._-", character)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (c client) publish(arguments []string) error {
+	flags := flag.NewFlagSet("publish", flag.ContinueOnError)
+	draft := flags.Bool("draft-pr", false, "approve exact result for draft pull request publication")
+	rationale := flags.String("rationale", "approved for draft pull request publication", "audited reviewer rationale")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 1 || !*draft {
+		return errors.New("usage: maintainctl publish <job-id> --draft-pr [--rationale text]")
+	}
+	return c.printJSON(http.MethodPost, "/api/v1/jobs/"+url.PathEscape(flags.Arg(0))+"/actions/approve-publication", map[string]any{"rationale": *rationale})
+}
+
+func (c client) open(arguments []string) error {
+	if len(arguments) > 1 {
+		return errors.New("usage: maintainctl open [job-id]")
+	}
+	target := c.baseURL
+	if len(arguments) == 1 {
+		target += "/?job=" + url.QueryEscape(arguments[0])
+	}
+	fmt.Println(target)
+	return nil
+}
+
+func (c client) restore(arguments []string) error {
+	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
+	dryRun := flags.Bool("dry-run", false, "validate archive compatibility and checksums without changing state")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 1 || !*dryRun {
+		return errors.New("usage: maintainctl restore --dry-run <backup-id>")
+	}
+	return c.printJSON(http.MethodPost, "/api/v1/admin/backups/"+url.PathEscape(flags.Arg(0))+"/actions/restore", map[string]any{"dry_run": true})
+}
+
+func (c client) model(arguments []string) error {
+	if len(arguments) == 1 && arguments[0] == "list" {
+		return c.printJSON(http.MethodGet, "/api/v1/models", nil)
+	}
+	if len(arguments) == 2 && arguments[0] == "benchmark" {
+		return c.printJSON(http.MethodPost, "/api/v1/models/"+url.PathEscape(arguments[1])+"/actions/benchmark", map[string]any{})
+	}
+	return errors.New("usage: maintainctl model list | maintainctl model benchmark <profile>")
 }
 
 func (c client) config(arguments []string) error {
@@ -190,6 +308,21 @@ func (c client) runJob(arguments []string) error {
 	if (*task == "" && *issue == 0) || (*task != "" && *issue != 0) {
 		return errors.New("exactly one of --task or --issue is required")
 	}
+	if *task != "" {
+		if info, err := os.Stat(*task); err == nil {
+			if !info.Mode().IsRegular() || info.Size() > maxConfigDocumentBytes {
+				return errors.New("task file must be a regular file no larger than 2 MiB")
+			}
+			payload, readErr := os.ReadFile(*task)
+			if readErr != nil {
+				return fmt.Errorf("read task file: %w", readErr)
+			}
+			*task = strings.TrimSpace(string(payload))
+			if *task == "" {
+				return errors.New("task file is empty")
+			}
+		}
+	}
 	if *project == "" {
 		*project = strings.ReplaceAll(repository, "/", "-")
 	}
@@ -285,16 +418,28 @@ Commands:
   login --username <name> --password-file <file|->
   logout
   doctor
+  up (repository wrapper)
+  down (repository wrapper)
+  repo add <owner/repository> [--provider local|github] [--default-branch branch]
+  repo sync <owner/repository>
   run <owner/repository> --task <text> | --issue <number>
   status [job-id]
   inspect <job-id>
   logs <job-id>
   cancel <job-id>
   retry <job-id>
+  verify <job-id>
+  review <job-id>
+  publish <job-id> --draft-pr [--rationale text]
+  open [job-id]
+  backup
+  restore --dry-run <backup-id>
   config export
   config validate [file|-]
   config apply --reason <text> <file|->
   config rollback --reason <text> <revision-id>
+  model list
+  model benchmark <profile>
   version`)
 }
 

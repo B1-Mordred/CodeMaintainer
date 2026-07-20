@@ -18,6 +18,7 @@ import (
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
+	"github.com/local-code-maintainer/appliance/internal/backup"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/githubsync"
@@ -65,11 +66,15 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	backupManager, err := backup.New(dataRoot, profile, store, env("MAINTAINER_BACKUP_KEY_FILE", filepath.Join(dataRoot, "secrets", "backup.key")))
+	if err != nil {
+		return err
+	}
 	secureCookie, err := strconv.ParseBool(env("MAINTAINER_SECURE_COOKIE", "false"))
 	if err != nil {
 		return errors.New("MAINTAINER_SECURE_COOKIE must be true or false")
 	}
-	engine, err := newWorkflowEngine(store, artifactStore, dataRoot, profile)
+	engine, modelManager, err := newWorkflowEngine(store, artifactStore, dataRoot, profile)
 	if err != nil {
 		return err
 	}
@@ -103,7 +108,7 @@ func run(logger *slog.Logger) error {
 		go func() { indexErrors <- synchronizer.Run(ctx) }()
 	}
 
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie)}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err
@@ -112,7 +117,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	serverOptions = append(serverOptions, api.WithGitHubWebhookValidator(gitWebhookClient))
+	serverOptions = append(serverOptions, api.WithGitHubWebhookValidator(gitWebhookClient), api.WithGitOperator(gitWebhookClient))
 	githubReconciler, err := githubsync.New(store, artifactStore, gitWebhookClient, 5*time.Minute, logger.With("component", "github-poll"))
 	if err != nil {
 		return err
@@ -191,14 +196,14 @@ func newMemoryIndex(profile, dataRoot string) (memory.Index, error) {
 	return memory.NewOpenVikingIndex(rawURL, keyFile, env("MAINTAINER_OPENVIKING_ACCOUNT", "maintainer"), env("MAINTAINER_OPENVIKING_USER", "maintainer-controller"))
 }
 
-func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.Store, dataRoot, profile string) (*workflow.Engine, error) {
+func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.Store, dataRoot, profile string) (*workflow.Engine, models.Manager, error) {
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	gitClient, err := gitbridge.NewClient(env("MAINTAINER_GIT_BRIDGE_URL", "http://git-bridge:8083"), gitToken)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var modelManager models.Manager
 	var execution workflow.ExecutionBackend
@@ -212,41 +217,41 @@ func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.St
 	} else if profile == "production" {
 		modelToken, tokenErr := readToken(env("MAINTAINER_MODEL_CONTROL_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "model-control.token")))
 		if tokenErr != nil {
-			return nil, tokenErr
+			return nil, nil, tokenErr
 		}
 		modelManager, err = models.NewControlClient(env("MAINTAINER_MODEL_CONTROL_URL", "http://model-supervisor:8081"), modelToken)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		runnerToken, tokenErr := readToken(env("MAINTAINER_RUNNERD_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "runnerd.token")))
 		if tokenErr != nil {
-			return nil, tokenErr
+			return nil, nil, tokenErr
 		}
 		runnerClient, clientErr := runners.NewUnixClient(env("MAINTAINER_RUNNERD_SOCKET", filepath.Join(dataRoot, "run", "runnerd.sock")), runnerToken)
 		if clientErr != nil {
-			return nil, clientErr
+			return nil, nil, clientErr
 		}
 		execution, err = workflow.NewContainerBackend(runnerClient, artifactStore, dataRoot)
 	} else {
-		return nil, errors.New("MAINTAINER_PROFILE must be mock or production")
+		return nil, nil, errors.New("MAINTAINER_PROFILE must be mock or production")
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	revision, err := store.CurrentConfig(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var document appconfig.System
 	if err := json.Unmarshal(revision.After, &document); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	coordinator, err := workflow.NewCoordinator(store, gitClient, modelManager, execution, artifactStore,
 		worktreesRoot, document.Workflow.MaxReviewCycles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return workflow.New(store, coordinator), nil
+	return workflow.New(store, coordinator), modelManager, nil
 }
 
 func readToken(path string) ([]byte, error) {

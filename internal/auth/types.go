@@ -34,6 +34,19 @@ type User struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type CreateUserRequest struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Password    string `json:"password"`
+	Role        Role   `json:"role"`
+}
+
+type UpdateUserRequest struct {
+	DisplayName string `json:"display_name"`
+	Role        Role   `json:"role"`
+	Disabled    bool   `json:"disabled"`
+}
+
 type Session struct {
 	ID                   string
 	TokenHash            []byte
@@ -55,6 +68,12 @@ type Store interface {
 	RotateSessionCSRF(context.Context, string, []byte, time.Time) error
 	MarkSessionReauthenticated(context.Context, string, time.Time, time.Time, string) error
 	RevokeSession(context.Context, string, time.Time, string) error
+}
+
+type UserAdministrationStore interface {
+	ListUsers(context.Context, int) ([]User, error)
+	CreateUser(context.Context, User, string, string) error
+	UpdateUser(context.Context, string, UpdateUserRequest, string, string) (User, error)
 }
 
 type Principal struct {

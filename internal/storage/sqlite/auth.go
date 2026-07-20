@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/storage"
 )
 
 func (s *Store) BootstrapStatus(ctx context.Context) (bool, error) {
@@ -76,6 +77,109 @@ func (s *Store) FindUserByUsername(ctx context.Context, username string) (auth.U
 		return auth.User{}, "", err
 	}
 	return user, passwordHash, nil
+}
+
+func (s *Store) ListUsers(ctx context.Context, limit int) ([]auth.User, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, display_name, role, disabled, created_at, updated_at
+		FROM users ORDER BY username LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list authentication users: %w", err)
+	}
+	defer rows.Close()
+	users := []auth.User{}
+	for rows.Next() {
+		var user auth.User
+		var createdAt, updatedAt string
+		if err := rows.Scan(&user.ID, &user.Username, &user.DisplayName, &user.Role, &user.Disabled, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		user.CreatedAt, err = parseTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		user.UpdatedAt, err = parseTime(updatedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *Store) CreateUser(ctx context.Context, user auth.User, passwordHash, actorID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO users(id, username, display_name, password_hash, role, disabled, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, 0, ?, ?)`, user.ID, user.Username, user.DisplayName, passwordHash, user.Role, formatTime(user.CreatedAt), formatTime(user.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("create authentication user: %w", err)
+	}
+	details, _ := json.Marshal(map[string]string{"username": user.Username, "role": string(user.Role)})
+	if err := insertAuthAudit(ctx, tx, actorID, string(auth.RoleAdministrator), "user.create", "user", user.ID, "", details, user.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) UpdateUser(ctx context.Context, id string, request auth.UpdateUserRequest, actorID, currentUserID string) (auth.User, error) {
+	now := s.now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return auth.User{}, err
+	}
+	defer tx.Rollback()
+	var current auth.User
+	if err := tx.QueryRowContext(ctx, `SELECT id, username, display_name, role, disabled, created_at, updated_at FROM users WHERE id = ?`, id).Scan(
+		&current.ID, &current.Username, &current.DisplayName, &current.Role, &current.Disabled, new(string), new(string)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return auth.User{}, auth.ErrNotFound
+		}
+		return auth.User{}, err
+	}
+	if current.Role == auth.RoleAdministrator && (request.Role != auth.RoleAdministrator || request.Disabled) {
+		var activeAdministrators int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'administrator' AND disabled = 0`).Scan(&activeAdministrators); err != nil {
+			return auth.User{}, err
+		}
+		if activeAdministrators <= 1 {
+			return auth.User{}, storage.ErrConflict
+		}
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE users SET display_name = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?`, request.DisplayName, request.Role, request.Disabled, formatTime(now), id)
+	if err != nil {
+		return auth.User{}, err
+	}
+	if err := requireAffected(result, auth.ErrNotFound); err != nil {
+		return auth.User{}, err
+	}
+	if request.Disabled || request.Role != current.Role {
+		if _, err := tx.ExecContext(ctx, `UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, formatTime(now), id); err != nil {
+			return auth.User{}, err
+		}
+	}
+	details, _ := json.Marshal(map[string]any{"role": request.Role, "disabled": request.Disabled})
+	if err := insertAuthAudit(ctx, tx, actorID, string(auth.RoleAdministrator), "user.update", "user", id, "", details, now); err != nil {
+		return auth.User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return auth.User{}, err
+	}
+	users, err := s.ListUsers(ctx, 500)
+	if err != nil {
+		return auth.User{}, err
+	}
+	for _, user := range users {
+		if user.ID == id {
+			return user, nil
+		}
+	}
+	return auth.User{}, auth.ErrNotFound
 }
 
 func (s *Store) CreateSession(ctx context.Context, session auth.Session, remote string) error {

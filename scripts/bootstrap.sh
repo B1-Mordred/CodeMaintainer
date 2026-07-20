@@ -70,6 +70,13 @@ if [[ ! -e "$hermes_control_token" ]]; then
 fi
 chmod 600 "$hermes_control_token"
 
+backup_key=.data/secrets/backup.key
+if [[ ! -e "$backup_key" ]]; then
+  umask 077
+  head -c 32 /dev/urandom | base64 | tr -d '\n=' >"$backup_key"
+fi
+chmod 600 "$backup_key"
+
 if [[ ! -e .data/hermes/config.yaml ]]; then
   cp integrations/hermes/config.yaml.example .data/hermes/config.yaml
 fi

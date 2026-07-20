@@ -11,6 +11,7 @@ import (
 	"time"
 
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/storage"
 )
 
 const sessionCookieName = "maintainer_session"
@@ -235,6 +236,55 @@ func (s *Server) authSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"principal": principal, "csrf_token": csrfToken})
+}
+
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := s.auth.ListUsers(r.Context(), queryInt(r, "limit", 100))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": users})
+}
+
+func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
+	principal, ok := principalFromRequest(r)
+	if !ok || !principal.RecentlyReauthenticated(time.Now().UTC()) {
+		writeError(w, http.StatusForbidden, "recent_reauthentication_required", "user administration requires reauthentication within five minutes")
+		return
+	}
+	var request maintainerauth.CreateUserRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	user, err := s.auth.CreateUser(r.Context(), request, principal.User.ID)
+	if err != nil {
+		s.authenticationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, user)
+}
+
+func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
+	principal, ok := principalFromRequest(r)
+	if !ok || !principal.RecentlyReauthenticated(time.Now().UTC()) {
+		writeError(w, http.StatusForbidden, "recent_reauthentication_required", "user administration requires reauthentication within five minutes")
+		return
+	}
+	var request maintainerauth.UpdateUserRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	user, err := s.auth.UpdateUser(r.Context(), r.PathValue("userID"), request, principal.User.ID, principal.User.ID)
+	if err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			writeError(w, http.StatusConflict, "last_administrator", "the last enabled administrator cannot be disabled or demoted")
+			return
+		}
+		s.authenticationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
 }
 
 func (s *Server) authReauthenticate(w http.ResponseWriter, r *http.Request) {

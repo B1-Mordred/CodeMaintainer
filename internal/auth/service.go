@@ -215,6 +215,58 @@ func (s *Service) Logout(ctx context.Context, principal Principal, remote string
 	return s.store.RevokeSession(ctx, principal.SessionID, s.now(), remote)
 }
 
+func (s *Service) ListUsers(ctx context.Context, limit int) ([]User, error) {
+	store, ok := s.store.(UserAdministrationStore)
+	if !ok {
+		return nil, ErrInvalidInput
+	}
+	return store.ListUsers(ctx, limit)
+}
+
+func (s *Service) CreateUser(ctx context.Context, request CreateUserRequest, actorID string) (User, error) {
+	username, displayName, err := validateCredentials(Credentials{Username: request.Username, DisplayName: request.DisplayName, Password: request.Password}, true)
+	if err != nil || !request.Role.Valid() || request.Role == "" || strings.TrimSpace(actorID) == "" {
+		return User{}, ErrInvalidInput
+	}
+	passwordHash, err := s.hashPassword(request.Password)
+	if err != nil {
+		return User{}, err
+	}
+	id, err := randomID("user")
+	if err != nil {
+		return User{}, err
+	}
+	now := s.now()
+	user := User{ID: id, Username: username, DisplayName: displayName, Role: request.Role, CreatedAt: now, UpdatedAt: now}
+	store, ok := s.store.(UserAdministrationStore)
+	if !ok {
+		return User{}, ErrInvalidInput
+	}
+	if err := store.CreateUser(ctx, user, passwordHash, actorID); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
+func (s *Service) UpdateUser(ctx context.Context, id string, request UpdateUserRequest, actorID, currentUserID string) (User, error) {
+	request.DisplayName = strings.TrimSpace(request.DisplayName)
+	if id == "" || request.DisplayName == "" || len(request.DisplayName) > 128 || !utf8.ValidString(request.DisplayName) || !request.Role.Valid() || actorID == "" {
+		return User{}, ErrInvalidInput
+	}
+	if id == currentUserID && request.Disabled {
+		return User{}, ErrInvalidInput
+	}
+	store, ok := s.store.(UserAdministrationStore)
+	if !ok {
+		return User{}, ErrInvalidInput
+	}
+	return store.UpdateUser(ctx, id, request, actorID, currentUserID)
+}
+
+func (r Role) Valid() bool {
+	return r == RoleViewer || r == RoleOperator || r == RoleReviewer || r == RoleAdministrator
+}
+
 func (s *Service) newResult(user User, now time.Time) (Result, Session, error) {
 	token, tokenHash, err := newToken()
 	if err != nil {

@@ -10,16 +10,21 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/audit"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
+	"github.com/local-code-maintainer/appliance/internal/backup"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	"github.com/local-code-maintainer/appliance/internal/ui"
@@ -39,6 +44,9 @@ type Server struct {
 	secureCookie bool
 	hermesToken  []byte
 	githubEvents GitHubWebhookValidator
+	gitOperator  GitOperator
+	modelManager models.Manager
+	backups      BackupService
 }
 
 type ArtifactReader interface {
@@ -47,6 +55,18 @@ type ArtifactReader interface {
 
 type GitHubWebhookValidator interface {
 	ValidateWebhook(context.Context, gitbridge.WebhookValidationRequest) (gitbridge.PullRequestEvent, error)
+}
+
+type GitOperator interface {
+	Register(context.Context, gitbridge.Registration) error
+	Sync(context.Context, string) (gitbridge.SyncResult, error)
+	RepositoryDiagnostics(context.Context, string) (gitbridge.RepositoryDiagnostics, error)
+}
+
+type BackupService interface {
+	Create(context.Context) (backup.Record, error)
+	List(context.Context) ([]backup.Record, error)
+	Validate(context.Context, string) (backup.Report, error)
 }
 
 type Option func(*Server)
@@ -74,6 +94,18 @@ func WithGitHubWebhookValidator(validator GitHubWebhookValidator) Option {
 	return func(server *Server) { server.githubEvents = validator }
 }
 
+func WithGitOperator(operator GitOperator) Option {
+	return func(server *Server) { server.gitOperator = operator }
+}
+
+func WithModelManager(manager models.Manager) Option {
+	return func(server *Server) { server.modelManager = manager }
+}
+
+func WithBackupService(service BackupService) Option {
+	return func(server *Server) { server.backups = service }
+}
+
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -85,17 +117,26 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
+	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/auth/status", s.authStatus)
 	mux.HandleFunc("POST /api/v1/auth/bootstrap", s.authBootstrap)
 	mux.HandleFunc("POST /api/v1/auth/login", s.authLogin)
 	mux.HandleFunc("GET /api/v1/auth/session", s.authSession)
 	mux.HandleFunc("POST /api/v1/auth/reauthenticate", s.authReauthenticate)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.authLogout)
+	mux.HandleFunc("GET /api/v1/admin/users", s.listUsers)
+	mux.HandleFunc("POST /api/v1/admin/users", s.createUser)
+	mux.HandleFunc("PUT /api/v1/admin/users/{userID}", s.updateUser)
+	mux.HandleFunc("GET /api/v1/admin/backups", s.listBackups)
+	mux.HandleFunc("POST /api/v1/admin/backups", s.createBackup)
+	mux.HandleFunc("POST /api/v1/admin/backups/{backupID}/actions/restore", s.restoreBackup)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
 	mux.HandleFunc("POST /api/v1/github/webhooks", s.githubWebhook)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/actions/sync", s.syncProject)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/diagnostics", s.projectDiagnostics)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory", s.createProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/retrievals", s.listProjectMemoryRetrievals)
@@ -136,6 +177,11 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-publication", s.approvePublication)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/verify", s.requestVerification)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/review", s.requestReview)
+	mux.HandleFunc("GET /api/v1/models", s.listModels)
+	mux.HandleFunc("GET /api/v1/models/status", s.modelStatus)
+	mux.HandleFunc("POST /api/v1/models/{profileID}/actions/benchmark", s.benchmarkModel)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
 	mux.HandleFunc("POST /api/v1/config/validate", s.validateConfig)
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)
@@ -175,7 +221,25 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (s *Server) systemStatus(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListJobs(r.Context(), 200, 0)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "storage_unavailable", "durable storage is unavailable")
+		return
+	}
+	counts := map[jobs.State]int{}
+	for _, job := range items {
+		counts[job.State]++
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP maintainer_uptime_seconds Controller process uptime.\n# TYPE maintainer_uptime_seconds gauge\nmaintainer_uptime_seconds %d\n", int64(time.Since(s.started).Seconds()))
+	fmt.Fprintln(w, "# HELP maintainer_jobs Retained jobs by durable state.\n# TYPE maintainer_jobs gauge")
+	for _, state := range jobs.AllStates() {
+		fmt.Fprintf(w, "maintainer_jobs{state=%q} %d\n", state, counts[state])
+	}
+}
+
+func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	memoryStatus := "sqlite"
 	if s.memoryIndex != nil {
 		memoryStatus = "openviking"
@@ -183,12 +247,28 @@ func (s *Server) systemStatus(w http.ResponseWriter, _ *http.Request) {
 			memoryStatus = "fake-index"
 		}
 	}
+	modelStatus := "unavailable"
+	if s.modelManager != nil {
+		if current, err := s.modelManager.Status(r.Context()); err == nil {
+			modelStatus = current.State
+		}
+	}
+	var disk syscall.Statfs_t
+	_ = syscall.Statfs("/", &disk)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "healthy", "profile": s.profile,
 		"uptime_seconds": int64(time.Since(s.started).Seconds()),
+		"host": map[string]any{
+			"logical_cpus":         runtime.NumCPU(),
+			"architecture":         runtime.GOARCH,
+			"operating_system":     runtime.GOOS,
+			"disk_total_bytes":     int64(disk.Blocks) * int64(disk.Bsize),
+			"disk_available_bytes": int64(disk.Bavail) * int64(disk.Bsize),
+			"benchmark_guidance":   "Benchmark physical-core and SMT thread counts; on multi-node hosts compare NUMA local and interleave profiles before selecting a manifest.",
+		},
 		"components": map[string]string{
 			"controller": "healthy", "storage": "healthy",
-			"runner": "fake", "model": "unloaded", "memory": memoryStatus, "git": "fake",
+			"runner": s.profile, "model": modelStatus, "memory": memoryStatus, "git": s.profile,
 		},
 	})
 }
@@ -238,12 +318,51 @@ func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
 	}
+	if s.gitOperator != nil {
+		if err := s.gitOperator.Register(r.Context(), gitbridge.Registration{ProjectID: request.ID, Provider: request.Provider, Repository: request.Repository, DefaultBranch: request.DefaultBranch, LocalRemoteName: request.LocalRemoteName}); err != nil {
+			writeError(w, http.StatusBadGateway, "git_registration_failed", "the Git bridge rejected the project registration")
+			return
+		}
+	}
 	project, err := s.store.UpsertProject(r.Context(), request, actorID(r))
 	if err != nil {
 		s.storageError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, project)
+}
+
+func (s *Server) syncProject(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("projectID")
+	if _, err := s.store.GetProject(r.Context(), projectID); err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	if s.gitOperator == nil {
+		writeError(w, http.StatusServiceUnavailable, "git_bridge_unavailable", "repository synchronization is unavailable")
+		return
+	}
+	result, err := s.gitOperator.Sync(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "git_sync_failed", "the repository could not be synchronized")
+		return
+	}
+	details, _ := json.Marshal(result)
+	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "project.sync", TargetType: "project", TargetID: projectID, Details: details})
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) projectDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if s.gitOperator == nil {
+		writeError(w, http.StatusServiceUnavailable, "git_bridge_unavailable", "repository diagnostics are unavailable")
+		return
+	}
+	result, err := s.gitOperator.RepositoryDiagnostics(r.Context(), r.PathValue("projectID"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "git_diagnostics_failed", "repository diagnostics failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
@@ -343,6 +462,84 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	s.transitionAction(w, r, jobs.StateQueued, "operator retried job")
+}
+
+func (s *Server) requestVerification(w http.ResponseWriter, r *http.Request) {
+	job, err := s.store.GetJob(r.Context(), r.PathValue("jobID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	phases, err := s.store.ListPhaseRecords(r.Context(), job.ID, 500)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	details, _ := json.Marshal(map[string]any{"state": job.State, "result_sha": job.ResultSHA})
+	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "job.verify.inspect", TargetType: "job", TargetID: job.ID, Details: details})
+	verification := []storage.PhaseRecord{}
+	for _, phase := range phases {
+		if phase.PhaseState == jobs.StateVerifyingTargeted || phase.PhaseState == jobs.StateVerifyingFull || phase.PhaseState == jobs.StateFinalVerification {
+			verification = append(verification, phase)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": job, "verification_phases": verification, "resumable": job.State.Resumable()})
+}
+
+func (s *Server) requestReview(w http.ResponseWriter, r *http.Request) {
+	job, err := s.store.GetJob(r.Context(), r.PathValue("jobID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	request, err := s.store.CreateApprovalRequest(r.Context(), job.ID, "review", actorID(r), "human review requested through the operator API")
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, request)
+}
+
+func (s *Server) listModels(w http.ResponseWriter, r *http.Request) {
+	if s.modelManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
+		return
+	}
+	profiles, err := s.modelManager.Profiles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "model_supervisor_failed", "model profiles could not be listed")
+		return
+	}
+	status, _ := s.modelManager.Status(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"items": profiles, "status": status})
+}
+
+func (s *Server) modelStatus(w http.ResponseWriter, r *http.Request) {
+	if s.modelManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
+		return
+	}
+	status, err := s.modelManager.Status(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "model_supervisor_failed", "model status could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) benchmarkModel(w http.ResponseWriter, r *http.Request) {
+	if s.modelManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
+		return
+	}
+	result, err := s.modelManager.SmokeTest(r.Context(), r.PathValue("profileID"))
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "model_benchmark_failed", "the allow-listed model benchmark failed")
+		return
+	}
+	details, _ := json.Marshal(result)
+	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "model.benchmark", TargetType: "model_profile", TargetID: result.ProfileID, Details: details})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
