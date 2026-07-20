@@ -125,7 +125,7 @@ services:
       MAINTAINER_OPENVIKING_API_KEY_FILE: /var/lib/maintainer/secrets/openviking.token
       MAINTAINER_OPENVIKING_ACCOUNT: ${MAINTAINER_OPENVIKING_ACCOUNT:-maintainer}
       MAINTAINER_OPENVIKING_USER: ${MAINTAINER_OPENVIKING_USER:-maintainer-controller}
-      MAINTAINER_HERMES_TOKEN_FILE: ${MAINTAINER_HERMES_TOKEN_FILE:-}
+      MAINTAINER_HERMES_TOKEN_FILE: /var/lib/maintainer/secrets/hermes-control.token
     volumes:
       - type: bind
         source: ./.data
@@ -137,6 +137,7 @@ services:
     networks:
       - frontend
       - control
+      - hermes-control
     depends_on:
       git-bridge:
         condition: service_started
@@ -178,6 +179,65 @@ services:
       - memory
     mem_limit: 16g
     cpus: 4.0
+
+  hermes-tool-bridge:
+    <<: *runtime-security
+    image: local/code-maintainer-hermes-tool-bridge:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: hermes-tool-bridge
+      args:
+        VERSION: 0.1.0-dev
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    environment:
+      HERMES_BRIDGE_CONTROLLER_URL: http://controller:8080
+      HERMES_BRIDGE_CONTROLLER_TOKEN_FILE: /run/secrets/hermes-control.token
+    volumes:
+      - type: bind
+        source: ./.data/secrets/hermes-control.token
+        target: /run/secrets/hermes-control.token
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    networks:
+      - hermes-control
+    depends_on:
+      controller:
+        condition: service_healthy
+    profiles:
+      - hermes
+    mem_limit: 64m
+    cpus: 0.25
+
+  hermes:
+    <<: *runtime-security
+    # Official MIT-licensed image pinned to the Linux/amd64 manifest for
+    # v2026.7.7.2. The foreground entrypoint runs as the deployment UID rather
+    # than using the image's root initialization path.
+    image: nousresearch/hermes-agent:v2026.7.7.2@sha256:3db34ce19adfa080736a2a3feb0316dbcccc588faa9afe7fd8ae1c03b4f1a53a
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    entrypoint: ["hermes"]
+    command: ["gateway", "run", "--no-supervise"]
+    environment:
+      HERMES_HOME: /opt/data
+    volumes:
+      - type: bind
+        source: ./.data/hermes
+        target: /opt/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+      - /opt/data/home:rw,noexec,nosuid,nodev,size=64m,mode=700
+    networks:
+      - hermes-control
+      - inference
+    depends_on:
+      hermes-tool-bridge:
+        condition: service_started
+    profiles:
+      - hermes
+    mem_limit: 2g
+    cpus: 2.0
 
   maintainctl:
     <<: *runtime-security
@@ -277,4 +337,6 @@ networks:
   control:
     internal: true
   inference:
+    internal: true
+  hermes-control:
     internal: true

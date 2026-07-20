@@ -1,0 +1,9 @@
+{
+  "name": "Hermes Agent",
+  "version": "v2026.7.7.2",
+  "source": "https://github.com/NousResearch/hermes-agent",
+  "source_commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596",
+  "image": "nousresearch/hermes-agent:v2026.7.7.2@sha256:3db34ce19adfa080736a2a3feb0316dbcccc588faa9afe7fd8ae1c03b4f1a53a",
+  "platform": "linux/amd64",
+  "license": "MIT"
+}

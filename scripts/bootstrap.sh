@@ -31,8 +31,9 @@ fi
 mkdir -p \
   .data/models .data/mirrors .data/remotes .data/worktrees .data/artifacts \
   .data/database .data/memory .data/caches .data/config \
-  .data/secrets .data/backups .data/run .data/cli .cache/go/build .cache/go/mod .cache/npm
-chmod 700 .data .data/database .data/secrets .data/backups .data/cli
+  .data/secrets .data/backups .data/run .data/cli .data/hermes \
+  .cache/go/build .cache/go/mod .cache/npm
+chmod 700 .data .data/database .data/secrets .data/backups .data/cli .data/hermes
 
 runnerd_token=.data/secrets/runnerd.token
 if [[ ! -e "$runnerd_token" ]]; then
@@ -54,6 +55,18 @@ if [[ ! -e "$git_bridge_token" ]]; then
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$git_bridge_token"
 fi
 chmod 600 "$git_bridge_token"
+
+hermes_control_token=.data/secrets/hermes-control.token
+if [[ ! -e "$hermes_control_token" ]]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$hermes_control_token"
+fi
+chmod 600 "$hermes_control_token"
+
+if [[ ! -e .data/hermes/config.yaml ]]; then
+  cp integrations/hermes/config.yaml.example .data/hermes/config.yaml
+fi
+chmod 600 .data/hermes/config.yaml
 
 ./scripts/seed-mock-remote.sh
 

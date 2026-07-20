@@ -32,7 +32,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-      -ldflags="-s -w" -o /out/git-bridge ./cmd/git-bridge
+      -ldflags="-s -w" -o /out/git-bridge ./cmd/git-bridge && \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+      -ldflags="-s -w" -o /out/hermes-tool-bridge ./cmd/hermes-tool-bridge
 
 FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS controller
 COPY --from=build --chown=65532:65532 /out/controller /controller
@@ -68,3 +70,9 @@ COPY --from=build --chown=65532:65532 /out/git-bridge /git-bridge
 USER 65532:65532
 EXPOSE 8083
 ENTRYPOINT ["/git-bridge"]
+
+FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS hermes-tool-bridge
+COPY --from=build --chown=65532:65532 /out/hermes-tool-bridge /hermes-tool-bridge
+USER 65532:65532
+EXPOSE 8085
+ENTRYPOINT ["/hermes-tool-bridge"]

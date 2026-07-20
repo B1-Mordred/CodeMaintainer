@@ -1,0 +1,58 @@
+# Safe appliance profile. The fake endpoint supports integration checks only;
+# replace this model block with an operator-configured provider for real chat.
+model:
+  default: active
+  provider: custom
+  base_url: http://model-supervisor:8082/v1
+  api_key: local-integration-only
+
+# The remote MCP server creates the dynamic mcp-maintainer toolset. No platform
+# or built-in toolset is enabled in this profile.
+toolsets:
+  - mcp-maintainer
+
+agent:
+  max_turns: 20
+  disabled_toolsets:
+    - browser
+    - file
+    - terminal
+    - web
+    - memory
+    - skills
+    - vision
+    - image_gen
+    - todo
+    - tts
+    - delegation
+    - code_execution
+    - cronjob
+    - session_search
+    - clarify
+    - safe
+    - computer_use
+    - homeassistant
+    - kanban
+
+mcp_servers:
+  maintainer:
+    url: http://hermes-tool-bridge:8085/mcp
+    enabled: true
+    timeout: 30
+    connect_timeout: 10
+    skip_preflight: true
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - submit_job
+        - list_jobs
+        - job_status
+        - cancel_job
+        - retrieve_report
+        - request_review
+        - request_publication_approval
+        - query_project_memory
+        - list_schedules
+        - propose_skill
+      resources: false
+      prompts: false
