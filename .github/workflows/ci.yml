@@ -38,4 +38,4 @@ jobs:
       - name: Validate Compose
         run: mkdir -p .data .cache/go .cache/npm && docker compose -f compose.yaml -f compose.dev.yaml config --quiet
       - name: Build control plane images
-        run: docker compose -f compose.yaml -f compose.dev.yaml build controller maintainctl
+        run: docker compose -f compose.yaml -f compose.dev.yaml build controller maintainctl runnerd

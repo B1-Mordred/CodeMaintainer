@@ -22,7 +22,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
       -ldflags="-s -w -X main.version=${VERSION}" -o /out/controller ./cmd/controller && \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-      -ldflags="-s -w -X main.version=${VERSION}" -o /out/maintainctl ./cmd/maintainctl
+      -ldflags="-s -w -X main.version=${VERSION}" -o /out/maintainctl ./cmd/maintainctl && \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+      -ldflags="-s -w -X main.version=${VERSION}" -o /out/runnerd ./cmd/runnerd
 
 FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS controller
 COPY --from=build --chown=65532:65532 /out/controller /controller
@@ -35,3 +37,8 @@ FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c7
 COPY --from=build --chown=65532:65532 /out/maintainctl /maintainctl
 USER 65532:65532
 ENTRYPOINT ["/maintainctl"]
+
+FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS runnerd
+COPY --from=build --chown=65532:65532 /out/runnerd /runnerd
+USER 65532:65532
+ENTRYPOINT ["/runnerd"]

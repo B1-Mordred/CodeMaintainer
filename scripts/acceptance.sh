@@ -23,15 +23,15 @@ if ! compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p .data .cache/go/build .cache/go/mod .cache/npm
+./scripts/bootstrap.sh
 
 compose -f compose.yaml -f compose.dev.yaml --profile tools run --rm go-tool sh -c \
   'test -z "$(gofmt -l cmd internal)" && go test ./... && go vet ./...'
 compose -f compose.yaml -f compose.dev.yaml --profile tools run --rm web-tool sh -c \
   'npm ci --ignore-scripts && npm run check:api && npm test && npx tsc --noEmit -p tsconfig.app.json && npx redocly lint ../internal/api/openapi.yaml'
 compose -f compose.yaml -f compose.dev.yaml config --quiet
-compose -f compose.yaml -f compose.dev.yaml build controller maintainctl
-compose -f compose.yaml -f compose.dev.yaml up -d controller
+compose -f compose.yaml -f compose.dev.yaml build controller maintainctl runnerd
+compose -f compose.yaml -f compose.dev.yaml up -d runnerd controller
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz
 compose -f compose.yaml -f compose.dev.yaml --profile tools run --rm maintainctl doctor
 

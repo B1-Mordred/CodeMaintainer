@@ -16,6 +16,7 @@ The supported development path is containerized because host Go and npm installa
 - Generated API drift: `docker compose run --rm web-tool npm run check:api`
 - Validate Compose: `docker compose config --quiet`
 - Full local acceptance: `./scripts/acceptance.sh`
+- Control-plane images: `docker compose build controller maintainctl runnerd`
 
 Commit `go.sum` and `web/package-lock.json` whenever dependencies change. Do not hand-edit generated OpenAPI clients or built frontend assets; use the documented generation commands.
 

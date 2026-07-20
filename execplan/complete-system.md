@@ -13,7 +13,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [x] (2026-07-20 09:30Z) Read the complete product contract, inspected the initially empty repository, and verified the available host toolchain and Docker support.
 - [x] (2026-07-20 09:35Z) Selected a small Go control plane with SQLite, a statically built TypeScript dashboard, narrow HTTP/Unix-socket service contracts, and deterministic in-process fakes for default tests.
 - [x] (2026-07-20 10:31Z) Milestone 1 foundation: repository conventions, pinned containerized Go/Node toolchains, system/QC schemas, versioned SQLite migration and WAL store, audited configuration apply/validate/rollback, durable queue leases, controller API and valid OpenAPI contract, generated typed frontend client with drift gate, replayable SSE, React/TypeScript UI shell, narrow fake adapters, and restart/reclaim tests for every resumable phase. The complete foundation unit, migration, API, frontend, schema, image-build, live-migration, CLI, and runtime acceptance run passed.
-- [ ] Milestone 2 secure execution: implement `runnerd`, server-owned hardened worker specifications, scoped caches, disposable Git worktrees, verifier command classes, artifacts, and an offline fixture integration test.
+- [ ] Milestone 2 secure execution (completed 2026-07-20 10:53Z: authenticated narrow runnerd API over a mode-0600 Unix socket, mode-0600 token-file authentication, strict request/response bounds, server-owned digest/mount/network/resource policy, project-scoped dependency cache paths, fake executor, controller-side Unix client, containment/race/API tests, hardened no-network mock image and live probes; remaining: dedicated rootless worker-daemon backend, immutable real worker images, worktree lifecycle, verifier command classes and language runners, content-addressed artifacts, and the offline fixture integration test).
 - [ ] Milestone 3 inference and agents: implement model manifests/supervision, pinned llama.cpp build, separate implementation and QC images/prompts/contracts, locked QA criteria, finding lifecycle, repair loop, and deterministic fake-model acceptance workflow.
 - [ ] Milestone 4 publication: implement GitHub App authentication, mirror synchronization, local bare provider, publication policy, protected-path checks, webhook validation, upstream movement handling, and idempotent draft publication.
 - [ ] Milestone 5 memory and scheduling: implement repository-scoped memory namespaces, quarantine and promotion, provenance, retrieval traces and context budgets, OpenViking adapter/profile, Hermes tools, schedules, and reviewed skill proposals.
@@ -57,6 +57,9 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-20 / Codex
 - Decision: use one canonical OpenAPI document and JSON Schema contracts, with generated clients and validators checked for reproducibility.
   Rationale: controller, CLI, dashboard, and worker contracts must not drift or reinterpret state and policy independently.
+  Date/Author: 2026-07-20 / Codex
+- Decision: authenticate the local runner boundary with both operating-system socket permissions and a separately mounted private bearer-token file; keep the mock runnerd completely offline and refuse any non-mock profile until the dedicated worker-daemon backend exists.
+  Rationale: a Unix socket alone is vulnerable to accidental permission broadening, while an environment token risks exposure in process/container inspection. Layered file permissions and constant-time token comparison give the controller a narrow authenticated channel. Explicit refusal avoids silently running a fake executor when production containment is expected.
   Date/Author: 2026-07-20 / Codex
 
 ## Outcomes & Retrospective
@@ -196,6 +199,23 @@ The runtime restart test submitted `job_6fc2fbe41a7e4af18a008cd860bdc6e3`, recre
 
 The version-two migration acceptance reused that version-one database and brought the rebuilt controller back to Docker `healthy`. Queue tests proved exclusive acquisition, ownership checks, renewal, release, and expired-lease recovery. Live configuration acceptance created revision `config_e54b20a4665f4fe3aa426a25d04eef44`, rejected `deployment.data_root` through the API, then created rollback revision `config_9603d1f06b194bd1bad53209dda2faa1` bound to the original revision and restored the original workflow document. `maintainctl config validate -`, `maintainctl config export`, and `maintainctl doctor` all succeeded against the live controller.
 
+Secure-runner boundary evidence:
+
+    $ go test -race ./internal/runners ./internal/runnerd ./cmd/runnerd
+    ok  internal/runners
+    ok  internal/runnerd
+    cmd/runnerd [no test files]
+
+    $ docker inspect local-code-maintainer-runnerd-1 --format ...
+    user=1000:1000 readonly=true network=none capdrop=["ALL"]
+    security=["no-new-privileges:true"] ports={}
+
+    $ stat .data/run/runnerd.sock .data/secrets/runnerd.token
+    socket mode=600 owner=1000:1000
+    token regular file mode=600 owner=1000:1000
+
+The live Unix-socket probe returned `{"status":"ok"}`, rejected an unauthenticated start with HTTP 401, and accepted the same bounded request with the private token as run `run_2648f02b9373ebdc80204c071604e353`. Unit and race tests prove unknown caller fields such as image, command, mounts, network, capabilities, and environment are rejected before executor invocation; traversal and mutable image inputs are denied; only dependency preparation receives the named egress network; and implementation, verification, and QC remain offline. The mock service has no Docker socket and deliberately refuses a non-mock profile until the dedicated worker backend lands.
+
 Official release checks on 2026-07-20 selected Node 24.18.0 LTS, Go 1.25, `modernc.org/sqlite` v1.54.0, and llama.cpp release `b9637` commit `aedb2a5` as initial pins. Image digests and every remaining application pin must be resolved and recorded before production Compose acceptance; no operational `latest` tag is permitted.
 
 ## Interfaces and Dependencies
@@ -211,3 +231,5 @@ The first Go dependency is `modernc.org/sqlite` v1.54.0. Additional libraries ar
 Revision note (2026-07-20): updated the initial plan after the first foundation implementation. Recorded the durable controller/API/SQLite/React/fake-adapter outcomes, exact test and runtime evidence, rootful-daemon limitation, Docker internal-network port behavior, tool tmpfs correction, TypeScript adjustments, and the remaining work required before closing Milestone 1.
 
 Revision note (2026-07-20 10:31Z): closed Milestone 1 after implementing configuration apply/rollback, SQLite migration v2 and durable queue leases, canonical OpenAPI type generation, the typed frontend client, and generated drift checks. Recorded the TypeScript peer compatibility decision and full source/image/live-runtime acceptance evidence, and corrected the plan's foundation acceptance boundary so administrator bootstrap remains in Milestone 6 as required by `project.md`.
+
+Revision note (2026-07-20 10:53Z): began Milestone 2 with the runnerd containment boundary. Added its authenticated Unix API, server-owned immutable policy, bounded fake executor, controller client, private bootstrap token, hardened offline Compose service, race/containment tests, image build, and live authentication probes. Kept the milestone open for the real dedicated worker-daemon adapter, worktrees, verifier/artifacts, language images, and offline fixture acceptance.
