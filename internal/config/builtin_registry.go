@@ -26,6 +26,19 @@ func BuiltInRegistry(active System) (*Registry, error) {
 		pathArrayDescriptor("protected_paths.patterns", "Protected path patterns", "Repository-relative patterns that require deterministic protection policy.", 10, defaults.Protected.Patterns, scopes(ScopeBuiltIn, ScopeSystem, ScopePack, ScopeProject), ApplyNewJobs),
 		booleanDescriptor("notifications.local_inbox_enabled", "Local operator inbox", "Create durable local notifications for schedule and workflow attention events.", 10, defaults.Notifications.LocalInboxEnabled, scopes(ScopeBuiltIn, ScopeSystem), ApplyLive),
 	}
+	for index := range descriptors {
+		if descriptors[index].Key == "qc.human_waiver_enabled" {
+			descriptors[index].Dependencies = []Dependency{{
+				Key: "qc.waiver_rationale_required", Operator: "equals", Value: json.RawMessage(`true`),
+				WhenValue: json.RawMessage(`true`),
+				Message:   "Human waivers require audited rationale policy to remain enabled.",
+			}}
+		}
+		if descriptors[index].Key == "notifications.local_inbox_enabled" {
+			descriptors[index].Prerequisites = []string{"durable-controller-storage"}
+			descriptors[index].DryRunHandler = "local-inbox-readiness"
+		}
+	}
 	return NewRegistry(descriptors)
 }
 

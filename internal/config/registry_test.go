@@ -173,6 +173,32 @@ func TestRegistryDefensivelyCopiesPublicDescriptors(t *testing.T) {
 	}
 }
 
+func TestRegistryRejectsInvalidDependencyMetadata(t *testing.T) {
+	dependent := booleanDescriptor("feature.enabled", "Feature", "Enable the feature.", 1, false, scopes(ScopeBuiltIn, ScopeSystem), ApplyLive)
+	target := booleanDescriptor("policy.required", "Policy", "Require the policy.", 2, true, scopes(ScopeBuiltIn, ScopeSystem), ApplyLive)
+	tests := []struct {
+		name       string
+		dependency Dependency
+		want       string
+	}{
+		{"missing target", Dependency{Key: "policy.missing", Operator: "equals", Value: json.RawMessage(`true`), Message: "required"}, "invalid key"},
+		{"unsupported operator", Dependency{Key: target.Key, Operator: "greater_than", Value: json.RawMessage(`true`), Message: "required"}, "unsupported operator"},
+		{"wrong comparison type", Dependency{Key: target.Key, Operator: "equals", Value: json.RawMessage(`"yes"`), Message: "required"}, "invalid comparison"},
+		{"wrong activation type", Dependency{Key: target.Key, Operator: "equals", Value: json.RawMessage(`true`), WhenValue: json.RawMessage(`"yes"`), Message: "required"}, "invalid activation"},
+		{"missing explanation", Dependency{Key: target.Key, Operator: "equals", Value: json.RawMessage(`true`)}, "explanation"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := dependent
+			candidate.Dependencies = []Dependency{test.dependency}
+			_, err := NewRegistry([]Descriptor{candidate, target})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("NewRegistry() error = %v, want text %q", err, test.want)
+			}
+		})
+	}
+}
+
 func storedInteger(key string, scope ScopeKind, id string, value int, revision string) ScopedValue {
 	encoded, _ := json.Marshal(value)
 	return ScopedValue{Key: key, Scope: ScopeRef{Kind: scope, ID: id}, Value: encoded, SourceRevision: revision, Version: 1}

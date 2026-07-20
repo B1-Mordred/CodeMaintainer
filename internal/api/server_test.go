@@ -121,6 +121,20 @@ func TestConfigurationRegistryAPIUsesTypedDraftsETagsAndRollback(t *testing.T) {
 	if response.StatusCode != http.StatusOK || descriptors.SchemaVersion != 1 || len(descriptors.Items) != 13 {
 		t.Fatalf("descriptors returned %d: %#v", response.StatusCode, descriptors)
 	}
+	response, err = http.Get(server.URL + "/api/v1/config/prerequisites")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prerequisiteResult struct {
+		Items []appconfig.PrerequisiteStatus `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&prerequisiteResult); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(prerequisiteResult.Items) != 1 || prerequisiteResult.Items[0].Status != "passed" {
+		t.Fatalf("prerequisite health returned %d: %#v", response.StatusCode, prerequisiteResult)
+	}
 
 	response, err = http.Get(server.URL + "/api/v1/config/values?scope_kind=system")
 	if err != nil {

@@ -1,5 +1,5 @@
 import axe from "axe-core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigurationPage } from "./ConfigurationPage";
 import { setCSRFToken } from "./api/client";
@@ -24,8 +24,30 @@ const descriptor = {
   bootstrap_controlled: false,
 };
 
+const waiverDescriptor = {
+  ...descriptor,
+  key: "qc.human_waiver_enabled",
+  namespace: "qc",
+  value_kind: "boolean",
+  json_schema: { type: "boolean" },
+  ui: { ...descriptor.ui, label: "Allow human waivers", help: "Allows audited policy waivers only while rationale policy remains enabled.", group: "QC", widget: "checkbox" },
+  default: true,
+  recommended: true,
+  dependencies: [{ key: "qc.waiver_rationale_required", operator: "equals", value: true, when_value: true, message: "Human waivers require audited rationale policy to remain enabled." }],
+};
+const rationaleDescriptor = {
+  ...waiverDescriptor,
+  key: "qc.waiver_rationale_required",
+  ui: { ...waiverDescriptor.ui, label: "Require waiver rationale", help: "Requires a bounded audited rationale for every waiver." },
+  dependencies: [],
+};
+
 const state = { scope: { kind: "system" }, version: 1, revision_id: "configreg_bootstrap", values: [{ key: descriptor.key, scope: { kind: "system" }, value: 2, configured: true, secret: false, version: 1, revision_id: "configreg_bootstrap", updated_at: "2026-07-20T21:00:00Z" }], updated_at: "2026-07-20T21:00:00Z" };
-const effective = { schema_version: 1, scopes: [{ kind: "system" }], values: { [descriptor.key]: { key: descriptor.key, value: 2, configured: true, source_scope: { kind: "system" }, source_revision: "configreg_bootstrap", contributions: [], apply: "new_jobs", secret: false } } };
+const effective = { schema_version: 1, scopes: [{ kind: "system" }], values: {
+  [descriptor.key]: { key: descriptor.key, value: 2, configured: true, source_scope: { kind: "system" }, source_revision: "configreg_bootstrap", contributions: [], apply: "new_jobs", secret: false },
+  [waiverDescriptor.key]: { key: waiverDescriptor.key, value: true, configured: true, source_scope: { kind: "built_in" }, source_revision: "built-in", contributions: [], apply: "new_jobs", secret: false },
+  [rationaleDescriptor.key]: { key: rationaleDescriptor.key, value: true, configured: true, source_scope: { kind: "built_in" }, source_revision: "built-in", contributions: [], apply: "new_jobs", secret: false },
+} };
 const validation = { valid: true, issues: [], apply_modes: ["new_jobs"], requires_reauthentication: false };
 const baseDraft = { id: "configdraft_fixture", scope: { kind: "system" }, operation: "apply", state: "draft", base_scope_version: 1, version: 1, author_id: "administrator", reason: "Increase bounded review capacity", entries: [{ key: descriptor.key, value: 3, reset: false, secret: false, configured: true }], created_at: "2026-07-20T21:01:00Z", updated_at: "2026-07-20T21:01:00Z" };
 
@@ -39,7 +61,7 @@ describe("ConfigurationPage", () => {
       const request = input instanceof Request ? input : new Request(input);
       requests.push(request.clone());
       const path = new URL(request.url).pathname;
-      if (path === "/api/v1/config/descriptors") return jsonResponse({ schema_version: 1, items: [descriptor] });
+      if (path === "/api/v1/config/descriptors") return jsonResponse({ schema_version: 1, items: [descriptor, waiverDescriptor, rationaleDescriptor] });
       if (path === "/api/v1/config/values") return jsonResponse(state);
       if (path === "/api/v1/config/effective") return jsonResponse(effective);
       if (path === "/api/v1/config/drafts" && request.method === "GET") return jsonResponse({ items: [] });
@@ -53,7 +75,7 @@ describe("ConfigurationPage", () => {
     }));
   });
 
-  afterEach(() => { requests.length = 0; vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); requests.length = 0; vi.unstubAllGlobals(); });
 
   it("creates, reviews, and applies a typed ETag-bound draft accessibly", async () => {
     const { container } = render(<ConfigurationPage expert={false} />);
@@ -81,5 +103,22 @@ describe("ConfigurationPage", () => {
       const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
       expect(result.violations).toEqual([]);
     });
+  });
+
+  it("previews dependencies and offers inherited and safe-default resets", async () => {
+    render(<ConfigurationPage expert={false} />);
+    const rationale = await screen.findByRole("checkbox", { name: "Require waiver rationale" });
+    fireEvent.click(rationale);
+    expect(await screen.findByText("Human waivers require audited rationale policy to remain enabled.")).toBeInTheDocument();
+    expect(screen.getByText("Before / after and impact")).toBeInTheDocument();
+    expect(screen.getByText("Enabled", { selector: "del" })).toBeInTheDocument();
+    expect(screen.getByText("Disabled", { selector: "ins" })).toBeInTheDocument();
+
+    const rationaleCard = rationale.closest("article");
+    expect(rationaleCard).not.toBeNull();
+    fireEvent.click(within(rationaleCard!).getByRole("button", { name: "Safe default" }));
+    await waitFor(() => expect(screen.queryByText("Human waivers require audited rationale policy to remain enabled.")).not.toBeInTheDocument());
+    fireEvent.click(within(rationaleCard!).getByRole("button", { name: "Inherited" }));
+    expect(rationale).toBeChecked();
   });
 });

@@ -18,8 +18,10 @@ type Revision = components["schemas"]["ConfigRegistryRevision"];
 type Validation = components["schemas"]["ConfigValidationReport"];
 type ImportDocument = components["schemas"]["DeclarativeConfig"];
 type ImportPreview = components["schemas"]["ConfigImportPreview"];
+type ConfigDependency = components["schemas"]["ConfigDependency"];
 
 type PendingChange = { mode: "set"; value: unknown } | { mode: "reset" };
+type RelationIssue = { code: "dependency" | "incompatibility"; message: string };
 
 const scopeKinds: Array<{ value: Exclude<ScopeKind, "built_in">; label: string; hint: string }> = [
   { value: "system", label: "System", hint: "Applies appliance-wide" },
@@ -55,6 +57,30 @@ function requestError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function valuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function relationMatches(relation: ConfigDependency, current: unknown): boolean {
+  const equal = valuesEqual(current, relation.value);
+  if (relation.operator === "equals") return equal;
+  if (relation.operator === "not_equals") return !equal;
+  const contains = Array.isArray(current) && current.some((item) => valuesEqual(item, relation.value));
+  if (relation.operator === "contains") return contains;
+  if (relation.operator === "not_contains") return !contains;
+  return false;
+}
+
+function relationActive(relation: ConfigDependency, ownerValue: unknown): boolean {
+  return relation.when_value === undefined || valuesEqual(ownerValue, relation.when_value);
+}
+
+function inheritedValue(effective: components["schemas"]["ConfigEffectiveValue"] | undefined, scope: ScopeRef, fallback: unknown): unknown {
+  if (!effective) return fallback;
+  const contributions = effective.contributions.filter((item) => item.configured && (item.scope.kind !== scope.kind || item.scope.id !== scope.id));
+  return contributions.at(-1)?.value ?? fallback;
+}
+
 function ApplyBadge({ mode }: { mode: Descriptor["apply"] }) {
   const labels: Record<Descriptor["apply"], string> = {
     live: "Applies live",
@@ -76,39 +102,43 @@ function ValidationSummary({ report }: { report: Validation }) {
   </div>;
 }
 
-function SettingField({ descriptor, state, effective, pending, disabled, onChange, onReset }: {
+function SettingField({ descriptor, state, effective, pending, relationIssues, disabled, onChange, onReset, onDefault }: {
   descriptor: Descriptor;
   state: ScopeState;
   effective?: components["schemas"]["ConfigEffectiveValue"];
   pending?: PendingChange;
+  relationIssues: RelationIssue[];
   disabled: boolean;
   onChange: (value: unknown) => void;
   onReset: () => void;
+  onDefault: () => void;
 }) {
   const stored = state.values.find((item) => item.key === descriptor.key);
   const baseValue = stored?.configured ? stored.value : effective?.value ?? descriptor.default;
-  const value = pending?.mode === "set" ? pending.value : baseValue;
+  const value = pending?.mode === "set" ? pending.value : pending?.mode === "reset" ? inheritedValue(effective, state.scope, descriptor.default) : baseValue;
   const fieldID = `config-${descriptor.key.replaceAll(".", "-")}`;
   const permitted = descriptor.permitted_scopes.includes(state.scope.kind);
   const fieldDisabled = disabled || descriptor.bootstrap_controlled || !permitted;
   const helpID = `${fieldID}-help`;
+  const relationID = `${fieldID}-relations`;
+  const describedBy = relationIssues.length > 0 ? `${helpID} ${relationID}` : helpID;
   let control;
   if (descriptor.ui.widget === "checkbox") {
     control = <label className="config-checkbox" htmlFor={fieldID}>
-      <input id={fieldID} type="checkbox" checked={Boolean(value)} disabled={fieldDisabled} aria-describedby={helpID} onChange={(event) => onChange(event.target.checked)} />
+      <input id={fieldID} type="checkbox" checked={Boolean(value)} disabled={fieldDisabled} aria-label={descriptor.ui.label} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked)} />
       <span>{Boolean(value) ? "Enabled" : "Disabled"}</span>
     </label>;
   } else if (descriptor.ui.widget === "number") {
     const schema = descriptor.json_schema as { minimum?: number; maximum?: number };
-    control = <input id={fieldID} type="number" value={typeof value === "number" ? value : ""} min={schema.minimum} max={schema.maximum} disabled={fieldDisabled} aria-describedby={helpID} onChange={(event) => onChange(Number(event.target.value))} />;
+    control = <input id={fieldID} type="number" value={typeof value === "number" ? value : ""} min={schema.minimum} max={schema.maximum} disabled={fieldDisabled} aria-describedby={describedBy} onChange={(event) => onChange(Number(event.target.value))} />;
   } else if (descriptor.ui.widget === "string_list" && Array.isArray((descriptor.json_schema as { items?: { enum?: unknown[] } }).items?.enum)) {
     const options = (descriptor.json_schema as { items: { enum: unknown[] } }).items.enum.map(String);
     const selected = Array.isArray(value) ? value.map(String) : [];
-    control = <fieldset className="config-multiselect" id={fieldID} aria-describedby={helpID} disabled={fieldDisabled}><legend>Configured values</legend>{options.map((option) => <label key={option}><input type="checkbox" checked={selected.includes(option)} onChange={(event) => onChange(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} /><span>{option.replaceAll("_", " ")}</span></label>)}</fieldset>;
+    control = <fieldset className="config-multiselect" id={fieldID} aria-describedby={describedBy} disabled={fieldDisabled}><legend>Configured values</legend>{options.map((option) => <label key={option}><input type="checkbox" checked={selected.includes(option)} onChange={(event) => onChange(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} /><span>{option.replaceAll("_", " ")}</span></label>)}</fieldset>;
   } else if (descriptor.ui.widget === "string_list" || descriptor.ui.widget === "path_pattern_list") {
-    control = <textarea id={fieldID} rows={4} value={Array.isArray(value) ? value.join("\n") : ""} disabled={fieldDisabled} aria-describedby={helpID} placeholder="One value per line" onChange={(event) => onChange(event.target.value.split("\n").map((item) => item.trim()).filter(Boolean))} />;
+    control = <textarea id={fieldID} rows={4} value={Array.isArray(value) ? value.join("\n") : ""} disabled={fieldDisabled} aria-describedby={describedBy} placeholder="One value per line" onChange={(event) => onChange(event.target.value.split("\n").map((item) => item.trim()).filter(Boolean))} />;
   } else {
-    control = <input id={fieldID} type={descriptor.secret ? "password" : "text"} value={typeof value === "string" ? value : ""} disabled={fieldDisabled} aria-describedby={helpID} autoComplete={descriptor.secret ? "new-password" : undefined} onChange={(event) => onChange(event.target.value)} />;
+    control = <input id={fieldID} type={descriptor.secret ? "password" : "text"} value={typeof value === "string" ? value : ""} disabled={fieldDisabled} aria-describedby={describedBy} autoComplete={descriptor.secret ? "new-password" : undefined} onChange={(event) => onChange(event.target.value)} />;
   }
   return <article className={pending ? "setting-card changed" : "setting-card"}>
     <header>
@@ -116,6 +146,7 @@ function SettingField({ descriptor, state, effective, pending, disabled, onChang
       <ApplyBadge mode={descriptor.apply} />
     </header>
     <p className="setting-help" id={helpID}>{descriptor.ui.help}</p>
+    {relationIssues.length > 0 && <div className="relation-warning" id={relationID} role="status"><CircleAlert aria-hidden="true" /><ul>{relationIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul></div>}
     <div className="setting-control">
       {descriptor.ui.widget !== "checkbox" && !(descriptor.ui.widget === "string_list" && Array.isArray((descriptor.json_schema as { items?: { enum?: unknown[] } }).items?.enum)) && <label htmlFor={fieldID}>Configured value</label>}
       {control}
@@ -126,7 +157,7 @@ function SettingField({ descriptor, state, effective, pending, disabled, onChang
       <div><span>This scope</span><strong>{stored?.configured ? "Override" : "Inherited"}</strong></div>
     </div>
     <footer>
-      {descriptor.bootstrap_controlled ? <span className="field-lock"><ShieldCheck aria-hidden="true" /> Bootstrap controlled</span> : !permitted ? <span className="field-lock">Unavailable at this scope</span> : <button className="tertiary-button" type="button" disabled={disabled || (!stored?.configured && !pending)} onClick={onReset}><RotateCcw aria-hidden="true" />Reset to inherited</button>}
+      {descriptor.bootstrap_controlled ? <span className="field-lock"><ShieldCheck aria-hidden="true" /> Bootstrap controlled</span> : !permitted ? <span className="field-lock">Unavailable at this scope</span> : <div className="setting-reset-actions"><button className="tertiary-button" type="button" disabled={disabled || (!stored?.configured && !pending)} onClick={onReset}><RotateCcw aria-hidden="true" />Inherited</button><button className="tertiary-button" type="button" disabled={disabled || valuesEqual(value, descriptor.default)} onClick={onDefault}>Safe default</button></div>}
       {pending && <span className="pending-label">{pending.mode === "reset" ? "Will inherit" : "Draft change"}</span>}
     </footer>
   </article>;
@@ -166,7 +197,7 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
     const [descriptorResult, stateResult, effectiveResult, draftResult, revisionResult, prerequisiteResult] = await Promise.all([
       api.GET("/config/descriptors", { params: { query: { advanced: true } } }),
       api.GET("/config/values", { params: { query: scopeQuery } }),
-      api.POST("/config/effective", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { scopes: [scope] } }),
+      api.POST("/config/effective", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { scopes: scope.kind === "system" ? [scope] : [{ kind: "system" }, scope] } }),
       api.GET("/config/drafts", { params: { query: scopeQuery } }),
       api.GET("/config/registry-revisions", { params: { query: scopeQuery } }),
       api.GET("/config/prerequisites"),
@@ -195,6 +226,32 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
     visibleDescriptors.forEach((descriptor) => groups.set(descriptor.ui.group, [...(groups.get(descriptor.ui.group) ?? []), descriptor]));
     return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
   }, [visibleDescriptors]);
+
+  const prospectiveValues = useMemo(() => {
+    const values = new Map<string, unknown>();
+    descriptors.forEach((descriptor) => {
+      const change = pending[descriptor.key];
+      if (change?.mode === "set") values.set(descriptor.key, change.value);
+      else if (change?.mode === "reset") values.set(descriptor.key, inheritedValue(effective?.values[descriptor.key], scope, descriptor.default));
+      else values.set(descriptor.key, effective?.values[descriptor.key]?.value ?? descriptor.default);
+    });
+    return values;
+  }, [descriptors, effective, pending, scope]);
+  const relationIssues = useMemo(() => {
+    const issues = new Map<string, RelationIssue[]>();
+    descriptors.forEach((descriptor) => {
+      const ownerValue = prospectiveValues.get(descriptor.key);
+      const current: RelationIssue[] = [];
+      descriptor.dependencies?.forEach((relation) => {
+        if (relationActive(relation, ownerValue) && !relationMatches(relation, prospectiveValues.get(relation.key))) current.push({ code: "dependency", message: relation.message });
+      });
+      descriptor.incompatibilities?.forEach((relation) => {
+        if (relationActive(relation, ownerValue) && relationMatches(relation, prospectiveValues.get(relation.key))) current.push({ code: "incompatibility", message: relation.message });
+      });
+      if (current.length > 0) issues.set(descriptor.key, current);
+    });
+    return issues;
+  }, [descriptors, prospectiveValues]);
 
   const selectDraft = async (draft: Draft) => {
     setActiveDraft(draft); setValidation(null); setMessage(""); setError("");
@@ -332,7 +389,7 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
       <div className="configuration-main">
         {loading ? <p className="loading-line">Loading typed descriptors and effective values…</p> : groupedDescriptors.length === 0 ? <div className="empty-state"><Search aria-hidden="true" /><div><strong>No settings match</strong><p>Clear the search or enable Expert mode to include advanced fields.</p></div></div> : groupedDescriptors.map(([group, items]) => <section className="setting-group" key={group}>
           <div className="section-heading"><div><p className="eyebrow">Registry group</p><h2>{group}</h2></div><span>{items.length} setting{items.length === 1 ? "" : "s"}</span></div>
-          <div className="setting-grid">{items.map((descriptor) => <SettingField key={descriptor.key} descriptor={descriptor} state={state!} effective={effective?.values[descriptor.key]} pending={pending[descriptor.key]} disabled={Boolean(activeDraft && activeDraft.state !== "draft")} onChange={(value) => setPending((current) => ({ ...current, [descriptor.key]: { mode: "set", value } }))} onReset={() => setPending((current) => {
+          <div className="setting-grid">{items.map((descriptor) => <SettingField key={descriptor.key} descriptor={descriptor} state={state!} effective={effective?.values[descriptor.key]} pending={pending[descriptor.key]} relationIssues={relationIssues.get(descriptor.key) ?? []} disabled={Boolean(activeDraft && activeDraft.state !== "draft")} onChange={(value) => setPending((current) => ({ ...current, [descriptor.key]: { mode: "set", value } }))} onDefault={() => setPending((current) => ({ ...current, [descriptor.key]: { mode: "set", value: descriptor.default } }))} onReset={() => setPending((current) => {
             if (state!.values.some((value) => value.key === descriptor.key && value.configured)) return { ...current, [descriptor.key]: { mode: "reset" } };
             const next = { ...current }; delete next[descriptor.key]; return next;
           })} />)}</div>
@@ -344,7 +401,7 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
           {activeDraft && <div className="selected-draft"><code>{activeDraft.id}</code><span className={`status-pill ${activeDraft.state === "applied" ? "good" : "neutral"}`}><span aria-hidden="true">●</span>{activeDraft.state}</span></div>}
           <form onSubmit={(event) => void saveDraft(event)}>
             <label>Audited reason<textarea required rows={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this exact change is needed" /></label>
-            <div className="diff-preview"><h3>Change preview</h3>{changedKeys.length === 0 ? <p>No local changes yet.</p> : <ul>{changedKeys.map((key) => <li key={key}><code>{key}</code><span>{pending[key].mode === "reset" ? "Reset to inherited" : `Set to ${displayValue((pending[key] as { mode: "set"; value: unknown }).value, descriptors.find((item) => item.key === key)?.secret)}`}</span></li>)}</ul>}</div>
+            <div className="diff-preview"><h3>Before / after and impact</h3>{changedKeys.length === 0 ? <p>No local changes yet.</p> : <ul>{changedKeys.map((key) => { const descriptor = descriptors.find((item) => item.key === key); const change = pending[key]; const after = change.mode === "reset" ? inheritedValue(effective?.values[key], scope, descriptor?.default) : change.value; return <li key={key}><code>{key}</code><span><del>{displayValue(effective?.values[key]?.value, descriptor?.secret)}</del> → <ins>{displayValue(after, descriptor?.secret)}</ins></span>{descriptor && <ApplyBadge mode={descriptor.apply} />}</li>; })}</ul>}</div>
             <button type="submit" disabled={changedKeys.length === 0 || Boolean(activeDraft && activeDraft.state !== "draft")}><Save aria-hidden="true" />{activeDraft?.state === "draft" ? "Save draft" : "Create draft"}</button>
           </form>
           {validation && <ValidationSummary report={validation} />}

@@ -2117,6 +2117,7 @@ components:
         key: { type: string }
         operator: { type: string }
         value: {}
+        when_value: {}
         message: { type: string }
     ConfigDescriptor:
       type: object

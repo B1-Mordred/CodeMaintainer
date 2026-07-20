@@ -125,7 +125,11 @@ func (s *Server) previewRegistryImport(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
 	}
-	preview := service.PreviewImport(request.Document, request.Mode, request.Target, version)
+	preview, err := service.PreviewImportContext(r.Context(), request.Document, request.Mode, request.Target, version)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, preview)
 }
 
@@ -161,20 +165,12 @@ func (s *Server) importRegistryConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"draft": draft, "preview": preview})
 }
 
-func (s *Server) configPrerequisites(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) configPrerequisites(w http.ResponseWriter, r *http.Request) {
 	service, ok := s.requireConfigRegistry(w)
 	if !ok {
 		return
 	}
-	items := make([]map[string]string, 0)
-	for _, descriptor := range service.Descriptors() {
-		for _, prerequisite := range descriptor.Prerequisites {
-			items = append(items, map[string]string{
-				"key": descriptor.Key, "prerequisite": prerequisite,
-				"status": "unavailable", "message": "Run a version-bound draft dry run to evaluate this prerequisite.",
-			})
-		}
-	}
+	items := service.Prerequisites(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 

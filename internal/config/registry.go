@@ -78,10 +78,11 @@ type UIMetadata struct {
 }
 
 type Dependency struct {
-	Key      string          `json:"key"`
-	Operator string          `json:"operator"`
-	Value    json.RawMessage `json:"value,omitempty"`
-	Message  string          `json:"message"`
+	Key       string          `json:"key"`
+	Operator  string          `json:"operator"`
+	Value     json.RawMessage `json:"value,omitempty"`
+	WhenValue json.RawMessage `json:"when_value,omitempty"`
+	Message   string          `json:"message"`
 }
 
 type Descriptor struct {
@@ -130,7 +131,58 @@ func NewRegistry(descriptors []Descriptor) (*Registry, error) {
 		registry.ordered = append(registry.ordered, descriptor.Key)
 	}
 	sort.Strings(registry.ordered)
+	if err := registry.validateRelations(); err != nil {
+		return nil, err
+	}
 	return registry, nil
+}
+
+func (registry *Registry) validateRelations() error {
+	for _, key := range registry.ordered {
+		descriptor := registry.descriptors[key]
+		for _, relationSet := range []struct {
+			kind      string
+			relations []Dependency
+		}{{"dependency", descriptor.Dependencies}, {"incompatibility", descriptor.Incompatibilities}} {
+			relationKind, relations := relationSet.kind, relationSet.relations
+			for _, relation := range relations {
+				target, ok := registry.descriptors[relation.Key]
+				if !ok || relation.Key == descriptor.Key {
+					return fmt.Errorf("descriptor %q %s references invalid key %q", key, relationKind, relation.Key)
+				}
+				if target.Secret {
+					return fmt.Errorf("descriptor %q %s %q cannot inspect a write-only value", key, relationKind, relation.Key)
+				}
+				if strings.TrimSpace(relation.Message) == "" {
+					return fmt.Errorf("descriptor %q %s %q requires an explanation", key, relationKind, relation.Key)
+				}
+				if len(relation.WhenValue) != 0 {
+					canonical, err := canonicalJSON(relation.WhenValue)
+					if err != nil || descriptor.validator(canonical) != nil {
+						return fmt.Errorf("descriptor %q %s %q has an invalid activation value", key, relationKind, relation.Key)
+					}
+				}
+				switch relation.Operator {
+				case "equals", "not_equals":
+					canonical, err := canonicalJSON(relation.Value)
+					if err != nil || target.validator(canonical) != nil {
+						return fmt.Errorf("descriptor %q %s %q has an invalid comparison value", key, relationKind, relation.Key)
+					}
+				case "contains", "not_contains":
+					if target.ValueKind != ValueStringArray {
+						return fmt.Errorf("descriptor %q %s %q requires a string-array target", key, relationKind, relation.Key)
+					}
+					var item string
+					if err := strictDecode(relation.Value, &item); err != nil || item == "" {
+						return fmt.Errorf("descriptor %q %s %q has an invalid array item", key, relationKind, relation.Key)
+					}
+				default:
+					return fmt.Errorf("descriptor %q %s %q uses unsupported operator %q", key, relationKind, relation.Key, relation.Operator)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateDescriptor(descriptor Descriptor) error {
@@ -285,6 +337,7 @@ func cloneDependencies(values []Dependency) []Dependency {
 	result := append([]Dependency(nil), values...)
 	for index := range result {
 		result[index].Value = cloneRaw(result[index].Value)
+		result[index].WhenValue = cloneRaw(result[index].WhenValue)
 	}
 	return result
 }

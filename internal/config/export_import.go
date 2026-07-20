@@ -164,8 +164,26 @@ func (service *RegistryService) PreviewImport(document DeclarativeConfig, mode s
 	return preview
 }
 
-func (service *RegistryService) ImportDraft(ctx context.Context, document DeclarativeConfig, mode string, target ScopeRef, baseScopeVersion int64, actorID, reason string) (Draft, ImportPreview, error) {
+func (service *RegistryService) PreviewImportContext(ctx context.Context, document DeclarativeConfig, mode string, target ScopeRef, baseScopeVersion int64) (ImportPreview, error) {
 	preview := service.PreviewImport(document, mode, target, baseScopeVersion)
+	if !preview.Valid {
+		return preview, nil
+	}
+	report, err := service.validateEntriesInContext(ctx, target, preview.Entries)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	preview.Entries = report.NormalizedEntries
+	preview.Issues = append(preview.Issues, report.Issues...)
+	preview.Valid = report.Valid
+	return preview, nil
+}
+
+func (service *RegistryService) ImportDraft(ctx context.Context, document DeclarativeConfig, mode string, target ScopeRef, baseScopeVersion int64, actorID, reason string) (Draft, ImportPreview, error) {
+	preview, err := service.PreviewImportContext(ctx, document, mode, target, baseScopeVersion)
+	if err != nil {
+		return Draft{}, ImportPreview{}, err
+	}
 	if !preview.Valid {
 		return Draft{}, preview, nil
 	}

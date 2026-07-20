@@ -6,7 +6,7 @@ The machine-readable setting inventory is [`config/configuration-coverage.json`]
 
 ## Typed workbench
 
-Open **Configuration** in the authenticated console. Choose one exact scope, then search or browse the grouped typed controls. Safe mode hides advanced bootstrap fields; Expert mode shows them as read-only. Each control displays its current effective value, winning source, current-scope state, and apply mode. A reset means “remove this scope's override and inherit again”; it never guesses or copies a higher-level value.
+Open **Configuration** in the authenticated console. Choose one exact scope, then search or browse the grouped typed controls. Safe mode hides advanced bootstrap fields; Expert mode shows them as read-only. Each control displays its current effective value, winning source, current-scope state, and apply mode. **Inherited** removes this scope's override; **Safe default** writes the descriptor's trusted built-in value at the selected scope. The before/after preview names the apply impact before a draft is saved.
 
 The deterministic precedence order is:
 
@@ -18,7 +18,9 @@ The deterministic precedence order is:
 6. job template;
 7. one-job override.
 
-Save edits with an audited reason. The controller requires the displayed scope ETag and creates a draft bound to that exact version. Validation and dry-run results are append-only and bound to the draft version. Review binds the exact normalized draft bytes. Apply accepts only that reviewed version and creates a new scoped revision and audit event transactionally. Stale concurrent edits fail with a conflict and must be refreshed; the browser does not overwrite them.
+Save edits with an audited reason. The controller requires the displayed scope ETag and creates a draft bound to that exact version. Dependencies and incompatibilities are evaluated against the prospective effective values, including active conditional relations; the browser previews their messages and the controller enforces them again for create, import, validate, dry run, review, and apply. Validation and dry-run results are append-only and bound to the draft version. Review binds the exact normalized draft bytes. Apply accepts only that reviewed version and creates a new scoped revision and audit event transactionally. Stale concurrent edits fail with a conflict and must be refreshed; the browser does not overwrite them.
+
+The prerequisite catalog runs only compiled trusted checkers. The local-inbox descriptor currently probes durable controller storage and its version-bound dry run through the registered `durable-controller-storage` and `local-inbox-readiness` handlers. Missing handler names fail closed as unavailable; browser or imported content cannot register executable checks.
 
 Apply badges distinguish live settings, settings used only by newly accepted jobs, service reloads, and operator restarts. New-job settings must be read from the accepted job's immutable configuration snapshot, never from later live state.
 

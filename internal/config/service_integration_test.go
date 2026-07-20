@@ -72,6 +72,88 @@ func TestRegistryServiceDraftValidateReviewApplyAndResolve(t *testing.T) {
 	}
 }
 
+func TestRegistryServiceEnforcesContextualDependencies(t *testing.T) {
+	ctx := context.Background()
+	store, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	registry, err := appconfig.BuiltInRegistry(appconfig.Default(".data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := appconfig.NewRegistryService(store, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := appconfig.ScopeRef{Kind: appconfig.ScopeSystem}
+
+	draft, report, err := service.CreateDraft(ctx, appconfig.CreateDraftRequest{
+		Scope: scope, BaseScopeVersion: 0, AuthorID: "author", Reason: "unsafe waiver policy",
+		Entries: []appconfig.DraftEntry{{Key: "qc.waiver_rationale_required", Value: json.RawMessage(`false`), Configured: true}},
+	})
+	if err != nil || report.Valid || draft.ID != "" || len(report.Issues) != 1 || report.Issues[0].Code != "dependency_unsatisfied" || report.Issues[0].Key != "qc.human_waiver_enabled" {
+		t.Fatalf("unsafe dependency result = %#v %#v %v", draft, report, err)
+	}
+
+	draft, report, err = service.CreateDraft(ctx, appconfig.CreateDraftRequest{
+		Scope: scope, BaseScopeVersion: 0, AuthorID: "author", Reason: "disable waiver feature and policy together",
+		Entries: []appconfig.DraftEntry{
+			{Key: "qc.human_waiver_enabled", Value: json.RawMessage(`false`), Configured: true},
+			{Key: "qc.waiver_rationale_required", Value: json.RawMessage(`false`), Configured: true},
+		},
+	})
+	if err != nil || !report.Valid || draft.ID == "" {
+		t.Fatalf("inactive dependency result = %#v %#v %v", draft, report, err)
+	}
+}
+
+func TestRegistryServiceRunsTrustedPrerequisiteAndDryRunHandlers(t *testing.T) {
+	ctx := context.Background()
+	store, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	registry, err := appconfig.BuiltInRegistry(appconfig.Default(".data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := appconfig.NewRegistryService(store, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prerequisites := service.Prerequisites(ctx)
+	if len(prerequisites) != 1 || prerequisites[0].Prerequisite != "durable-controller-storage" || prerequisites[0].Status != "passed" {
+		t.Fatalf("prerequisite health = %#v", prerequisites)
+	}
+	draft, report, err := service.CreateDraft(ctx, appconfig.CreateDraftRequest{
+		Scope: appconfig.ScopeRef{Kind: appconfig.ScopeSystem}, BaseScopeVersion: 0,
+		AuthorID: "author", Reason: "exercise local inbox readiness",
+		Entries: []appconfig.DraftEntry{{Key: "notifications.local_inbox_enabled", Value: json.RawMessage(`false`), Configured: true}},
+	})
+	if err != nil || !report.Valid {
+		t.Fatalf("create notification draft = %#v %v", report, err)
+	}
+	checks, err := service.DryRunDraft(ctx, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 3 {
+		t.Fatalf("checks = %#v", checks)
+	}
+	got := map[string]string{}
+	for _, check := range checks {
+		got[check.Handler] = check.Status
+	}
+	for _, handler := range []string{"registry", "local-inbox-readiness", "durable-controller-storage"} {
+		if got[handler] != "passed" {
+			t.Errorf("handler %q status = %q, all checks %#v", handler, got[handler], checks)
+		}
+	}
+}
+
 func TestRegistryServiceRollbackRestoresWholeHistoricalScope(t *testing.T) {
 	ctx := context.Background()
 	store, err := storesqlite.Open(ctx, ":memory:")

@@ -38,6 +38,21 @@ func TestDeclarativeExportAndForwardCompatibleImportNeverApplyUnknownKeys(t *tes
 	if err := appconfig.VerifyDeclarativeConfig(exported); err != nil || len(exported.Values) != 10 {
 		t.Fatalf("export = %#v, verify = %v", exported, err)
 	}
+	unsafePayload, _ := json.Marshal(exported)
+	var unsafeImport appconfig.DeclarativeConfig
+	if err := json.Unmarshal(unsafePayload, &unsafeImport); err != nil {
+		t.Fatal(err)
+	}
+	for index := range unsafeImport.Values {
+		if unsafeImport.Values[index].Key == "qc.waiver_rationale_required" {
+			unsafeImport.Values[index].Value = json.RawMessage(`false`)
+		}
+	}
+	unsafeImport.DocumentHash, _ = appconfig.ComputeDeclarativeConfigHash(unsafeImport)
+	unsafePreview, err := service.PreviewImportContext(ctx, unsafeImport, "strict", scope, 1)
+	if err != nil || unsafePreview.Valid {
+		t.Fatalf("contextual import accepted an unsatisfied dependency: %#v %v", unsafePreview, err)
+	}
 	for index := range exported.Values {
 		if exported.Values[index].Key == "workflow.max_review_cycles" {
 			exported.Values[index].Value = json.RawMessage(`4`)

@@ -2079,6 +2079,7 @@ export interface components {
             key: string;
             operator: string;
             value?: unknown;
+            when_value?: unknown;
             message: string;
         };
         ConfigDescriptor: {

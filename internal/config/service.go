@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 )
 
 type RegistryRepository interface {
@@ -29,13 +28,44 @@ type RegistryRepository interface {
 type RegistryService struct {
 	repository RegistryRepository
 	registry   *Registry
+	checkers   map[string]configurationChecker
+}
+
+type configurationCheckRequest struct {
+	Descriptor Descriptor
+	Draft      Draft
+	Entry      DraftEntry
+}
+
+type configurationCheckOutcome struct {
+	Status  string `json:"status"`
+	Passed  bool   `json:"passed"`
+	Message string `json:"message"`
+}
+
+type configurationChecker func(context.Context, configurationCheckRequest) configurationCheckOutcome
+
+type PrerequisiteStatus struct {
+	Key          string `json:"key"`
+	Prerequisite string `json:"prerequisite"`
+	Status       string `json:"status"`
+	Message      string `json:"message"`
 }
 
 func NewRegistryService(repository RegistryRepository, registry *Registry) (*RegistryService, error) {
 	if repository == nil || registry == nil {
 		return nil, errors.New("configuration registry repository and registry are required")
 	}
-	return &RegistryService{repository: repository, registry: registry}, nil
+	service := &RegistryService{repository: repository, registry: registry, checkers: make(map[string]configurationChecker)}
+	storageReady := func(ctx context.Context, _ configurationCheckRequest) configurationCheckOutcome {
+		if _, err := repository.GetConfigScope(ctx, ScopeRef{Kind: ScopeSystem}); err != nil {
+			return configurationCheckOutcome{Status: "failed", Message: "The controller could not read durable configuration state."}
+		}
+		return configurationCheckOutcome{Status: "passed", Passed: true, Message: "Durable controller storage is reachable; the local inbox requires no external connection."}
+	}
+	service.checkers["durable-controller-storage"] = storageReady
+	service.checkers["local-inbox-readiness"] = storageReady
+	return service, nil
 }
 
 func (service *RegistryService) Descriptors() []Descriptor { return service.registry.Descriptors() }
@@ -75,6 +105,31 @@ func (service *RegistryService) Drafts(ctx context.Context, scope ScopeRef, limi
 
 func (service *RegistryService) Checks(ctx context.Context, draftID string, limit int) ([]CheckResult, error) {
 	return service.repository.ListConfigChecks(ctx, draftID, limit)
+}
+
+func (service *RegistryService) Prerequisites(ctx context.Context) []PrerequisiteStatus {
+	items := make([]PrerequisiteStatus, 0)
+	for _, key := range service.registry.ordered {
+		descriptor := service.registry.descriptors[key]
+		for _, prerequisite := range descriptor.Prerequisites {
+			outcome := service.runConfigurationChecker(ctx, prerequisite, configurationCheckRequest{Descriptor: descriptor})
+			items = append(items, PrerequisiteStatus{Key: key, Prerequisite: prerequisite, Status: outcome.Status, Message: outcome.Message})
+		}
+	}
+	return items
+}
+
+func (service *RegistryService) runConfigurationChecker(ctx context.Context, name string, request configurationCheckRequest) configurationCheckOutcome {
+	checker, ok := service.checkers[name]
+	if !ok {
+		return configurationCheckOutcome{Status: "unavailable", Message: "No trusted checker is registered for this prerequisite or dry-run handler."}
+	}
+	outcome := checker(ctx, request)
+	if outcome.Status != "passed" && outcome.Status != "failed" {
+		return configurationCheckOutcome{Status: "failed", Message: "The trusted checker returned an invalid status."}
+	}
+	outcome.Passed = outcome.Status == "passed"
+	return outcome
 }
 
 func (service *RegistryService) Revisions(ctx context.Context, scope ScopeRef, limit int) ([]RegistryRevision, error) {
@@ -215,8 +270,118 @@ func (service *RegistryService) ValidateEntries(scope ScopeRef, entries []DraftE
 	return report
 }
 
+func (service *RegistryService) validateEntriesInContext(ctx context.Context, scope ScopeRef, entries []DraftEntry) (ValidationReport, error) {
+	report := service.ValidateEntries(scope, entries)
+	if !report.Valid {
+		return report, nil
+	}
+	scopes := []ScopeRef{{Kind: ScopeSystem}}
+	if scope.Kind == ScopeSystem {
+		scopes = scopes[:1]
+	} else {
+		scopes = append(scopes, scope)
+	}
+	effective, err := service.Effective(ctx, scopes)
+	if err != nil {
+		return ValidationReport{}, err
+	}
+	prospective := make(map[string]json.RawMessage, len(effective.Values))
+	for key, value := range effective.Values {
+		prospective[key] = cloneRaw(value.Value)
+	}
+	changed := make(map[string]bool, len(report.NormalizedEntries))
+	for _, entry := range report.NormalizedEntries {
+		changed[entry.Key] = true
+		if !entry.Reset {
+			prospective[entry.Key] = cloneRaw(entry.Value)
+			continue
+		}
+		value := effective.Values[entry.Key]
+		prospective[entry.Key] = nil
+		for index := len(value.Contributions) - 1; index >= 0; index-- {
+			candidate := value.Contributions[index]
+			if candidate.Scope != scope && candidate.Configured {
+				prospective[entry.Key] = cloneRaw(candidate.Value)
+				break
+			}
+		}
+	}
+	for _, key := range service.registry.ordered {
+		descriptor := service.registry.descriptors[key]
+		impacted := changed[descriptor.Key]
+		for _, relation := range append(cloneDependencies(descriptor.Dependencies), descriptor.Incompatibilities...) {
+			impacted = impacted || changed[relation.Key]
+		}
+		if !impacted {
+			continue
+		}
+		for _, dependency := range descriptor.Dependencies {
+			if !configurationRelationActive(dependency, prospective[descriptor.Key]) {
+				continue
+			}
+			if !configurationRelationMatches(dependency, prospective[dependency.Key]) {
+				report.Issues = append(report.Issues, ValidationIssue{Key: descriptor.Key, Code: "dependency_unsatisfied", Message: dependency.Message, Severity: "error"})
+			}
+		}
+		for _, incompatibility := range descriptor.Incompatibilities {
+			if !configurationRelationActive(incompatibility, prospective[descriptor.Key]) {
+				continue
+			}
+			if configurationRelationMatches(incompatibility, prospective[incompatibility.Key]) {
+				report.Issues = append(report.Issues, ValidationIssue{Key: descriptor.Key, Code: "incompatibility", Message: incompatibility.Message, Severity: "error"})
+			}
+		}
+	}
+	report.Valid = len(report.Issues) == 0
+	return report, nil
+}
+
+func configurationRelationActive(relation Dependency, current json.RawMessage) bool {
+	if len(relation.WhenValue) == 0 {
+		return true
+	}
+	left, leftErr := canonicalJSON(current)
+	right, rightErr := canonicalJSON(relation.WhenValue)
+	return leftErr == nil && rightErr == nil && string(left) == string(right)
+}
+
+func configurationRelationMatches(relation Dependency, current json.RawMessage) bool {
+	switch relation.Operator {
+	case "equals", "not_equals":
+		left, leftErr := canonicalJSON(current)
+		right, rightErr := canonicalJSON(relation.Value)
+		equal := leftErr == nil && rightErr == nil && string(left) == string(right)
+		if relation.Operator == "not_equals" {
+			return !equal
+		}
+		return equal
+	case "contains", "not_contains":
+		var values []string
+		var wanted string
+		contains := strictDecode(current, &values) == nil && strictDecode(relation.Value, &wanted) == nil
+		if contains {
+			contains = false
+			for _, value := range values {
+				if value == wanted {
+					contains = true
+					break
+				}
+			}
+		}
+		if relation.Operator == "not_contains" {
+			return !contains
+		}
+		return contains
+	default:
+		return false
+	}
+}
+
 func (service *RegistryService) CreateDraft(ctx context.Context, request CreateDraftRequest) (Draft, ValidationReport, error) {
-	report := service.ValidateEntries(request.Scope, request.Entries)
+	report, err := service.validateEntriesInContext(ctx, request.Scope, request.Entries)
+	if err != nil {
+		return Draft{}, ValidationReport{}, err
+	}
 	if !report.Valid {
 		return Draft{}, report, nil
 	}
@@ -230,7 +395,10 @@ func (service *RegistryService) UpdateDraft(ctx context.Context, request UpdateD
 	if err != nil {
 		return Draft{}, ValidationReport{}, err
 	}
-	report := service.ValidateEntries(draft.Scope, request.Entries)
+	report, err := service.validateEntriesInContext(ctx, draft.Scope, request.Entries)
+	if err != nil {
+		return Draft{}, ValidationReport{}, err
+	}
 	if !report.Valid {
 		return Draft{}, report, nil
 	}
@@ -244,7 +412,10 @@ func (service *RegistryService) ValidateDraft(ctx context.Context, draftID strin
 	if err != nil {
 		return ValidationReport{}, CheckResult{}, err
 	}
-	report := service.ValidateEntries(draft.Scope, draft.Entries)
+	report, err := service.validateEntriesInContext(ctx, draft.Scope, draft.Entries)
+	if err != nil {
+		return ValidationReport{}, CheckResult{}, err
+	}
 	payload, _ := json.Marshal(report)
 	status := "passed"
 	if !report.Valid {
@@ -262,7 +433,10 @@ func (service *RegistryService) DryRunDraft(ctx context.Context, draftID string)
 	if err != nil {
 		return nil, err
 	}
-	report := service.ValidateEntries(draft.Scope, draft.Entries)
+	report, err := service.validateEntriesInContext(ctx, draft.Scope, draft.Entries)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]CheckResult, 0)
 	validationPayload, _ := json.Marshal(report)
 	validationStatus := "passed"
@@ -280,32 +454,39 @@ func (service *RegistryService) DryRunDraft(ctx context.Context, draftID string)
 	if !report.Valid {
 		return results, nil
 	}
-	handlers := make(map[string]bool)
+	type checkSpec struct {
+		name    string
+		kind    string
+		request configurationCheckRequest
+	}
+	handlers := make(map[string]checkSpec)
 	for _, entry := range report.NormalizedEntries {
 		descriptor := service.registry.descriptors[entry.Key]
 		if descriptor.DryRunHandler != "" {
-			handlers[descriptor.DryRunHandler] = true
+			handlers["dry_run:"+descriptor.DryRunHandler] = checkSpec{name: descriptor.DryRunHandler, kind: "dry_run", request: configurationCheckRequest{Descriptor: descriptor, Draft: draft, Entry: entry}}
 		}
 		for _, prerequisite := range descriptor.Prerequisites {
-			handlers["prerequisite:"+prerequisite] = true
+			handlers["prerequisite:"+prerequisite] = checkSpec{name: prerequisite, kind: "prerequisite", request: configurationCheckRequest{Descriptor: descriptor, Draft: draft, Entry: entry}}
 		}
 	}
 	if len(handlers) == 0 {
-		handlers["registry-only"] = true
+		handlers["dry_run:registry-only"] = checkSpec{name: "registry-only", kind: "dry_run"}
 	}
 	ordered := make([]string, 0, len(handlers))
 	for handler := range handlers {
 		ordered = append(ordered, handler)
 	}
 	sort.Strings(ordered)
-	for _, handler := range ordered {
-		kind := "dry_run"
-		if strings.HasPrefix(handler, "prerequisite:") {
-			kind = "prerequisite"
+	for _, handlerKey := range ordered {
+		spec := handlers[handlerKey]
+		outcome := configurationCheckOutcome{Status: "passed", Passed: true, Message: "No external side effect is required for this registered setting."}
+		if spec.name != "registry-only" {
+			outcome = service.runConfigurationChecker(ctx, spec.name, spec.request)
 		}
+		message, _ := json.Marshal(outcome)
 		result, saveErr := service.repository.SaveConfigCheck(ctx, CheckResult{
-			DraftID: draft.ID, DraftVersion: draft.Version, Kind: kind, Handler: handler,
-			Status: "passed", Result: json.RawMessage(`{"passed":true,"message":"No external side effect is required for this registered setting."}`),
+			DraftID: draft.ID, DraftVersion: draft.Version, Kind: spec.kind, Handler: spec.name,
+			Status: outcome.Status, Result: message,
 		})
 		if saveErr != nil {
 			return nil, saveErr
@@ -323,7 +504,10 @@ func (service *RegistryService) ReviewDraft(ctx context.Context, request Transit
 	if err != nil {
 		return Draft{}, ValidationReport{}, err
 	}
-	report := service.ValidateEntries(draft.Scope, draft.Entries)
+	report, err := service.validateEntriesInContext(ctx, draft.Scope, draft.Entries)
+	if err != nil {
+		return Draft{}, ValidationReport{}, err
+	}
 	if !report.Valid {
 		return Draft{}, report, nil
 	}
@@ -339,7 +523,10 @@ func (service *RegistryService) ApplyDraft(ctx context.Context, draftID string, 
 	if draft.State != DraftReviewed || draft.Version != expectedVersion {
 		return RegistryRevision{}, ScopeState{}, ValidationReport{}, errors.New("reviewed draft version does not match")
 	}
-	report := service.ValidateEntries(draft.Scope, draft.Entries)
+	report, err := service.validateEntriesInContext(ctx, draft.Scope, draft.Entries)
+	if err != nil {
+		return RegistryRevision{}, ScopeState{}, ValidationReport{}, err
+	}
 	if !report.Valid {
 		return RegistryRevision{}, ScopeState{}, report, nil
 	}
