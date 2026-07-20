@@ -12,11 +12,18 @@ import (
 	"strings"
 	"testing"
 
+	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
 )
 
 func testServer(t *testing.T) (*httptest.Server, *storesqlite.Store) {
+	server, store, _ := testServerWithArtifacts(t)
+	return server, store
+}
+
+func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store, *artifactfiles.Store) {
 	t.Helper()
 	store, err := storesqlite.Open(context.Background(), ":memory:")
 	if err != nil {
@@ -33,10 +40,15 @@ func testServer(t *testing.T) (*httptest.Server, *storesqlite.Store) {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	server := httptest.NewServer(NewServer(store, logger, "mock"))
+	artifactStore, err := artifactfiles.New(t.TempDir(), store)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore)))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { store.Close() })
-	return server, store
+	return server, store, artifactStore
 }
 
 func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
@@ -113,6 +125,53 @@ func TestCreateInspectCancelRetryJob(t *testing.T) {
 	}
 	if inspected.Job.State != "queued" || inspected.Job.Version != 3 || len(inspected.Transitions) != 3 {
 		t.Fatalf("unexpected inspected job: %#v", inspected)
+	}
+}
+
+func TestJobArtifactsAreListedAndDownloadedWithIntegrityMetadata(t *testing.T) {
+	server, store, artifactStore := testServerWithArtifacts(t)
+	ctx := context.Background()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_artifact_api", ProjectID: "project", Repository: "owner/repo", Task: "verify", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := artifactStore.Put(ctx, artifactfiles.PutRequest{
+		JobID: job.ID, ProjectID: job.ProjectID, Kind: "command_result",
+		MediaType: "application/json", Producer: "verifier", Metadata: json.RawMessage(`{"class":"full_tests"}`),
+		Reader: strings.NewReader(`{"exit_code":0}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(listed, []byte(record.ID)) {
+		t.Fatalf("artifact list returned %d: %s", response.StatusCode, listed)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/artifacts/" + record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || string(payload) != `{"exit_code":0}` ||
+		response.Header.Get("X-Artifact-SHA256") != record.ObjectSHA256 ||
+		response.Header.Get("Content-Disposition") == "" {
+		t.Fatalf("artifact download returned %d headers=%v body=%s", response.StatusCode, response.Header, payload)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/another-job/artifacts/" + record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("cross-job artifact download returned %d", response.StatusCode)
 	}
 }
 

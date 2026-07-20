@@ -110,6 +110,43 @@ paths:
               schema: { type: string }
         default: { $ref: "#/components/responses/ErrorResponse" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/artifacts:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List immutable evidence artifacts for one job
+      operationId: listJobArtifacts
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        "200":
+          description: Job-scoped artifact metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Artifact" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/artifacts/{artifactID}:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+      - { $ref: "#/components/parameters/ArtifactID" }
+    get:
+      summary: Download one integrity-checked job evidence artifact
+      operationId: downloadJobArtifact
+      responses:
+        "200":
+          description: Verified artifact bytes; Content-Type reflects stored media metadata.
+          headers:
+            X-Artifact-SHA256: { schema: { type: string, pattern: "^[a-f0-9]{64}$" } }
+            Content-Disposition: { schema: { type: string } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/actions/cancel:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -248,6 +285,11 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^config_[0-9a-f]{32}$" }
+    ArtifactID:
+      name: artifactID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^artifact_[0-9a-f]{32}$" }
   responses:
     ErrorResponse:
       description: Structured error
@@ -305,6 +347,20 @@ components:
         actor_id: { type: string }
         reason: { type: string }
         details: { type: object }
+        created_at: { type: string, format: date-time }
+    Artifact:
+      type: object
+      required: [id, job_id, project_id, sha256, bytes, kind, media_type, producer, metadata, created_at]
+      properties:
+        id: { type: string, pattern: "^artifact_[0-9a-f]{32}$" }
+        job_id: { type: string }
+        project_id: { type: string }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 0 }
+        kind: { type: string }
+        media_type: { type: string }
+        producer: { type: string }
+        metadata: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
     SystemStatus:
       type: object

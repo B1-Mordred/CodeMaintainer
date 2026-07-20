@@ -18,10 +18,12 @@ type SyncResult struct {
 }
 
 type Worktree struct {
-	JobID    string `json:"job_id"`
-	BaseSHA  string `json:"base_sha"`
-	Branch   string `json:"branch"`
-	HandleID string `json:"handle_id"`
+	ProjectID string `json:"project_id"`
+	JobID     string `json:"job_id"`
+	BaseSHA   string `json:"base_sha"`
+	Branch    string `json:"branch"`
+	HandleID  string `json:"handle_id"`
+	Path      string `json:"-"`
 }
 
 type Provider interface {
@@ -68,7 +70,7 @@ func (f *Fake) CreateWorktree(_ context.Context, projectID, jobID, baseSHA strin
 	if _, exists := f.jobs[jobID]; exists {
 		return Worktree{}, errors.New("worktree already exists for job")
 	}
-	worktree := Worktree{JobID: jobID, BaseSHA: baseSHA, Branch: "maintainer/" + jobID, HandleID: "worktree-" + jobID}
+	worktree := Worktree{ProjectID: projectID, JobID: jobID, BaseSHA: baseSHA, Branch: "maintainer/" + jobID, HandleID: "worktree-" + jobID}
 	f.jobs[jobID] = worktree
 	return worktree, nil
 }

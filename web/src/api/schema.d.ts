@@ -96,6 +96,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List immutable evidence artifacts for one job */
+        get: operations["listJobArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/artifacts/{artifactID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+                artifactID: components["parameters"]["ArtifactID"];
+            };
+            cookie?: never;
+        };
+        /** Download one integrity-checked job evidence artifact */
+        get: operations["downloadJobArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/actions/cancel": {
         parameters: {
             query?: never;
@@ -263,6 +302,21 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        Artifact: {
+            id: string;
+            job_id: string;
+            project_id: string;
+            sha256: string;
+            bytes: number;
+            kind: string;
+            media_type: string;
+            producer: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
         SystemStatus: {
             status: string;
             profile: string;
@@ -343,6 +397,7 @@ export interface components {
     parameters: {
         JobID: string;
         RevisionID: string;
+        ArtifactID: string;
     };
     requestBodies: never;
     headers: never;
@@ -501,6 +556,60 @@ export interface operations {
             };
             400: components["responses"]["ErrorResponse"];
             default: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobArtifacts: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job-scoped artifact metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Artifact"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    downloadJobArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+                artifactID: components["parameters"]["ArtifactID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified artifact bytes; Content-Type reflects stored media metadata. */
+            200: {
+                headers: {
+                    "X-Artifact-SHA256"?: string;
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     cancelJob: {

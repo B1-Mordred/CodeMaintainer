@@ -2,6 +2,7 @@ package artifacts
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -104,5 +105,46 @@ func TestStoreRejectsOversizeAndDetectsTampering(t *testing.T) {
 	if _, reader, err := store.Open(ctx, job.ID, record.ID); err == nil {
 		reader.Close()
 		t.Fatal("tampered artifact was opened")
+	}
+}
+
+func TestStoreStagesOnlyJobAuthorizedInputsWithoutOverwrite(t *testing.T) {
+	ctx := context.Background()
+	metadata, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metadata.Close()
+	for _, id := range []string{"job_one", "job_two"} {
+		if _, err := metadata.CreateJob(ctx, storage.CreateJobParams{
+			ID: id, ProjectID: "project", Repository: "owner/repo", Task: "verify", ActorID: "operator",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := New(filepath.Join(t.TempDir(), "artifacts"), metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Put(ctx, PutRequest{
+		JobID: "job_one", ProjectID: "project", Kind: "task_packet", MediaType: "application/json",
+		Producer: "controller", Metadata: []byte(`{}`), Reader: strings.NewReader(`{"task":"safe"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, err := store.StageInputs(ctx, "job_one", []string{record.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := os.ReadFile(filepath.Join(directory, record.ID))
+	if err != nil || string(staged) != `{"task":"safe"}` {
+		t.Fatalf("staged input %q, %v", staged, err)
+	}
+	if _, err := store.StageInputs(ctx, "job_one", []string{record.ID}); err != nil {
+		t.Fatalf("idempotent staging failed: %v", err)
+	}
+	if _, err := store.StageInputs(ctx, "job_two", []string{record.ID}); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("cross-job staging returned %v", err)
 	}
 }

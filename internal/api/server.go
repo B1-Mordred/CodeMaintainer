@@ -22,18 +22,32 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	store   storage.Store
-	logger  *slog.Logger
-	profile string
-	started time.Time
-	handler http.Handler
+	store     storage.Store
+	artifacts ArtifactReader
+	logger    *slog.Logger
+	profile   string
+	started   time.Time
+	handler   http.Handler
 }
 
-func NewServer(store storage.Store, logger *slog.Logger, profile string) *Server {
+type ArtifactReader interface {
+	Open(context.Context, string, string) (storage.ArtifactRecord, io.ReadCloser, error)
+}
+
+type Option func(*Server)
+
+func WithArtifactReader(reader ArtifactReader) Option {
+	return func(server *Server) { server.artifacts = reader }
+}
+
+func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	s := &Server{store: store, logger: logger, profile: profile, started: time.Now().UTC()}
+	for _, option := range options {
+		option(s)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
@@ -43,6 +57,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string) *Server
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts", s.listJobArtifacts)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts/{artifactID}", s.downloadJobArtifact)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
@@ -238,6 +254,39 @@ func (s *Server) jobEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (s *Server) listJobArtifacts(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("jobID")
+	if _, err := s.store.GetJob(r.Context(), jobID); err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	items, err := s.store.ListJobArtifacts(r.Context(), jobID, queryInt(r, "limit", 100))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) downloadJobArtifact(w http.ResponseWriter, r *http.Request) {
+	if s.artifacts == nil {
+		writeError(w, http.StatusServiceUnavailable, "artifact_store_unavailable", "artifact content is unavailable")
+		return
+	}
+	record, reader, err := s.artifacts.Open(r.Context(), r.PathValue("jobID"), r.PathValue("artifactID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	defer reader.Close()
+	w.Header().Set("Content-Type", record.MediaType)
+	w.Header().Set("Content-Length", strconv.FormatInt(record.Bytes, 10))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+record.ID+`"`)
+	w.Header().Set("X-Artifact-SHA256", record.ObjectSHA256)
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.CopyN(w, reader, record.Bytes)
 }
 
 func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {

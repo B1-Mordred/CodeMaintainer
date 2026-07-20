@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -147,6 +148,52 @@ func (s *Store) Open(ctx context.Context, jobID, artifactID string) (storage.Art
 		return storage.ArtifactRecord{}, nil, fmt.Errorf("open artifact: %w", err)
 	}
 	return record, file, nil
+}
+
+// StageInputs creates no-overwrite hardlinks for artifact associations already
+// authorized to the job. runnerd mounts only these individual files, never the
+// global object directory or a caller-derived object path.
+func (s *Store) StageInputs(ctx context.Context, jobID string, artifactIDs []string) (string, error) {
+	if !safeName.MatchString(jobID) || len(artifactIDs) == 0 || len(artifactIDs) > 32 {
+		return "", storage.ErrInvalid
+	}
+	ids := append([]string(nil), artifactIDs...)
+	sort.Strings(ids)
+	directory := filepath.Join(s.root, "inputs", jobID)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", fmt.Errorf("create artifact input stage: %w", err)
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return "", fmt.Errorf("protect artifact input stage: %w", err)
+	}
+	previous := ""
+	for _, artifactID := range ids {
+		if !safeName.MatchString(artifactID) || artifactID == previous {
+			return "", storage.ErrInvalid
+		}
+		previous = artifactID
+		record, err := s.metadata.GetArtifact(ctx, jobID, artifactID)
+		if err != nil {
+			return "", err
+		}
+		objectPath, err := s.objectPath(record.RelativePath)
+		if err != nil {
+			return "", err
+		}
+		if err := verifyFile(objectPath, record.ObjectSHA256, record.Bytes); err != nil {
+			return "", fmt.Errorf("verify staged artifact source: %w", err)
+		}
+		destination := filepath.Join(directory, artifactID)
+		if err := os.Link(objectPath, destination); err != nil {
+			if !errors.Is(err, os.ErrExist) {
+				return "", fmt.Errorf("stage artifact input: %w", err)
+			}
+			if err := verifyFile(destination, record.ObjectSHA256, record.Bytes); err != nil {
+				return "", fmt.Errorf("verify existing staged artifact: %w", err)
+			}
+		}
+	}
+	return directory, nil
 }
 
 func (s *Store) objectPath(relative string) (string, error) {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/api"
+	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
@@ -44,8 +45,12 @@ func run(logger *slog.Logger) error {
 	if err := ensureDefaultConfig(ctx, store, dataRoot, listen, profile); err != nil {
 		return err
 	}
+	artifactStore, err := artifactfiles.New(filepath.Join(dataRoot, "artifacts"), store)
+	if err != nil {
+		return err
+	}
 
-	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile)
+	handler := api.NewServer(store, logger.With("component", "api", "version", version), profile, api.WithArtifactReader(artifactStore))
 	server := &http.Server{
 		Addr:              listen,
 		Handler:           handler,
