@@ -157,7 +157,10 @@ func (p *Policy) Resolve(request runners.JobRequest, runID runners.RunID) (Worke
 		mounts = append(mounts, Mount{Source: cache, Target: "/cache", ReadOnly: false})
 	}
 	for index, artifactID := range request.InputArtifactIDs {
-		input, pathErr := p.path("artifacts", "objects", artifactID)
+		// The trusted controller stages authorized object hardlinks in a
+		// per-job input directory. runnerd never resolves a caller-provided
+		// artifact identifier directly into the global object store.
+		input, pathErr := p.path("artifacts", "inputs", request.JobID, artifactID)
 		if pathErr != nil {
 			return WorkerSpec{}, pathErr
 		}

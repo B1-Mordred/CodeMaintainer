@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,7 +174,7 @@ func TestConfigurationRevisionsAreDurableAndOrdered(t *testing.T) {
 	}
 }
 
-func TestMigrationFromVersionOneAddsLeasesAndRevisionReason(t *testing.T) {
+func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "controller.db")
 	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
@@ -214,12 +215,58 @@ func TestMigrationFromVersionOneAddsLeasesAndRevisionReason(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 2 {
-		t.Fatalf("applied migration count = %d, want 2", migrations)
+	if migrations != 3 {
+		t.Fatalf("applied migration count = %d, want 3", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
 		t.Fatalf("job_leases table missing: %v", err)
+	}
+}
+
+func TestArtifactIndexIsImmutableJobScopedAndAudited(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_artifacts", ProjectID: "project-one", Repository: "owner/repo", Task: "verify", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := storage.ArtifactRecord{
+		ID: "artifact_one", JobID: job.ID, ProjectID: job.ProjectID,
+		ObjectSHA256: strings.Repeat("a", 64), Bytes: 12,
+		RelativePath: "objects/aa/" + strings.Repeat("a", 64), Kind: "command_result",
+		MediaType: "application/json", Producer: "verifier", Metadata: json.RawMessage(`{"class":"full_tests"}`),
+	}
+	created, err := store.IndexArtifact(ctx, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetArtifact(ctx, job.ID, created.ID)
+	if err != nil || loaded.ObjectSHA256 != record.ObjectSHA256 || loaded.RelativePath != record.RelativePath {
+		t.Fatalf("loaded artifact %#v, %v", loaded, err)
+	}
+	items, err := store.ListJobArtifacts(ctx, job.ID, 10)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("listed artifacts %#v, %v", items, err)
+	}
+	if _, err := store.GetArtifact(ctx, "another-job", created.ID); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("cross-job lookup returned %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, "UPDATE job_artifacts SET kind='tampered' WHERE id=?", created.ID); err == nil {
+		t.Fatal("artifact association was mutable")
+	}
+	auditEvents, err := store.ListAudit(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if auditEvents[0].Action != "artifact.index" {
+		t.Fatalf("artifact indexing was not audited: %#v", auditEvents)
 	}
 }
 

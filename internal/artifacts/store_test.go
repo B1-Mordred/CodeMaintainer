@@ -1,0 +1,108 @@
+package artifacts
+
+import (
+	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/local-code-maintainer/appliance/internal/storage"
+	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+)
+
+func TestStorePublishesContentAddressedImmutableArtifacts(t *testing.T) {
+	ctx := context.Background()
+	metadata, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metadata.Close()
+	job, err := metadata.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_artifact", ProjectID: "project", Repository: "owner/repo", Task: "verify", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(filepath.Join(t.TempDir(), "artifacts"), metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func() storage.ArtifactRecord {
+		record, err := store.Put(ctx, PutRequest{
+			JobID: job.ID, ProjectID: job.ProjectID, Kind: "command_result",
+			MediaType: "application/json", Producer: "verifier", Metadata: []byte(`{"class":"full_tests"}`),
+			Reader: strings.NewReader(`{"exit_code":0}`),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	first := put()
+	second := put()
+	if first.ID == second.ID || first.ObjectSHA256 != second.ObjectSHA256 || first.RelativePath != second.RelativePath {
+		t.Fatalf("deduplication identities are wrong: %#v %#v", first, second)
+	}
+	path := filepath.Join(store.root, filepath.FromSlash(first.RelativePath))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o400 {
+		t.Fatalf("artifact mode is %o", info.Mode().Perm())
+	}
+	record, reader, err := store.Open(ctx, job.ID, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := io.ReadAll(reader)
+	reader.Close()
+	if record.ObjectSHA256 != first.ObjectSHA256 || string(payload) != `{"exit_code":0}` {
+		t.Fatalf("opened artifact %#v %q", record, payload)
+	}
+}
+
+func TestStoreRejectsOversizeAndDetectsTampering(t *testing.T) {
+	ctx := context.Background()
+	metadata, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metadata.Close()
+	job, err := metadata.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_artifact", ProjectID: "project", Repository: "owner/repo", Task: "verify", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(filepath.Join(t.TempDir(), "artifacts"), metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := PutRequest{
+		JobID: job.ID, ProjectID: job.ProjectID, Kind: "log", MediaType: "text/plain",
+		Producer: "verifier", Metadata: []byte(`{}`), Reader: strings.NewReader("too large"), MaxBytes: 3,
+	}
+	if _, err := store.Put(ctx, request); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("oversized artifact returned %v", err)
+	}
+	request.Reader = strings.NewReader("safe")
+	request.MaxBytes = 10
+	record, err := store.Put(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(store.root, filepath.FromSlash(record.RelativePath))
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("evil"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, reader, err := store.Open(ctx, job.ID, record.ID); err == nil {
+		reader.Close()
+		t.Fatal("tampered artifact was opened")
+	}
+}

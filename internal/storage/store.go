@@ -64,10 +64,31 @@ type LeaseStore interface {
 	ReleaseJobLease(context.Context, string, string) error
 }
 
+type ArtifactRecord struct {
+	ID           string          `json:"id"`
+	JobID        string          `json:"job_id"`
+	ProjectID    string          `json:"project_id"`
+	ObjectSHA256 string          `json:"sha256"`
+	Bytes        int64           `json:"bytes"`
+	RelativePath string          `json:"-"`
+	Kind         string          `json:"kind"`
+	MediaType    string          `json:"media_type"`
+	Producer     string          `json:"producer"`
+	Metadata     json.RawMessage `json:"metadata"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+type ArtifactStore interface {
+	IndexArtifact(context.Context, ArtifactRecord) (ArtifactRecord, error)
+	GetArtifact(context.Context, string, string) (ArtifactRecord, error)
+	ListJobArtifacts(context.Context, string, int) ([]ArtifactRecord, error)
+}
+
 type Store interface {
 	JobStore
 	AuditStore
 	ConfigStore
 	LeaseStore
+	ArtifactStore
 	Close() error
 }

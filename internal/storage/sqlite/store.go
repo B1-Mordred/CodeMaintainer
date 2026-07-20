@@ -27,6 +27,9 @@ var migration001 string
 //go:embed migrations/002_queue_leases.sql
 var migration002 string
 
+//go:embed migrations/003_artifacts.sql
+var migration003 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -83,7 +86,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {
@@ -647,4 +650,111 @@ func (s *Store) getJobLease(ctx context.Context, jobID string) (storage.JobLease
 		*item.destination = parsed
 	}
 	return lease, nil
+}
+
+func (s *Store) IndexArtifact(ctx context.Context, record storage.ArtifactRecord) (storage.ArtifactRecord, error) {
+	_, digestErr := hex.DecodeString(record.ObjectSHA256)
+	expectedPath := filepath.ToSlash(filepath.Join("objects", firstTwo(record.ObjectSHA256), record.ObjectSHA256))
+	if record.ID == "" || record.JobID == "" || record.ProjectID == "" || len(record.ObjectSHA256) != 64 ||
+		digestErr != nil || record.Bytes < 0 || record.RelativePath != expectedPath ||
+		record.Kind == "" || record.MediaType == "" || record.Producer == "" ||
+		!json.Valid(record.Metadata) {
+		return storage.ArtifactRecord{}, storage.ErrInvalid
+	}
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = s.now()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("begin artifact index: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO artifact_objects(sha256, bytes, relative_path, created_at)
+		VALUES(?, ?, ?, ?) ON CONFLICT(sha256) DO NOTHING`, record.ObjectSHA256, record.Bytes,
+		record.RelativePath, record.CreatedAt.Format(timestampFormat)); err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("index artifact object: %w", err)
+	}
+	var existingBytes int64
+	var existingPath string
+	if err := tx.QueryRowContext(ctx, "SELECT bytes, relative_path FROM artifact_objects WHERE sha256 = ?", record.ObjectSHA256).
+		Scan(&existingBytes, &existingPath); err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("verify artifact object: %w", err)
+	}
+	if existingBytes != record.Bytes || existingPath != record.RelativePath {
+		return storage.ArtifactRecord{}, storage.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO job_artifacts(
+		id, job_id, project_id, object_sha256, kind, media_type, producer, metadata, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.ID, record.JobID, record.ProjectID,
+		record.ObjectSHA256, record.Kind, record.MediaType, record.Producer,
+		string(record.Metadata), record.CreatedAt.Format(timestampFormat)); err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("index job artifact: %w", err)
+	}
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{
+		ActorID: record.Producer, ActorRole: "service", Action: "artifact.index",
+		TargetType: "artifact", TargetID: record.ID,
+		Details: json.RawMessage(fmt.Sprintf(`{"job_id":%q,"sha256":%q,"bytes":%d,"kind":%q}`,
+			record.JobID, record.ObjectSHA256, record.Bytes, record.Kind)),
+	}); err != nil {
+		return storage.ArtifactRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("commit artifact index: %w", err)
+	}
+	return record, nil
+}
+
+func firstTwo(value string) string {
+	if len(value) < 2 {
+		return ""
+	}
+	return value[:2]
+}
+
+const artifactSelect = `SELECT a.id, a.job_id, a.project_id, a.object_sha256, o.bytes,
+	o.relative_path, a.kind, a.media_type, a.producer, a.metadata, a.created_at
+	FROM job_artifacts AS a JOIN artifact_objects AS o ON o.sha256 = a.object_sha256`
+
+func (s *Store) GetArtifact(ctx context.Context, jobID, artifactID string) (storage.ArtifactRecord, error) {
+	return scanArtifact(s.db.QueryRowContext(ctx, artifactSelect+" WHERE a.job_id = ? AND a.id = ?", jobID, artifactID))
+}
+
+func (s *Store) ListJobArtifacts(ctx context.Context, jobID string, limit int) ([]storage.ArtifactRecord, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, artifactSelect+" WHERE a.job_id = ? ORDER BY a.created_at, a.id LIMIT ?", jobID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list job artifacts: %w", err)
+	}
+	defer rows.Close()
+	items := make([]storage.ArtifactRecord, 0)
+	for rows.Next() {
+		item, err := scanArtifact(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanArtifact(row scanner) (storage.ArtifactRecord, error) {
+	var record storage.ArtifactRecord
+	var metadata, created string
+	if err := row.Scan(&record.ID, &record.JobID, &record.ProjectID, &record.ObjectSHA256,
+		&record.Bytes, &record.RelativePath, &record.Kind, &record.MediaType,
+		&record.Producer, &metadata, &created); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.ArtifactRecord{}, storage.ErrNotFound
+		}
+		return storage.ArtifactRecord{}, fmt.Errorf("scan artifact: %w", err)
+	}
+	record.Metadata = json.RawMessage(metadata)
+	parsed, err := time.Parse(timestampFormat, created)
+	if err != nil {
+		return storage.ArtifactRecord{}, fmt.Errorf("parse artifact timestamp: %w", err)
+	}
+	record.CreatedAt = parsed
+	return record, nil
 }
