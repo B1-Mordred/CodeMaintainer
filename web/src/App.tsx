@@ -1,22 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, Box, Cpu, Database, RefreshCw } from "lucide-react";
+import { api } from "./api/client";
+import type { components } from "./api/schema";
 
-interface SystemStatus {
-  status: string;
-  profile: string;
-  components: Record<string, string>;
-}
-
-interface Job {
-  id: string;
-  repository: string;
-  state: string;
-  updated_at: string;
-}
-
-interface JobsResponse {
-  items: Job[];
-}
+type SystemStatus = components["schemas"]["SystemStatus"];
+type Job = components["schemas"]["Job"];
 
 function statusLabel(value: string): string {
   return value.replaceAll("_", " ");
@@ -31,17 +19,15 @@ export function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statusResponse, jobsResponse] = await Promise.all([
-        fetch("/api/v1/system/status", { headers: { Accept: "application/json" } }),
-        fetch("/api/v1/jobs", { headers: { Accept: "application/json" } }),
+      const [statusResult, jobsResult] = await Promise.all([
+        api.GET("/system/status"),
+        api.GET("/jobs"),
       ]);
-      if (!statusResponse.ok || !jobsResponse.ok) {
+      if (statusResult.error || jobsResult.error || !statusResult.data || !jobsResult.data) {
         throw new Error("The controller returned an error.");
       }
-      const nextStatus = (await statusResponse.json()) as SystemStatus;
-      const nextJobs = (await jobsResponse.json()) as JobsResponse;
-      setStatus(nextStatus);
-      setJobs(nextJobs.items);
+      setStatus(statusResult.data);
+      setJobs(jobsResult.data.items);
       setError(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The controller is unavailable.");

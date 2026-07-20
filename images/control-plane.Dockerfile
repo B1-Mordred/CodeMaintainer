@@ -5,7 +5,8 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 COPY web ./
-RUN npm run build
+COPY internal/api/openapi.yaml /src/internal/api/openapi.yaml
+RUN npm run generate:api && npm run build
 
 FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS build
 

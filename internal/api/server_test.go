@@ -177,3 +177,115 @@ func TestEventStreamReplaysDurableInitialTransition(t *testing.T) {
 		t.Fatalf("unexpected event: %s", event.String())
 	}
 }
+
+func TestConfigurationApplyValidationAndRollbackAreVersioned(t *testing.T) {
+	server, store := testServer(t)
+	ctx := context.Background()
+	initial, err := store.CurrentConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := appconfig.Default(".data")
+	document.Workflow.MaxReviewCycles = 3
+
+	response := postJSON(t, server.URL+"/api/v1/config/revisions", map[string]any{
+		"document": document, "reason": "allow one additional bounded review cycle",
+	})
+	if response.StatusCode != http.StatusCreated {
+		payload, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		t.Fatalf("configuration apply returned %d: %s", response.StatusCode, payload)
+	}
+	var applied appconfig.Revision
+	if err := json.NewDecoder(response.Body).Decode(&applied); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if applied.Sequence != initial.Sequence+1 || applied.Reason == "" || string(applied.Diff) == "[]" {
+		t.Fatalf("configuration revision lacks evidence: %#v", applied)
+	}
+	response = postJSON(t, server.URL+"/api/v1/config/validate", map[string]any{"document": document})
+	var safeValidation struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&safeValidation); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if !safeValidation.Valid || safeValidation.Errors == nil || len(safeValidation.Errors) != 0 {
+		t.Fatalf("safe validation must return an empty errors array: %#v", safeValidation)
+	}
+
+	unsafe := document
+	unsafe.Deployment.DataRoot = "/browser-controlled-host-path"
+	response = postJSON(t, server.URL+"/api/v1/config/validate", map[string]any{"document": unsafe})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("validation returned %d", response.StatusCode)
+	}
+	var validation struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&validation); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if validation.Valid || len(validation.Errors) == 0 {
+		t.Fatalf("unsafe data root passed validation: %#v", validation)
+	}
+	response = postJSON(t, server.URL+"/api/v1/config/revisions", map[string]any{
+		"document": unsafe, "reason": "attempt unsafe path",
+	})
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unsafe apply returned %d", response.StatusCode)
+	}
+
+	response = postJSON(t, server.URL+"/api/v1/config/revisions/"+initial.ID+"/rollback", map[string]any{
+		"reason": "restore the initial review-cycle policy",
+	})
+	if response.StatusCode != http.StatusCreated {
+		payload, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		t.Fatalf("rollback returned %d: %s", response.StatusCode, payload)
+	}
+	var rolledBack appconfig.Revision
+	if err := json.NewDecoder(response.Body).Decode(&rolledBack); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if rolledBack.RollbackOf != initial.ID || rolledBack.Sequence != initial.Sequence+2 {
+		t.Fatalf("rollback provenance is incomplete: %#v", rolledBack)
+	}
+	current, err := store.CurrentConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored appconfig.System
+	if err := json.Unmarshal(current.After, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Workflow.MaxReviewCycles != 2 {
+		t.Fatalf("rollback restored max_review_cycles=%d", restored.Workflow.MaxReviewCycles)
+	}
+}
+
+func postJSON(t *testing.T, target string, value any) *http.Response {
+	t.Helper()
+	payload, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Maintainer-Actor", "test-administrator")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}

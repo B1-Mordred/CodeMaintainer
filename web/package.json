@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
+    "check:api": "openapi-typescript ../internal/api/openapi.yaml -o /tmp/local-code-maintainer-schema.d.ts && diff -u src/api/schema.d.ts /tmp/local-code-maintainer-schema.d.ts",
     "dev": "vite --host 127.0.0.1",
+    "generate:api": "openapi-typescript ../internal/api/openapi.yaml -o src/api/schema.d.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -13,6 +15,7 @@
     "@radix-ui/react-dialog": "1.1.20",
     "@radix-ui/react-tabs": "1.1.18",
     "lucide-react": "1.25.0",
+    "openapi-fetch": "0.17.0",
     "react": "19.2.7",
     "react-diff-viewer-continued": "4.4.0",
     "react-dom": "19.2.7"
@@ -26,7 +29,8 @@
     "@vitejs/plugin-react": "6.0.3",
     "axe-core": "4.12.1",
     "jsdom": "29.1.1",
-    "typescript": "7.0.2",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
     "vite": "8.1.5",
     "vitest": "4.1.10"
   }

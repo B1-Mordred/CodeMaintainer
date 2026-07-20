@@ -12,7 +12,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 
 - [x] (2026-07-20 09:30Z) Read the complete product contract, inspected the initially empty repository, and verified the available host toolchain and Docker support.
 - [x] (2026-07-20 09:35Z) Selected a small Go control plane with SQLite, a statically built TypeScript dashboard, narrow HTTP/Unix-socket service contracts, and deterministic in-process fakes for default tests.
-- [ ] Milestone 1 foundation (completed: repository conventions, pinned containerized Go/Node toolchains, initial system/QC schemas, SQLite migration and WAL store, configuration revisions, append-only audit trail, controller API and valid OpenAPI contract, replayable SSE, React/TypeScript UI shell, narrow fake adapters, and restart tests for every resumable phase; remaining: configuration mutation/rollback endpoints, background queue leases, generated API client, and complete foundation CI/acceptance run).
+- [x] (2026-07-20 10:31Z) Milestone 1 foundation: repository conventions, pinned containerized Go/Node toolchains, system/QC schemas, versioned SQLite migration and WAL store, audited configuration apply/validate/rollback, durable queue leases, controller API and valid OpenAPI contract, generated typed frontend client with drift gate, replayable SSE, React/TypeScript UI shell, narrow fake adapters, and restart/reclaim tests for every resumable phase. The complete foundation unit, migration, API, frontend, schema, image-build, live-migration, CLI, and runtime acceptance run passed.
 - [ ] Milestone 2 secure execution: implement `runnerd`, server-owned hardened worker specifications, scoped caches, disposable Git worktrees, verifier command classes, artifacts, and an offline fixture integration test.
 - [ ] Milestone 3 inference and agents: implement model manifests/supervision, pinned llama.cpp build, separate implementation and QC images/prompts/contracts, locked QA criteria, finding lifecycle, repair loop, and deterministic fake-model acceptance workflow.
 - [ ] Milestone 4 publication: implement GitHub App authentication, mirror synchronization, local bare provider, publication policy, protected-path checks, webhook validation, upstream movement handling, and idempotent draft publication.
@@ -36,6 +36,10 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: the first tool profile failed with `permission denied` from `/tmp/go-build...` under `noexec` and `no space left on device` while compiling `modernc.org/libc`. A build-tool-only 1 GiB executable tmpfs fixed the suite; runtime tmpfs remains smaller and `noexec`.
 - Observation: TypeScript 7 rejects CSS side-effect imports unless Vite client types are explicit and rejects `allowImportingTsExtensions` in an emitting composite config.
   Evidence: the first frontend build reported TS2882 and TS5096. Adding `vite-env.d.ts`, removing the unnecessary option, and switching the type check to `tsc --noEmit` produced a successful Vite build.
+- Observation: `openapi-typescript` 7.13.0 declares TypeScript `^5.x` as its peer range, so retaining the initial TypeScript 7 selection would require bypassing dependency validation.
+  Evidence: `npm install` rejected TypeScript 7.0.2 with `ERESOLVE`; the official registry identified TypeScript 5.9.3 as the latest compatible stable release. Pinning 5.9.3 produced a zero-vulnerability lockfile, deterministic schema generation, a clean type check, and a successful production Vite build.
+- Observation: standards-based `Request` construction in Node rejects relative URLs before a mocked fetch implementation sees the request.
+  Evidence: the first generated-client frontend test failed with `Failed to parse URL from /api/v1/system/status`. Building a same-origin absolute API base from `window.location.origin` preserves browser routing and made the Node/jsdom accessibility test pass.
 
 ## Decision Log
 
@@ -57,7 +61,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 
 ## Outcomes & Retrospective
 
-Milestone 1 is materially implemented but not yet closed. The repository now produces a real non-root distroless controller image serving a React/TypeScript dashboard, persists jobs/transitions/config/audit data through container restarts, exposes a bounded API/SSE stream and CLI, and enforces state transitions transactionally. The remaining foundation work is configuration write/rollback handling, queue leasing, generated client drift checks, and a single recorded full foundation acceptance run. No agent execution, verification, QC repair, Git publication, production auth, or durable memory behavior is claimed yet.
+Milestone 1 is closed. The repository produces a real non-root distroless controller image serving a React/TypeScript dashboard, persists jobs/transitions/config/audit data through container restarts and schema upgrades, exposes a bounded API/SSE stream and CLI, enforces state transitions and queue leases transactionally, and applies or rolls back audited configuration revisions without allowing the API to change bootstrap-controlled host paths or listen settings. The UI imports types generated from the canonical OpenAPI contract, and CI rejects generated-client drift. A live v1 database upgraded to v2; an acceptance transaction applied a safe workflow change, rejected an unsafe data-root change, created a provenance-bearing rollback revision, and restored the original document. No agent execution, verification, QC repair, Git publication, production auth, or durable memory behavior is claimed yet.
 
 ## Context and Orientation
 
@@ -85,14 +89,15 @@ Milestone 6 completes the daily product. Implement first-run, overview, projects
 
 ## Concrete Steps
 
-All commands run from `/srv/coder`. The host-independent developer entrypoints are:
+All commands run from `/srv/coder`. On a rootless Docker installation, omit `sudo`; this execution host requires it for its rootful daemon. The current developer entrypoints are:
 
-    docker compose -f compose.yaml -f compose.dev.yaml build
-    docker compose -f compose.yaml -f compose.dev.yaml run --rm controller-test
-    docker compose -f compose.yaml -f compose.dev.yaml config --quiet
-    ./maintainctl bootstrap --profile mock
-    ./maintainctl up --profile mock
+    sudo docker compose --profile tools build controller maintainctl
+    sudo docker compose --profile tools run --rm go-tool sh -c 'gofmt -w cmd internal && go test ./... && go vet ./...'
+    sudo docker compose config --quiet
+    sudo docker compose up -d controller
     curl --fail http://127.0.0.1:8080/healthz
+    sudo docker compose --profile tools run --rm maintainctl doctor
+    ./scripts/acceptance.sh
 
 During Milestone 1, use the pinned Go build image to format, resolve lockfiles, test, and build:
 
@@ -110,7 +115,7 @@ Later milestone commands are added here when their images and profiles exist. Ev
 
 ## Validation and Acceptance
 
-Foundation acceptance requires all Go and frontend unit tests, migrations from every retained schema, API contract tests, configuration validation tests, and restart/resume tests to pass. Starting the mock profile must bind only `127.0.0.1:8080`, return healthy component status, render the dashboard, allow the first administrator bootstrap, persist a submitted job, and stream bounded state changes over SSE after a controller restart.
+Foundation acceptance requires all Go and frontend unit tests, migrations from every retained schema, API contract tests, configuration validation tests, and restart/resume tests to pass. Starting the mock profile must bind only `127.0.0.1:8080`, return healthy component status, render the dashboard, persist a submitted job, stream bounded state changes over SSE after a controller restart, reclaim expired queue leases, and apply and roll back a safe versioned configuration change. Administrator bootstrap and authentication remain Milestone 6 work, matching the development sequence in `project.md`.
 
 Secure-execution acceptance requires tests proving every forbidden mount/network/capability/image/command is rejected server-side, dependency acquisition has explicit egress while implementation/verifier/QC have none, caches are repository scoped, and each job gets a never-reused worktree. The verifier must emit machine-readable artifacts and detect protected paths, secrets, symlinks, binaries, submodules, oversized diffs, and workflow changes.
 
@@ -148,6 +153,7 @@ Foundation unit and integration evidence:
     ok  internal/jobs
     ok  internal/memory
     ok  internal/models
+    ok  internal/queue
     ok  internal/runners
     ok  internal/storage/sqlite
     ok  internal/workflow
@@ -157,12 +163,21 @@ Foundation unit and integration evidence:
     Tests       1 passed (1)
 
     $ npm run build
-    vite v8.1.5 ... 1775 modules transformed
-    internal/ui/dist/assets/index-DEPzdNou.js 197.01 kB
-    built in 404ms
+    vite v8.1.5 ... 1777 modules transformed
+    internal/ui/dist/assets/index-XxnhIH3Y.js 203.62 kB
+    built in 426ms
+
+    $ npm run check:api && npm test && npx tsc --noEmit -p tsconfig.app.json
+    generated OpenAPI types match web/src/api/schema.d.ts
+    Test Files  1 passed (1)
+    Tests       1 passed (1)
+    TypeScript exited 0
 
     $ npx redocly lint ../internal/api/openapi.yaml
     Your API description is valid. One warning remains because the project license is intentionally not chosen by the implementer.
+
+    $ ./scripts/acceptance.sh
+    Foundation acceptance passed.
 
 Container/runtime evidence:
 
@@ -179,6 +194,8 @@ Container/runtime evidence:
 
 The runtime restart test submitted `job_6fc2fbe41a7e4af18a008cd860bdc6e3`, recreated the controller, and then `maintainctl inspect` returned the same queued job and its initial durable transition. The resolved container has no Docker socket mount; its only mount is `/srv/coder/.data` to `/var/lib/maintainer`.
 
+The version-two migration acceptance reused that version-one database and brought the rebuilt controller back to Docker `healthy`. Queue tests proved exclusive acquisition, ownership checks, renewal, release, and expired-lease recovery. Live configuration acceptance created revision `config_e54b20a4665f4fe3aa426a25d04eef44`, rejected `deployment.data_root` through the API, then created rollback revision `config_9603d1f06b194bd1bad53209dda2faa1` bound to the original revision and restored the original workflow document. `maintainctl config validate -`, `maintainctl config export`, and `maintainctl doctor` all succeeded against the live controller.
+
 Official release checks on 2026-07-20 selected Node 24.18.0 LTS, Go 1.25, `modernc.org/sqlite` v1.54.0, and llama.cpp release `b9637` commit `aedb2a5` as initial pins. Image digests and every remaining application pin must be resolved and recorded before production Compose acceptance; no operational `latest` tag is permitted.
 
 ## Interfaces and Dependencies
@@ -191,4 +208,6 @@ Official release checks on 2026-07-20 selected Node 24.18.0 LTS, Go 1.25, `moder
 
 The first Go dependency is `modernc.org/sqlite` v1.54.0. Additional libraries are added only when they materially provide a maintained security or protocol implementation and are pinned in `go.mod`/`go.sum`. The frontend uses pinned React, TypeScript, Vite, an accessible component approach, a maintained diff viewer/editor, Testing Library, Vitest, and axe tooling with an npm lockfile. Runtime images use immutable digests after the initial build bootstrap. The llama.cpp build pins release `b9637` / commit `aedb2a5`, builds an AVX2/Haswell portable binary in a multi-stage image, and offers host-native only as an explicit optional build target.
 
-Revision note (2026-07-20): updated the initial plan after the first foundation implementation. Recorded the durable controller/API/SQLite/React/fake-adapter outcomes, exact test and runtime evidence, rootful-daemon limitation, Docker internal-network port behavior, tool tmpfs correction, TypeScript 7 adjustments, and the remaining work required before closing Milestone 1.
+Revision note (2026-07-20): updated the initial plan after the first foundation implementation. Recorded the durable controller/API/SQLite/React/fake-adapter outcomes, exact test and runtime evidence, rootful-daemon limitation, Docker internal-network port behavior, tool tmpfs correction, TypeScript adjustments, and the remaining work required before closing Milestone 1.
+
+Revision note (2026-07-20 10:31Z): closed Milestone 1 after implementing configuration apply/rollback, SQLite migration v2 and durable queue leases, canonical OpenAPI type generation, the typed frontend client, and generated drift checks. Recorded the TypeScript peer compatibility decision and full source/image/live-runtime acceptance evidence, and corrected the plan's foundation acceptance boundary so administrator bootstrap remains in Milestone 6 as required by `project.md`.

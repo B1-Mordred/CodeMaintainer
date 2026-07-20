@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/audit"
 	"github.com/local-code-maintainer/appliance/internal/config"
@@ -11,10 +12,12 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrConflict       = errors.New("conflict")
-	ErrInvalid        = errors.New("invalid")
-	ErrIdempotencyKey = errors.New("idempotency key reused with different input")
+	ErrNotFound         = errors.New("not found")
+	ErrConflict         = errors.New("conflict")
+	ErrInvalid          = errors.New("invalid")
+	ErrIdempotencyKey   = errors.New("idempotency key reused with different input")
+	ErrNoLeaseAvailable = errors.New("no resumable job lease is available")
+	ErrLeaseLost        = errors.New("job lease is expired or owned by another worker")
 )
 
 type CreateJobParams struct {
@@ -42,13 +45,29 @@ type AuditStore interface {
 
 type ConfigStore interface {
 	CurrentConfig(context.Context) (config.Revision, error)
+	GetConfigRevision(context.Context, string) (config.Revision, error)
 	CreateConfigRevision(context.Context, config.Revision) (config.Revision, error)
 	ListConfigRevisions(context.Context, int) ([]config.Revision, error)
+}
+
+type JobLease struct {
+	JobID       string    `json:"job_id"`
+	OwnerID     string    `json:"owner_id"`
+	AcquiredAt  time.Time `json:"acquired_at"`
+	HeartbeatAt time.Time `json:"heartbeat_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+type LeaseStore interface {
+	AcquireJobLease(context.Context, string, time.Duration) (jobs.Job, JobLease, error)
+	RenewJobLease(context.Context, string, string, time.Duration) (JobLease, error)
+	ReleaseJobLease(context.Context, string, string) error
 }
 
 type Store interface {
 	JobStore
 	AuditStore
 	ConfigStore
+	LeaseStore
 	Close() error
 }

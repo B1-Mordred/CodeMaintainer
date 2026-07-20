@@ -2,7 +2,7 @@
 
 Local Code Maintainer is a self-hosted, browser-operated appliance for producing minimal, independently reviewed, deterministically verified maintenance patches across multiple repositories. It is designed for a CPU-only Linux host, works without cloud LLMs, and includes a complete mock profile so development and acceptance do not require GitHub credentials or large model weights.
 
-> Implementation is in progress. The current foundation provides the durable workflow state machine, SQLite audit storage, controller API and OpenAPI contract, event stream, CLI, narrow fake adapters, and a statically built React/TypeScript dashboard shell. See `execplan/complete-system.md` for exact progress and unverified milestones.
+> Implementation is in progress. Milestone 1 is complete: the foundation provides the durable workflow state machine and queue leases, migrated SQLite audit/configuration storage, controller API and generated OpenAPI client, event stream, CLI, narrow fake adapters, and a statically built React/TypeScript dashboard shell. Secure worker execution and all later milestones remain unimplemented. See `execplan/complete-system.md` for exact progress and evidence.
 
 ## Quick start
 
@@ -13,6 +13,8 @@ docker compose build
 docker compose run --rm go-tool go test ./...
 docker compose up --build
 ```
+
+Run the complete reproducible foundation gate with `./scripts/acceptance.sh`.
 
 Open <http://127.0.0.1:8080>. The default development configuration binds only to localhost and uses fake integrations. Do not expose this profile directly to a network.
 

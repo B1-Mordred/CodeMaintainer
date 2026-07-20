@@ -16,6 +16,8 @@ import (
 
 var version = "dev"
 
+const maxConfigDocumentBytes = 2 << 20
+
 type client struct {
 	baseURL string
 	http    *http.Client
@@ -65,14 +67,91 @@ func run(arguments []string) error {
 	case "run":
 		return api.runJob(arguments[1:])
 	case "config":
-		if len(arguments) == 2 && arguments[1] == "export" {
-			return api.printJSON(http.MethodGet, "/api/v1/config", nil)
-		}
-		return errors.New("usage: maintainctl config export")
+		return api.config(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
 	}
+}
+
+func (c client) config(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl config <export|validate|apply|rollback>")
+	}
+	switch arguments[0] {
+	case "export":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl config export")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/config", nil)
+	case "validate":
+		if len(arguments) > 2 {
+			return errors.New("usage: maintainctl config validate [file|-]")
+		}
+		path := "-"
+		if len(arguments) == 2 {
+			path = arguments[1]
+		}
+		document, err := readJSONDocument(path)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/config/validate", map[string]any{"document": document})
+	case "apply":
+		flags := flag.NewFlagSet("config apply", flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited reason for the configuration change")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if *reason == "" || flags.NArg() != 1 {
+			return errors.New("usage: maintainctl config apply --reason <text> <file|->")
+		}
+		document, err := readJSONDocument(flags.Arg(0))
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/config/revisions", map[string]any{"document": document, "reason": *reason})
+	case "rollback":
+		flags := flag.NewFlagSet("config rollback", flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited reason for rollback")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if *reason == "" || flags.NArg() != 1 {
+			return errors.New("usage: maintainctl config rollback --reason <text> <revision-id>")
+		}
+		path := "/api/v1/config/revisions/" + url.PathEscape(flags.Arg(0)) + "/rollback"
+		return c.printJSON(http.MethodPost, path, map[string]any{"reason": *reason})
+	default:
+		return fmt.Errorf("unknown config command %q", arguments[0])
+	}
+}
+
+func readJSONDocument(path string) (json.RawMessage, error) {
+	var source io.Reader = os.Stdin
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open configuration %s: %w", path, err)
+		}
+		defer file.Close()
+		source = file
+	}
+	return readJSON(source)
+}
+
+func readJSON(source io.Reader) (json.RawMessage, error) {
+	payload, err := io.ReadAll(io.LimitReader(source, maxConfigDocumentBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read configuration: %w", err)
+	}
+	if len(payload) > maxConfigDocumentBytes {
+		return nil, fmt.Errorf("configuration exceeds %d bytes", maxConfigDocumentBytes)
+	}
+	if !json.Valid(payload) {
+		return nil, errors.New("configuration must be valid JSON")
+	}
+	return json.RawMessage(payload), nil
 }
 
 func (c client) runJob(arguments []string) error {
@@ -181,6 +260,9 @@ Foundation commands:
   cancel <job-id>
   retry <job-id>
   config export
+  config validate [file|-]
+  config apply --reason <text> <file|->
+  config rollback --reason <text> <revision-id>
   version`)
 }
 

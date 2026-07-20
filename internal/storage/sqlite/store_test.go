@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -146,6 +147,7 @@ func TestConfigurationRevisionsAreDurableAndOrdered(t *testing.T) {
 			ActorID: "administrator", SchemaVersion: appconfig.SchemaVersion,
 			Before: json.RawMessage(`{}`), After: after, Diff: json.RawMessage(`[]`),
 			ValidationResult: json.RawMessage(`{"valid":true}`),
+			Reason:           "test revision",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -168,5 +170,113 @@ func TestConfigurationRevisionsAreDurableAndOrdered(t *testing.T) {
 	}
 	if len(items) != 2 || items[0].Sequence != 2 || items[1].Sequence != 1 {
 		t.Fatalf("revisions are not newest-first: %#v", items)
+	}
+}
+
+func TestMigrationFromVersionOneAddsLeasesAndRevisionReason(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "controller.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, migration001); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)", time.Now().UTC().Format(timestampFormat)); err != nil {
+		t.Fatal(err)
+	}
+	document, _ := json.Marshal(appconfig.Default(".data"))
+	if _, err := db.ExecContext(ctx, `INSERT INTO config_revisions(
+		id, actor_id, schema_version, before_document, after_document,
+		document_diff, validation_result, rollback_of, created_at)
+		VALUES('config_v1', 'system', 1, '{}', ?, '[]', '{"valid":true}', '', ?)`,
+		string(document), time.Now().UTC().Format(timestampFormat)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	revision, err := store.CurrentConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision.ID != "config_v1" || revision.Reason != "" {
+		t.Fatalf("unexpected migrated revision: %#v", revision)
+	}
+	var migrations int
+	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
+		t.Fatal(err)
+	}
+	if migrations != 2 {
+		t.Fatalf("applied migration count = %d, want 2", migrations)
+	}
+	var leaseTable string
+	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
+		t.Fatalf("job_leases table missing: %v", err)
+	}
+}
+
+func TestJobLeasesAreExclusiveRenewableAndRecoverAfterExpiry(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	clock := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return clock }
+	first, err := store.CreateJob(ctx, storage.CreateJobParams{ID: "job_first", ProjectID: "p", Repository: "o/r", Task: "first", ActorID: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Second)
+	second, err := store.CreateJob(ctx, storage.CreateJobParams{ID: "job_second", ProjectID: "p", Repository: "o/r", Task: "second", ActorID: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimedFirst, firstLease, err := store.AcquireJobLease(ctx, "worker-one", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimedFirst.ID != first.ID || firstLease.OwnerID != "worker-one" {
+		t.Fatalf("unexpected first lease: %#v %#v", claimedFirst, firstLease)
+	}
+	claimedSecond, _, err := store.AcquireJobLease(ctx, "worker-two", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimedSecond.ID != second.ID {
+		t.Fatalf("second worker claimed %s, want %s", claimedSecond.ID, second.ID)
+	}
+	if _, _, err := store.AcquireJobLease(ctx, "worker-three", 30*time.Second); !errors.Is(err, storage.ErrNoLeaseAvailable) {
+		t.Fatalf("expected no lease, got %v", err)
+	}
+	if _, err := store.RenewJobLease(ctx, first.ID, "wrong-worker", 30*time.Second); !errors.Is(err, storage.ErrLeaseLost) {
+		t.Fatalf("wrong owner renewed lease: %v", err)
+	}
+	clock = firstLease.ExpiresAt.Add(time.Second)
+	reclaimed, lease, err := store.AcquireJobLease(ctx, "worker-three", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reclaimed.ID != first.ID || lease.OwnerID != "worker-three" {
+		t.Fatalf("expired lease was not reclaimed: %#v %#v", reclaimed, lease)
+	}
+	if err := store.ReleaseJobLease(ctx, first.ID, "worker-one"); !errors.Is(err, storage.ErrLeaseLost) {
+		t.Fatalf("old owner released reclaimed lease: %v", err)
+	}
+	if err := store.ReleaseJobLease(ctx, first.ID, "worker-three"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReleaseJobLease(ctx, first.ID, "worker-three"); err != nil {
+		t.Fatalf("idempotent release failed: %v", err)
 	}
 }

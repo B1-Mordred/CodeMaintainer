@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestDefaultConfigurationIsValidAndSecure(t *testing.T) {
 	value := Default(".data")
@@ -25,5 +29,36 @@ func TestInvalidLimitsAreRejected(t *testing.T) {
 	value.Workflow.MaxLogBytes = 1
 	if got := len(Validate(value)); got != 3 {
 		t.Fatalf("got %d validation errors, want 3", got)
+	}
+}
+
+func TestBootstrapControlledDeploymentCannotChangeThroughAPI(t *testing.T) {
+	before := Default(".data")
+	after := before
+	after.Deployment.DataRoot = "/host/path/from/browser"
+	after.Deployment.ListenAddress = "0.0.0.0:8080"
+	got := strings.Join(ValidateChange(before, after), "\n")
+	if !strings.Contains(got, "data_root") || !strings.Contains(got, "listen_address") {
+		t.Fatalf("unsafe bootstrap changes were not rejected: %s", got)
+	}
+}
+
+func TestDiffIsDeterministicAndUsesEscapedJSONPointers(t *testing.T) {
+	before := json.RawMessage(`{"z":1,"nested":{"same":true,"a/b":"old"},"remove":2}`)
+	after := json.RawMessage(`{"z":2,"nested":{"same":true,"a/b":"new"},"add":3}`)
+	first, err := Diff(before, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Diff(before, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("diff is nondeterministic:\n%s\n%s", first, second)
+	}
+	want := `[{"op":"add","path":"/add","value":3},{"op":"replace","path":"/nested/a~1b","value":"new"},{"op":"remove","path":"/remove"},{"op":"replace","path":"/z","value":2}]`
+	if string(first) != want {
+		t.Fatalf("diff = %s, want %s", first, want)
 	}
 }

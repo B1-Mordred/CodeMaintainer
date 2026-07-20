@@ -24,6 +24,9 @@ import (
 //go:embed migrations/001_initial.sql
 var migration001 string
 
+//go:embed migrations/002_queue_leases.sql
+var migration002 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -73,21 +76,39 @@ func Open(ctx context.Context, path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate(ctx context.Context) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin migration: %w", err)
+	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
+		return fmt.Errorf("create migration ledger: %w", err)
 	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, migration001); err != nil {
-		return fmt.Errorf("apply migration 1: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx,
-		"INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, ?)",
-		s.now().Format(timestampFormat)); err != nil {
-		return fmt.Errorf("record migration 1: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration 1: %w", err)
+	for _, migration := range []struct {
+		version int
+		sql     string
+	}{{1, migration001}, {2, migration002}} {
+		var applied int
+		if err := s.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {
+			return fmt.Errorf("check migration %d: %w", migration.version, err)
+		}
+		if applied != 0 {
+			continue
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %d: %w", migration.version, err)
+		}
+		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("apply migration %d: %w", migration.version, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+			migration.version, s.now().Format(timestampFormat)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("record migration %d: %w", migration.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", migration.version, err)
+		}
 	}
 	return nil
 }
@@ -398,15 +419,19 @@ func (s *Store) CurrentConfig(ctx context.Context) (appconfig.Revision, error) {
 	return scanRevision(s.db.QueryRowContext(ctx, revisionSelect+" ORDER BY sequence DESC LIMIT 1"))
 }
 
+func (s *Store) GetConfigRevision(ctx context.Context, id string) (appconfig.Revision, error) {
+	return scanRevision(s.db.QueryRowContext(ctx, revisionSelect+" WHERE id = ?", id))
+}
+
 const revisionSelect = `SELECT id, sequence, actor_id, schema_version, before_document,
-	after_document, document_diff, validation_result, rollback_of, created_at FROM config_revisions`
+	after_document, document_diff, validation_result, rollback_of, reason, created_at FROM config_revisions`
 
 func scanRevision(row scanner) (appconfig.Revision, error) {
 	var revision appconfig.Revision
 	var before, after, diff, validation, created string
 	err := row.Scan(&revision.ID, &revision.Sequence, &revision.ActorID,
 		&revision.SchemaVersion, &before, &after, &diff, &validation,
-		&revision.RollbackOf, &created)
+		&revision.RollbackOf, &revision.Reason, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return appconfig.Revision{}, storage.ErrNotFound
 	}
@@ -443,12 +468,12 @@ func (s *Store) CreateConfigRevision(ctx context.Context, revision appconfig.Rev
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO config_revisions(id, actor_id, schema_version, before_document,
-			after_document, document_diff, validation_result, rollback_of, created_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`, revision.ID,
+			after_document, document_diff, validation_result, rollback_of, reason, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, revision.ID,
 		required(revision.ActorID, "system"), revision.SchemaVersion,
 		string(normalizeJSON(revision.Before)), string(revision.After),
 		string(normalizeJSON(revision.Diff)), string(normalizeJSON(revision.ValidationResult)),
-		revision.RollbackOf, revision.CreatedAt.Format(timestampFormat))
+		revision.RollbackOf, revision.Reason, revision.CreatedAt.Format(timestampFormat))
 	if err != nil {
 		return appconfig.Revision{}, fmt.Errorf("insert configuration revision: %w", err)
 	}
@@ -459,7 +484,8 @@ func (s *Store) CreateConfigRevision(ctx context.Context, revision appconfig.Rev
 	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{
 		ActorID: required(revision.ActorID, "system"), ActorRole: "administrator",
 		Action: "config.revise", TargetType: "config_revision", TargetID: revision.ID,
-		Details: json.RawMessage(fmt.Sprintf(`{"schema_version":%d}`, revision.SchemaVersion)),
+		Details: json.RawMessage(fmt.Sprintf(`{"schema_version":%d,"rollback_of":%q,"reason":%q}`,
+			revision.SchemaVersion, revision.RollbackOf, revision.Reason)),
 	}); err != nil {
 		return appconfig.Revision{}, err
 	}
@@ -485,4 +511,140 @@ func (s *Store) ListConfigRevisions(ctx context.Context, limit int) ([]appconfig
 		result = append(result, revision)
 	}
 	return result, rows.Err()
+}
+
+func (s *Store) AcquireJobLease(ctx context.Context, ownerID string, ttl time.Duration) (jobs.Job, storage.JobLease, error) {
+	if strings.TrimSpace(ownerID) == "" || ttl < time.Second || ttl > time.Hour {
+		return jobs.Job{}, storage.JobLease{}, storage.ErrInvalid
+	}
+	resumable := make([]jobs.State, 0)
+	for _, state := range jobs.AllStates() {
+		if state.Resumable() {
+			resumable = append(resumable, state)
+		}
+	}
+	placeholders := make([]string, len(resumable))
+	arguments := make([]any, 0, len(resumable)+2)
+	for index, state := range resumable {
+		placeholders[index] = "?"
+		arguments = append(arguments, state)
+	}
+	now := s.now()
+	arguments = append(arguments, now.Format(timestampFormat))
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("begin lease acquisition: %w", err)
+	}
+	defer tx.Rollback()
+	query := jobSelect + ` AS j LEFT JOIN job_leases AS l ON l.job_id = j.id
+		WHERE j.state IN (` + strings.Join(placeholders, ",") + `)
+		AND (l.job_id IS NULL OR l.expires_at <= ?)
+		ORDER BY j.created_at ASC LIMIT 1`
+	job, err := scanJob(tx.QueryRowContext(ctx, query, arguments...))
+	if errors.Is(err, storage.ErrNotFound) {
+		return jobs.Job{}, storage.JobLease{}, storage.ErrNoLeaseAvailable
+	}
+	if err != nil {
+		return jobs.Job{}, storage.JobLease{}, err
+	}
+	lease := storage.JobLease{
+		JobID: job.ID, OwnerID: ownerID, AcquiredAt: now,
+		HeartbeatAt: now, ExpiresAt: now.Add(ttl),
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO job_leases(
+		job_id, owner_id, acquired_at, heartbeat_at, expires_at) VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(job_id) DO UPDATE SET owner_id=excluded.owner_id,
+			acquired_at=excluded.acquired_at, heartbeat_at=excluded.heartbeat_at,
+			expires_at=excluded.expires_at
+		WHERE job_leases.expires_at <= ?`, lease.JobID, lease.OwnerID,
+		lease.AcquiredAt.Format(timestampFormat), lease.HeartbeatAt.Format(timestampFormat),
+		lease.ExpiresAt.Format(timestampFormat), now.Format(timestampFormat))
+	if err != nil {
+		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("acquire job lease: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("inspect lease acquisition: %w", err)
+	}
+	if changed != 1 {
+		return jobs.Job{}, storage.JobLease{}, storage.ErrNoLeaseAvailable
+	}
+	if err := tx.Commit(); err != nil {
+		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("commit lease acquisition: %w", err)
+	}
+	return job, lease, nil
+}
+
+func (s *Store) RenewJobLease(ctx context.Context, jobID, ownerID string, ttl time.Duration) (storage.JobLease, error) {
+	if jobID == "" || ownerID == "" || ttl < time.Second || ttl > time.Hour {
+		return storage.JobLease{}, storage.ErrInvalid
+	}
+	now := s.now()
+	expires := now.Add(ttl)
+	result, err := s.db.ExecContext(ctx, `UPDATE job_leases
+		SET heartbeat_at = ?, expires_at = ?
+		WHERE job_id = ? AND owner_id = ? AND expires_at > ?`,
+		now.Format(timestampFormat), expires.Format(timestampFormat), jobID, ownerID, now.Format(timestampFormat))
+	if err != nil {
+		return storage.JobLease{}, fmt.Errorf("renew job lease: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return storage.JobLease{}, fmt.Errorf("inspect lease renewal: %w", err)
+	}
+	if changed != 1 {
+		return storage.JobLease{}, storage.ErrLeaseLost
+	}
+	return s.getJobLease(ctx, jobID)
+}
+
+func (s *Store) ReleaseJobLease(ctx context.Context, jobID, ownerID string) error {
+	if jobID == "" || ownerID == "" {
+		return storage.ErrInvalid
+	}
+	result, err := s.db.ExecContext(ctx, "DELETE FROM job_leases WHERE job_id = ? AND owner_id = ?", jobID, ownerID)
+	if err != nil {
+		return fmt.Errorf("release job lease: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect lease release: %w", err)
+	}
+	if changed == 1 {
+		return nil
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM job_leases WHERE job_id = ?", jobID).Scan(&count); err != nil {
+		return fmt.Errorf("check released lease: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+	return storage.ErrLeaseLost
+}
+
+func (s *Store) getJobLease(ctx context.Context, jobID string) (storage.JobLease, error) {
+	var lease storage.JobLease
+	var acquired, heartbeat, expires string
+	err := s.db.QueryRowContext(ctx, `SELECT job_id, owner_id, acquired_at, heartbeat_at, expires_at
+		FROM job_leases WHERE job_id = ?`, jobID).Scan(
+		&lease.JobID, &lease.OwnerID, &acquired, &heartbeat, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return storage.JobLease{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return storage.JobLease{}, fmt.Errorf("read job lease: %w", err)
+	}
+	for _, item := range []struct {
+		value       string
+		destination *time.Time
+	}{{acquired, &lease.AcquiredAt}, {heartbeat, &lease.HeartbeatAt}, {expires, &lease.ExpiresAt}} {
+		parsed, err := time.Parse(timestampFormat, item.value)
+		if err != nil {
+			return storage.JobLease{}, fmt.Errorf("parse job lease timestamp: %w", err)
+		}
+		*item.destination = parsed
+	}
+	return lease, nil
 }

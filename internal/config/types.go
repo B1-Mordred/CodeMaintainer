@@ -49,6 +49,7 @@ type Revision struct {
 	Diff             json.RawMessage `json:"diff"`
 	ValidationResult json.RawMessage `json:"validation_result"`
 	RollbackOf       string          `json:"rollback_of,omitempty"`
+	Reason           string          `json:"reason"`
 	CreatedAt        time.Time       `json:"created_at"`
 }
 
@@ -102,6 +103,23 @@ func Validate(value System) []string {
 	}
 	if len(value.QC.BlockOn) == 0 {
 		errors = append(errors, "qc.block_on must not be empty")
+	}
+	return errors
+}
+
+// ValidateChange applies mutation rules that cannot be expressed by validating
+// one document in isolation. Bootstrap-controlled deployment paths and listen
+// addresses are intentionally immutable through the browser/API.
+func ValidateChange(before, after System) []string {
+	errors := Validate(after)
+	if before.Deployment.ListenAddress != after.Deployment.ListenAddress {
+		errors = append(errors, "deployment.listen_address is bootstrap-controlled and cannot be changed through the API")
+	}
+	if before.Deployment.DataRoot != after.Deployment.DataRoot {
+		errors = append(errors, "deployment.data_root is bootstrap-controlled and cannot be changed through the API")
+	}
+	if before.Deployment.Profile != after.Deployment.Profile {
+		errors = append(errors, "deployment.profile is bootstrap-controlled and cannot be changed through the API")
 	}
 	return errors
 }

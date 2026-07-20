@@ -16,6 +16,7 @@ race:
 lint:
 	docker compose run --rm go-tool go vet ./...
 	docker compose run --rm web-tool npx redocly lint ../internal/api/openapi.yaml
+	docker compose run --rm web-tool npm run check:api
 
 build:
 	docker compose build controller maintainctl

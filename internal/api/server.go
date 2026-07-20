@@ -46,7 +46,10 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string) *Server
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
+	mux.HandleFunc("POST /api/v1/config/validate", s.validateConfig)
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)
+	mux.HandleFunc("POST /api/v1/config/revisions", s.createConfigRevision)
+	mux.HandleFunc("POST /api/v1/config/revisions/{revisionID}/rollback", s.rollbackConfigRevision)
 	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
 	mux.Handle("GET /", s.staticHandler())
 	s.handler = s.middleware(mux)
@@ -249,6 +252,148 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"revision": revision, "document": document})
+}
+
+type configDocumentRequest struct {
+	Document appconfig.System `json:"document"`
+	Reason   string           `json:"reason,omitempty"`
+}
+
+type rollbackConfigRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (s *Server) validateConfig(w http.ResponseWriter, r *http.Request) {
+	var request configDocumentRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	_, current, err := s.currentSystemConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	errors := appconfig.ValidateChange(current, request.Document)
+	if errors == nil {
+		errors = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"valid": len(errors) == 0, "errors": errors})
+}
+
+func (s *Server) createConfigRevision(w http.ResponseWriter, r *http.Request) {
+	var request configDocumentRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	if request.Reason == "" || len(request.Reason) > 1000 {
+		writeError(w, http.StatusBadRequest, "invalid_reason", "a reason between 1 and 1000 characters is required")
+		return
+	}
+	currentRevision, current, err := s.currentSystemConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	validationErrors := appconfig.ValidateChange(current, request.Document)
+	if len(validationErrors) != 0 {
+		writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": map[string]any{"code": "invalid_configuration", "message": "configuration validation failed", "details": validationErrors},
+		})
+		return
+	}
+	after, err := json.Marshal(request.Document)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	diff, err := appconfig.Diff(currentRevision.After, after)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if string(diff) == "[]" {
+		writeError(w, http.StatusConflict, "no_change", "configuration is unchanged")
+		return
+	}
+	validationResult, _ := json.Marshal(map[string]any{"valid": true, "errors": []string{}})
+	revision, err := s.store.CreateConfigRevision(r.Context(), appconfig.Revision{
+		ActorID: actorID(r), SchemaVersion: appconfig.SchemaVersion,
+		Before: currentRevision.After, After: after, Diff: diff,
+		ValidationResult: validationResult, Reason: request.Reason,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", "/api/v1/config/revisions/"+revision.ID)
+	writeJSON(w, http.StatusCreated, revision)
+}
+
+func (s *Server) rollbackConfigRevision(w http.ResponseWriter, r *http.Request) {
+	var request rollbackConfigRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	if request.Reason == "" || len(request.Reason) > 1000 {
+		writeError(w, http.StatusBadRequest, "invalid_reason", "a reason between 1 and 1000 characters is required")
+		return
+	}
+	target, err := s.store.GetConfigRevision(r.Context(), r.PathValue("revisionID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	currentRevision, current, err := s.currentSystemConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	var targetDocument appconfig.System
+	if err := json.Unmarshal(target.After, &targetDocument); err != nil {
+		s.internalError(w, r, fmt.Errorf("decode rollback target: %w", err))
+		return
+	}
+	validationErrors := appconfig.ValidateChange(current, targetDocument)
+	if len(validationErrors) != 0 {
+		writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": map[string]any{"code": "invalid_rollback", "message": "rollback target is incompatible", "details": validationErrors},
+		})
+		return
+	}
+	diff, err := appconfig.Diff(currentRevision.After, target.After)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if string(diff) == "[]" {
+		writeError(w, http.StatusConflict, "no_change", "configuration already matches the selected revision")
+		return
+	}
+	validationResult, _ := json.Marshal(map[string]any{"valid": true, "errors": []string{}})
+	revision, err := s.store.CreateConfigRevision(r.Context(), appconfig.Revision{
+		ActorID: actorID(r), SchemaVersion: appconfig.SchemaVersion,
+		Before: currentRevision.After, After: target.After, Diff: diff,
+		ValidationResult: validationResult, RollbackOf: target.ID, Reason: request.Reason,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, revision)
+}
+
+func (s *Server) currentSystemConfig(ctx context.Context) (appconfig.Revision, appconfig.System, error) {
+	revision, err := s.store.CurrentConfig(ctx)
+	if err != nil {
+		return appconfig.Revision{}, appconfig.System{}, err
+	}
+	var document appconfig.System
+	if err := json.Unmarshal(revision.After, &document); err != nil {
+		return appconfig.Revision{}, appconfig.System{}, fmt.Errorf("decode current configuration: %w", err)
+	}
+	return revision, document, nil
 }
 
 func (s *Server) listConfigRevisions(w http.ResponseWriter, r *http.Request) {

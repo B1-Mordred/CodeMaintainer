@@ -93,6 +93,7 @@ func ensureDefaultConfig(ctx context.Context, store storage.ConfigStore, dataRoo
 	_, err = store.CreateConfigRevision(ctx, appconfig.Revision{
 		ActorID: "system", SchemaVersion: appconfig.SchemaVersion,
 		Before: json.RawMessage(`{}`), After: after, Diff: diff, ValidationResult: validation,
+		Reason: "initial bootstrap configuration",
 	})
 	return err
 }

@@ -141,8 +141,31 @@ paths:
       responses:
         "200":
           description: Current validated configuration and revision metadata
-          content: { application/json: { schema: { type: object } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, document]
+                properties:
+                  revision: { $ref: "#/components/schemas/ConfigRevision" }
+                  document: { $ref: "#/components/schemas/SystemConfig" }
         default: { $ref: "#/components/responses/ErrorResponse" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /config/validate:
+    post:
+      summary: Validate a proposed configuration without saving it
+      operationId: validateConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfigDocumentRequest" }
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationResult" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
   /config/revisions:
     get:
@@ -151,9 +174,58 @@ paths:
       responses:
         "200":
           description: Newest-first configuration revisions
-          content: { application/json: { schema: { type: object } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConfigRevision" } }
         default: { $ref: "#/components/responses/ErrorResponse" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Validate and save a configuration revision
+      operationId: createConfigRevision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfigDocumentRequest" }
+      responses:
+        "201":
+          description: Created configuration revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigRevision" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /config/revisions/{revisionID}/rollback:
+    parameters:
+      - { $ref: "#/components/parameters/RevisionID" }
+    post:
+      summary: Create a new revision matching a selected rollback point
+      operationId: rollbackConfigRevision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201":
+          description: Created rollback revision
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigRevision" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /audit:
     get:
       summary: List append-only audit events
@@ -171,6 +243,11 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^job_[0-9a-f]{32}$" }
+    RevisionID:
+      name: revisionID
+      in: path
+      required: true
+      schema: { type: string, pattern: "^config_[0-9a-f]{32}$" }
   responses:
     ErrorResponse:
       description: Structured error
@@ -237,3 +314,69 @@ components:
         profile: { type: string }
         uptime_seconds: { type: integer, minimum: 0 }
         components: { type: object, additionalProperties: { type: string } }
+    SystemConfig:
+      type: object
+      additionalProperties: false
+      required: [schema_version, deployment, workflow, qc, protected_paths]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        deployment:
+          type: object
+          additionalProperties: false
+          required: [listen_address, data_root, profile]
+          properties:
+            listen_address: { type: string }
+            data_root: { type: string }
+            profile: { type: string, enum: [mock, production] }
+        workflow:
+          type: object
+          additionalProperties: false
+          required: [max_review_cycles, max_wall_seconds, max_log_bytes]
+          properties:
+            max_review_cycles: { type: integer, minimum: 1, maximum: 10 }
+            max_wall_seconds: { type: integer, minimum: 60 }
+            max_log_bytes: { type: integer, minimum: 1024, maximum: 1073741824 }
+        qc:
+          type: object
+          additionalProperties: false
+          required: [block_on, require_evidence_for_blocking, require_verification_method, human_waiver_enabled, waiver_rationale_required]
+          properties:
+            block_on: { type: array, minItems: 1, items: { type: string, enum: [blocker, must_fix, should_fix, note] } }
+            require_evidence_for_blocking: { type: boolean }
+            require_verification_method: { type: boolean }
+            human_waiver_enabled: { type: boolean }
+            waiver_rationale_required: { type: boolean }
+        protected_paths:
+          type: object
+          additionalProperties: false
+          required: [patterns]
+          properties:
+            patterns: { type: array, minItems: 1, items: { type: string } }
+    ConfigDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [document]
+      properties:
+        document: { $ref: "#/components/schemas/SystemConfig" }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    ValidationResult:
+      type: object
+      required: [valid, errors]
+      properties:
+        valid: { type: boolean }
+        errors: { type: array, items: { type: string } }
+    ConfigRevision:
+      type: object
+      required: [id, sequence, actor_id, schema_version, before, after, diff, validation_result, reason, created_at]
+      properties:
+        id: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        actor_id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        before: { type: object, additionalProperties: true }
+        after: { $ref: "#/components/schemas/SystemConfig" }
+        diff: { type: array, items: { type: object, additionalProperties: true } }
+        validation_result: { $ref: "#/components/schemas/ValidationResult" }
+        rollback_of: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }

@@ -13,6 +13,7 @@ The supported development path is containerized because host Go and npm installa
 - Frontend checks: `docker compose run --rm web-tool sh -c 'npm ci && npm test'`
 - Frontend build: `docker compose run --rm web-tool sh -c 'npm ci && npm run build'`
 - OpenAPI lint: `docker compose run --rm web-tool npx redocly lint ../internal/api/openapi.yaml`
+- Generated API drift: `docker compose run --rm web-tool npm run check:api`
 - Validate Compose: `docker compose config --quiet`
 - Full local acceptance: `./scripts/acceptance.sh`
 

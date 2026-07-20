@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Frontend tests and build
         working-directory: web
-        run: npm ci && npm test && npm run build && npx redocly lint ../internal/api/openapi.yaml
+        run: npm ci && npm run check:api && npm test && npm run build && npx redocly lint ../internal/api/openapi.yaml
       - name: Validate Compose
         run: mkdir -p .data .cache/go .cache/npm && docker compose -f compose.yaml -f compose.dev.yaml config --quiet
       - name: Build control plane images

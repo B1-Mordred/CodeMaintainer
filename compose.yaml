@@ -57,6 +57,12 @@ services:
         VERSION: 0.1.0-dev
     environment:
       MAINTAINER_URL: http://controller:8080
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
     depends_on:
       controller:
         condition: service_healthy
@@ -113,6 +119,7 @@ services:
         source: ./.cache/npm
         target: /cache/npm
     tmpfs:
+      - /src/web/node_modules:rw,exec,nosuid,nodev,size=512m,mode=1777
       - /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777
     read_only: true
     cap_drop:
