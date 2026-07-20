@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-code-maintainer.invalid/schemas/model-manifest-v1.schema.json",
+  "title": "Allow-listed local model profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "role", "model_family", "filename", "sha256", "bytes", "source_uri", "license", "quantization", "context", "threads", "batch", "ubatch", "numa", "min_ram_bytes", "sampling"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$" },
+    "role": { "enum": ["implementation", "qc", "alternate", "deep_critic"] },
+    "model_family": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$" },
+    "filename": { "type": "string", "pattern": "^[^/\\\\]+\\.gguf$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "bytes": { "type": "integer", "minimum": 1, "maximum": 1099511627776 },
+    "source_uri": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "license": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "quantization": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "context": { "type": "integer", "minimum": 1024, "maximum": 262144 },
+    "threads": { "type": "integer", "minimum": 1, "maximum": 512 },
+    "batch": { "type": "integer", "minimum": 1, "maximum": 8192 },
+    "ubatch": { "type": "integer", "minimum": 1, "maximum": 8192 },
+    "numa": { "enum": ["disabled", "distribute", "isolate", "numactl"] },
+    "min_ram_bytes": { "type": "integer", "minimum": 1, "maximum": 1099511627776 },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "top_p", "top_k", "min_p", "seed"],
+      "properties": {
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "top_p": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "top_k": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "min_p": { "type": "number", "minimum": 0, "maximum": 1 },
+        "seed": { "type": "integer" }
+      }
+    }
+  }
+}

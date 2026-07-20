@@ -41,5 +41,12 @@ if [[ ! -e "$runnerd_token" ]]; then
 fi
 chmod 600 "$runnerd_token"
 
+model_token=.data/secrets/model-control.token
+if [[ ! -e "$model_token" ]]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$model_token"
+fi
+chmod 600 "$model_token"
+
 compose -f compose.yaml -f compose.dev.yaml config --quiet
 printf 'Bootstrap preflight passed. Start the mock profile with: ./maintainctl up\n'

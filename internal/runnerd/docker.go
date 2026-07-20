@@ -36,6 +36,8 @@ type DockerExecutor struct {
 	client            *dockerClient
 	allowedRoot       string
 	dependencyNetwork string
+	inferenceNetwork  string
+	inferenceURL      string
 	workerUser        string
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -43,8 +45,13 @@ type DockerExecutor struct {
 	monitors          map[runners.RunID]struct{}
 }
 
-func NewDockerExecutor(socketPath, allowedRoot, dependencyNetwork, workerUser string) (*DockerExecutor, error) {
-	if socketPath == "" || !filepath.IsAbs(allowedRoot) || !safeIdentifier(dependencyNetwork) || !numericUser.MatchString(workerUser) {
+func NewDockerExecutor(socketPath, allowedRoot, dependencyNetwork, inferenceNetwork, inferenceURL, workerUser string) (*DockerExecutor, error) {
+	parsedInferenceURL, urlErr := url.Parse(inferenceURL)
+	if socketPath == "" || !filepath.IsAbs(allowedRoot) || !safeIdentifier(dependencyNetwork) ||
+		!safeIdentifier(inferenceNetwork) || dependencyNetwork == inferenceNetwork || urlErr != nil ||
+		parsedInferenceURL.Scheme != "http" || parsedInferenceURL.Host == "" || parsedInferenceURL.User != nil ||
+		parsedInferenceURL.RawQuery != "" || parsedInferenceURL.Fragment != "" ||
+		(parsedInferenceURL.Path != "" && parsedInferenceURL.Path != "/v1") || !numericUser.MatchString(workerUser) {
 		return nil, fmt.Errorf("%w: invalid Docker executor configuration", ErrPolicyDenied)
 	}
 	root, err := filepath.EvalSymlinks(allowedRoot)
@@ -65,7 +72,9 @@ func NewDockerExecutor(socketPath, allowedRoot, dependencyNetwork, workerUser st
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DockerExecutor{
 		client:      &dockerClient{http: &http.Client{Transport: transport, Timeout: 60 * time.Second}},
-		allowedRoot: filepath.Clean(root), dependencyNetwork: dependencyNetwork, workerUser: workerUser, ctx: ctx, cancel: cancel,
+		allowedRoot: filepath.Clean(root), dependencyNetwork: dependencyNetwork,
+		inferenceNetwork: inferenceNetwork, inferenceURL: strings.TrimSuffix(inferenceURL, "/"),
+		workerUser: workerUser, ctx: ctx, cancel: cancel,
 		monitors: make(map[runners.RunID]struct{}),
 	}, nil
 }
@@ -295,6 +304,9 @@ func (e *DockerExecutor) containerRequest(spec WorkerSpec) (dockerCreateRequest,
 	network := "none"
 	if spec.Network == NetworkDependencyEgress && spec.Kind == runners.KindDependencies {
 		network = e.dependencyNetwork
+	} else if spec.Network == NetworkInferenceOnly &&
+		(spec.Kind == runners.KindImplementation || spec.Kind == runners.KindQC) {
+		network = e.inferenceNetwork
 	} else if spec.Network != NetworkNone {
 		return dockerCreateRequest{}, fmt.Errorf("%w: network is not valid for worker kind", ErrPolicyDenied)
 	}
@@ -315,13 +327,17 @@ func (e *DockerExecutor) containerRequest(spec WorkerSpec) (dockerCreateRequest,
 		}
 		binds = append(binds, resolved+":"+mount.Target+":"+mode)
 	}
+	environment := []string{
+		"HOME=/tmp", "MAINTAINER_RUN_ID=" + string(spec.RunID), "MAINTAINER_JOB_ID=" + spec.JobID,
+		"MAINTAINER_MAX_ARTIFACT_BYTES=" + strconv.FormatInt(spec.MaxArtifactBytes, 10),
+	}
+	if spec.Network == NetworkInferenceOnly {
+		environment = append(environment, "MAINTAINER_MODEL_ENDPOINT="+e.inferenceURL)
+	}
 	return dockerCreateRequest{
 		Image: spec.Image, User: spec.User, WorkingDir: "/workspace",
 		AttachStdout: true, AttachStderr: true, Tty: false, OpenStdin: false,
-		Env: []string{
-			"HOME=/tmp", "MAINTAINER_RUN_ID=" + string(spec.RunID), "MAINTAINER_JOB_ID=" + spec.JobID,
-			"MAINTAINER_MAX_ARTIFACT_BYTES=" + strconv.FormatInt(spec.MaxArtifactBytes, 10),
-		},
+		Env: environment,
 		Labels: map[string]string{
 			"maintainer.run_id": string(spec.RunID), "maintainer.job_id": spec.JobID,
 			"maintainer.project_id": spec.ProjectID, "maintainer.kind": string(spec.Kind),

@@ -29,6 +29,7 @@ type Network string
 const (
 	NetworkNone             Network = "none"
 	NetworkDependencyEgress Network = "dependency-egress"
+	NetworkInferenceOnly    Network = "inference-only"
 )
 
 type Mount struct {
@@ -170,7 +171,7 @@ func newPolicy(dataRoot, workerUser string, images map[runners.Kind]string) (*Po
 				maxLogBytes: 8 << 20, maxArtifactBytes: 1 << 30, maxDiskBytes: 4 << 30,
 			},
 			runners.KindImplementation: {
-				network: NetworkNone, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
+				network: NetworkInferenceOnly, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
 				pidsLimit: 512, timeout: 2 * time.Hour, tmpfsBytes: 1 << 30,
 				maxLogBytes: 8 << 20, maxArtifactBytes: 1 << 30, maxDiskBytes: 8 << 30,
 			},
@@ -180,7 +181,7 @@ func newPolicy(dataRoot, workerUser string, images map[runners.Kind]string) (*Po
 				maxLogBytes: 16 << 20, maxArtifactBytes: 2 << 30, maxDiskBytes: 8 << 30,
 			},
 			runners.KindQC: {
-				network: NetworkNone, worktreeReadOnly: true, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
+				network: NetworkInferenceOnly, worktreeReadOnly: true, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
 				pidsLimit: 512, timeout: time.Hour, tmpfsBytes: 1 << 30,
 				maxLogBytes: 8 << 20, maxArtifactBytes: 1 << 30, maxDiskBytes: 4 << 30,
 			},

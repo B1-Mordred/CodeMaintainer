@@ -6,8 +6,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/agents"
 	"github.com/local-code-maintainer/appliance/internal/audit"
 	"github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 )
 
@@ -84,11 +86,18 @@ type ArtifactStore interface {
 	ListJobArtifacts(context.Context, string, int) ([]ArtifactRecord, error)
 }
 
+type FindingStore interface {
+	ObserveFindings(context.Context, string, int, []agents.Finding) ([]findings.Record, error)
+	TransitionFinding(context.Context, string, string, findings.TransitionRequest) (findings.Record, error)
+	ListFindings(context.Context, string) ([]findings.Record, error)
+}
+
 type Store interface {
 	JobStore
 	AuditStore
 	ConfigStore
 	LeaseStore
 	ArtifactStore
+	FindingStore
 	Close() error
 }

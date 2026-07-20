@@ -30,6 +30,9 @@ var migration002 string
 //go:embed migrations/003_artifacts.sql
 var migration003 string
 
+//go:embed migrations/004_qc_findings.sql
+var migration004 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -86,7 +89,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {

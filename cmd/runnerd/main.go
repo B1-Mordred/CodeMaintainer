@@ -55,6 +55,8 @@ func run(logger *slog.Logger) error {
 			env("RUNNERD_DOCKER_SOCKET", "/run/worker-docker/docker.sock"),
 			dataRoot,
 			env("RUNNERD_DEPENDENCY_NETWORK", "maintainer-dependency-egress"),
+			env("RUNNERD_INFERENCE_NETWORK", "maintainer-inference-only"),
+			env("RUNNERD_INFERENCE_URL", "http://model-supervisor:8082/v1"),
 			policy.WorkerUser(),
 		)
 		if err != nil {

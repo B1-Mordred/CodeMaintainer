@@ -1,4 +1,32 @@
 services:
+  model-supervisor:
+    image: local/code-maintainer-inference:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/inference/Dockerfile
+      target: inference-haswell
+      args:
+        VERSION: 0.1.0-dev
+    environment:
+      MODEL_ROOT: /models
+      MODEL_MANIFEST_ROOT: /etc/maintainer/models
+      MODEL_CONTROL_TOKEN_FILE: /run/secrets/model-control.token
+    volumes: !override
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/models
+        target: /models
+        read_only: true
+      - type: bind
+        source: ${MODEL_MANIFEST_ROOT:?set MODEL_MANIFEST_ROOT to the immutable host manifest directory}
+        target: /etc/maintainer/models
+        read_only: true
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/secrets/model-control.token
+        target: /run/secrets/model-control.token
+        read_only: true
+    mem_limit: ${MODEL_MEMORY_LIMIT:-128g}
+    cpus: ${MODEL_CPU_LIMIT:-32}
+
   runnerd:
     environment:
       RUNNERD_PROFILE: production
@@ -6,6 +34,8 @@ services:
       RUNNERD_POLICY_FILE: /etc/maintainer/runner-policy.json
       RUNNERD_DOCKER_SOCKET: /run/worker-docker/docker.sock
       RUNNERD_DEPENDENCY_NETWORK: ${RUNNERD_DEPENDENCY_NETWORK:-maintainer-dependency-egress}
+      RUNNERD_INFERENCE_NETWORK: ${RUNNERD_INFERENCE_NETWORK:-maintainer-inference-only}
+      RUNNERD_INFERENCE_URL: ${RUNNERD_INFERENCE_URL:-http://model-supervisor:8082/v1}
     volumes: !override
       - type: bind
         source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}

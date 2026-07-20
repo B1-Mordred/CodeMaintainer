@@ -13,8 +13,8 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [x] (2026-07-20 09:30Z) Read the complete product contract, inspected the initially empty repository, and verified the available host toolchain and Docker support.
 - [x] (2026-07-20 09:35Z) Selected a small Go control plane with SQLite, a statically built TypeScript dashboard, narrow HTTP/Unix-socket service contracts, and deterministic in-process fakes for default tests.
 - [x] (2026-07-20 10:31Z) Milestone 1 foundation: repository conventions, pinned containerized Go/Node toolchains, system/QC schemas, versioned SQLite migration and WAL store, audited configuration apply/validate/rollback, durable queue leases, controller API and valid OpenAPI contract, generated typed frontend client with drift gate, replayable SSE, React/TypeScript UI shell, narrow fake adapters, and restart/reclaim tests for every resumable phase. The complete foundation unit, migration, API, frontend, schema, image-build, live-migration, CLI, and runtime acceptance run passed.
-- [ ] Milestone 2 secure execution (completed through 2026-07-20 13:05Z: authenticated runnerd boundary and hardened server policy; SQLite artifact index and audited content-addressed store; exact-SHA offline worktrees with durable claim/retirement and never-reuse semantics; fixed Go/Python/Node/C/C++/Rust verifier registry; protected-path and secret scans; standard verification artifacts; a production Docker-API executor restricted to an operator-supplied dedicated Unix socket; digest-only images, fixed mounts and networks, non-root/read-only/capability/seccomp/CPU/RAM/PID/tmpfs/log/artifact/wall/disk-growth limits; immutable worker harness and base/Python/Node/C/C++/Rust/Go/full images; and a real-daemon runnerd-backed offline Go fixture. Remaining: dependency-acquisition worker behavior and real named-egress acceptance, implementation/QC worker images supplied by Milestone 3, controller workflow dispatch through the runner client, and operator validation against a dedicated rootless rather than this host's rootful development daemon).
-- [ ] Milestone 3 inference and agents: implement model manifests/supervision, pinned llama.cpp build, separate implementation and QC images/prompts/contracts, locked QA criteria, finding lifecycle, repair loop, and deterministic fake-model acceptance workflow.
+- [ ] Milestone 2 secure execution (completed through 2026-07-20 14:05Z: authenticated runnerd boundary and hardened server policy; SQLite artifact index and audited content-addressed store; exact-SHA offline worktrees with durable claim/retirement and never-reuse semantics; fixed Go/Python/Node/C/C++/Rust verifier registry; protected-path and secret scans; standard verification artifacts; a production Docker-API executor restricted to an operator-supplied dedicated Unix socket; digest-only images, fixed mounts and separate dependency-egress/inference-only/offline networks, non-root/read-only/capability/seccomp/CPU/RAM/PID/tmpfs/log/artifact/wall/disk-growth limits; immutable worker harness and base/Python/Node/C/C++/Rust/Go/full/implementation/QC images; a real-daemon runnerd-backed offline Go fixture; and hardened agent-image acceptance on an internal inference network. Remaining: dependency-acquisition worker behavior and real named-egress acceptance, controller workflow dispatch through the runner client, and operator validation against a dedicated rootless rather than this host's rootful development daemon).
+- [ ] Milestone 3 inference and agents (completed through 2026-07-20 14:05Z: strict versioned model manifests, verified immutable import/download, catalog role/family constraints, sequential one-child llama.cpp supervisor, bounded authenticated control API and CLI, pinned Haswell/AVX2 inference image with no weights, separate implementation and read-only QC contracts/prompts/images, hash-bound whole-file edits, deterministic fake OpenAI-compatible model, container acceptance for implement/block/repair/pass behavior, and append-only stable-finding observations/transitions with waiver controls. Remaining: durable controller orchestration, exact-cycle artifacts/commit binding, automated repair loop/exhaustion, and end-to-end seeded fixture through approval).
 - [ ] Milestone 4 publication: implement GitHub App authentication, mirror synchronization, local bare provider, publication policy, protected-path checks, webhook validation, upstream movement handling, and idempotent draft publication.
 - [ ] Milestone 5 memory and scheduling: implement repository-scoped memory namespaces, quarantine and promotion, provenance, retrieval traces and context budgets, OpenViking adapter/profile, Hermes tools, schedules, and reviewed skill proposals.
 - [ ] Milestone 6 product completion: finish every dashboard workflow, RBAC and reauthentication, backup/restore, upgrades and rollback, diagnostics, observability, accessibility, documentation, SBOM/license inventory, hardened Compose profiles, and the full acceptance suite.
@@ -46,6 +46,12 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: mounting `/srv/coder` at the identical path and using the test process UID/GID let the production executor run the offline fixture; profile user `65532` remains the image default and production policy must match the owner of the deployment data root.
 - Observation: composing a useful full runner from Debian packages silently selected old distro Go and Rust releases.
   Evidence: the first full-runner smoke test reported the distro toolchains. Re-basing full on the pinned Rust 1.92 stage and copying the pinned Go 1.25 tree preserved current compiled toolchains while adding Python, Node, GCC, and CMake.
+- Observation: the Debian snapshot image retained the default live Debian sources unless they were explicitly removed, so an apparently dated build could still fetch current packages.
+  Evidence: the first inference build contacted the default Debian mirrors as well as the snapshot. Replacing every source entry before `apt-get update` made the build use only `snapshot.debian.org/archive/debian/20260505T000000Z`.
+- Observation: the legacy Docker builder evaluates earlier stages even when a later target is requested, and llama.cpp's `LLAMA_BUILD_UI=OFF` does not disable its separately enabled prebuilt UI download.
+  Evidence: putting optional native and full-runner stages before portable targets caused unnecessary work; moving independent targets immediately after their parent fixed it. The llama build still fetched the SHA-verified b9637 UI while the runtime is fixed to `--no-webui`.
+- Observation: the host toolchain remains intentionally absent in fresh shells, so all final Go and frontend checks must continue through pinned tool containers.
+  Evidence: `go`, `gofmt`, and `npm` were not on `PATH`; the pinned Compose tool services completed format, race, vet, frontend test/build, OpenAPI lint, and generated-client parity checks.
 
 ## Decision Log
 
@@ -78,6 +84,18 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-20 / Codex
 - Decision: enforce writable bind growth with a runnerd-owned baseline watchdog in addition to bounded tmpfs, logs, and artifact validation.
   Rationale: read-only container roots and tmpfs sizes do not limit job worktree and artifact bind mounts. Runnerd records a trusted start baseline, stops growth beyond the kind-specific ceiling, and reattaches the watchdog from validated labels after inspection following a restart. Production operators should still place the data root on a quota-controlled filesystem for a hard storage backstop.
+  Date/Author: 2026-07-20 / Codex
+- Decision: assign implementation and QC workers only the dedicated inference network, keep verifier workers at `network=none`, and reserve the distinct dependency-egress network for dependency preparation.
+  Rationale: local model access is a required capability but does not justify general egress. Separate server-selected names prevent a worker request from broadening its network authority and make deployment topology auditable.
+  Date/Author: 2026-07-20 / Codex
+- Decision: accept model weights only through bounded manifest-verified import/download operations and make the supervisor resolve allow-listed profile IDs rather than paths or llama.cpp arguments.
+  Rationale: model paths, redirect targets, process arguments, and mutable files are all authority-bearing input. Exact byte length, SHA-256, read-only installation, role/family constraints, fixed runtime arguments, and one-child ownership make model selection deterministic and inspectable.
+  Date/Author: 2026-07-20 / Codex
+- Decision: require implementation responses to contain only complete, expected-hash-bound file replacements and run every QC cycle in a fresh read-only process with a different model family.
+  Rationale: whole-file atomic replacement is easier to constrain than model-supplied patch commands, while the prior-content hash prevents stale writes. Separate contracts and images prevent the implementation agent from grading itself or editing during review.
+  Date/Author: 2026-07-20 / Codex
+- Decision: persist QC as append-only observations plus a versioned finding-state machine keyed by stable IDs.
+  Rationale: a current-row overwrite would erase review history. Stable category/location identity, explicit repair-regression reasons, optimistic transition versions, and recent reauthentication for severe waivers preserve evidence across repair cycles and restarts.
   Date/Author: 2026-07-20 / Codex
 
 ## Outcomes & Retrospective
@@ -267,6 +285,33 @@ Offline worktree and verifier evidence:
 `TestWorktreeManagerCreatesExactOfflineNeverReusedWorktrees` creates a local bare mirror, checks out an exact SHA without fetching, resumes the same claim idempotently, retires it before cleanup, rejects reuse, and gives a second job a distinct path. Companion tests reject traversal, symbolic-link mirror escapes, non-SHA revisions, and wrong commits. `TestOfflineFixtureChecksOutFixVerifiesAndEmitsStandardArtifacts` checks out a seeded Go arithmetic defect, commits the repair, runs fixed compile and full-test classes offline, binds evidence to the exact base/head and patch hash, and produces two command results plus JUnit, SARIF, coverage status, and a verification report. Scanner fixtures prove protected workflow/submodule configuration, secrets, symlinks, binaries, and oversized patches block. API tests prove artifact metadata is job scoped, content is integrity checked before download, the SHA-256 response header matches, and a different job receives 404. Generated frontend types and the OpenAPI drift gate include these artifact endpoints.
 
 Official release checks on 2026-07-20 selected Node 24.18.0 LTS, Go 1.25, `modernc.org/sqlite` v1.54.0, and llama.cpp release `b9637` commit `aedb2a5` as initial pins. Image digests and every remaining application pin must be resolved and recorded before production Compose acceptance; no operational `latest` tag is permitted.
+
+Supervised-inference and isolated-agent evidence:
+
+    $ docker build -f images/inference/Dockerfile --target inference-haswell ...
+    llama-server version 9637 (aedb2a5e), GNU 12.2.0, x86_64
+    image sha256:3b467cb6b2b089... user=65532:65532 size=43,999,012 bytes
+
+    $ docker build -f images/runners/Dockerfile --target implementation-agent ...
+    image sha256:8b65271... user=65532:65532
+    $ docker build -f images/runners/Dockerfile --target qc-agent ...
+    image sha256:5328e415... user=65532:65532
+
+    $ ./scripts/agent-image-acceptance.sh
+    Agent image acceptance passed.
+
+The acceptance fixture started a hardened fake model on an internal-only inference network, ran the implementation image with only its worktree writable, verified a hash-bound arithmetic repair and immutable result artifact, ran a fresh QC image with the worktree read-only to produce an evidence-supported blocking finding for cycle zero, then ran another fresh QC process for cycle one and obtained pass. No agent received a Docker socket or controller database. Manifest and supervisor tests reject mutable weights, incorrect byte/hash metadata, credential-bearing or redirected sources, non-allow-listed profiles, arbitrary paths/arguments, multiple child processes, unhealthy loads, and malformed smoke output. Finding-store tests preserve every observation and permit only the documented open/fixed/verified/closed, dispute, rejection, acceptance, and recently reauthenticated human-waiver paths.
+
+    $ sudo docker compose --profile tools run --rm --no-deps go-tool go test -race ./...
+    all packages passed
+    $ sudo docker compose --profile tools run --rm --no-deps go-tool go vet ./...
+    exited 0
+    $ sudo docker compose --profile tools run --rm --no-deps web-tool sh -c 'npm ci && npm test && npm run build && ...'
+    1 frontend test passed; Vite built 1777 modules; OpenAPI valid with the existing unchosen-license warning; generated client matched
+    $ sudo docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+    exited 0
+    $ sudo env MAINTAINER_DATA_ROOT=... RUNNERD_POLICY_FILE=... RUNNERD_WORKER_SOCKET=... MODEL_MANIFEST_ROOT=... docker compose -f compose.yaml -f compose.production.yaml config --quiet
+    exited 0
 
 ## Interfaces and Dependencies
 

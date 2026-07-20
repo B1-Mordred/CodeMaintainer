@@ -25,6 +25,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w -X main.version=${VERSION}" -o /out/maintainctl ./cmd/maintainctl && \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
       -ldflags="-s -w -X main.version=${VERSION}" -o /out/runnerd ./cmd/runnerd
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+      -ldflags="-s -w" -o /out/fake-model-server ./cmd/fake-model-server
 
 FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS controller
 COPY --from=build --chown=65532:65532 /out/controller /controller
@@ -42,3 +46,9 @@ FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c7
 COPY --from=build --chown=65532:65532 /out/runnerd /runnerd
 USER 65532:65532
 ENTRYPOINT ["/runnerd"]
+
+FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS fake-model-server
+COPY --from=build --chown=65532:65532 /out/fake-model-server /fake-model-server
+USER 65532:65532
+EXPOSE 8082
+ENTRYPOINT ["/fake-model-server"]

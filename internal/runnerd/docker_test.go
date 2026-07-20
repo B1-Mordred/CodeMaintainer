@@ -72,7 +72,7 @@ func TestDockerExecutorTranslatesOnlyHardenedPolicyAndImplementsContract(t *test
 	})
 	socketPath, closeDaemon := dockerFixtureDaemon(t, handler)
 	defer closeDaemon()
-	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "65532:65532")
+	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "inference-only", "http://model-gateway:8081/v1", "65532:65532")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,13 +96,16 @@ func TestDockerExecutorTranslatesOnlyHardenedPolicyAndImplementsContract(t *test
 	mu.Unlock()
 	if request.Image != spec.Image || request.User != "65532:65532" || request.WorkingDir != "/workspace" ||
 		!request.HostConfig.ReadonlyRootfs || request.HostConfig.Privileged || request.HostConfig.PublishAllPorts ||
-		request.HostConfig.NetworkMode != "none" || len(request.HostConfig.CapDrop) != 1 || request.HostConfig.CapDrop[0] != "ALL" ||
+		request.HostConfig.NetworkMode != "inference-only" || len(request.HostConfig.CapDrop) != 1 || request.HostConfig.CapDrop[0] != "ALL" ||
 		len(request.HostConfig.SecurityOpt) != 1 || request.HostConfig.SecurityOpt[0] != "no-new-privileges" ||
 		request.HostConfig.Memory != spec.MemoryBytes || request.HostConfig.PidsLimit != spec.PIDsLimit {
 		t.Fatalf("unsafe Docker create translation: %#v", request)
 	}
 	if request.HostConfig.LogConfig.Config["max-file"] != "1" || request.HostConfig.LogConfig.Config["compress"] != "false" {
 		t.Fatalf("worker logs are not bounded compatibly: %#v", request.HostConfig.LogConfig)
+	}
+	if !strings.Contains(strings.Join(request.Env, "\n"), "MAINTAINER_MODEL_ENDPOINT=http://model-gateway:8081/v1") {
+		t.Fatalf("implementation worker lacks the fixed inference endpoint: %#v", request.Env)
 	}
 	if request.Labels["maintainer.max_disk_bytes"] != "8589934592" || request.Labels["maintainer.disk_baseline_bytes"] != "0" {
 		t.Fatalf("worker disk limits are not server-owned labels: %#v", request.Labels)
@@ -138,6 +141,25 @@ func TestDockerExecutorTranslatesOnlyHardenedPolicyAndImplementsContract(t *test
 	}
 }
 
+func TestDockerExecutorRejectsUnsafeOrSharedNetworkConfiguration(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		dependency string
+		inference  string
+		endpoint   string
+	}{
+		{"same", "same", "http://model-gateway:8081/v1"},
+		{"dependency", "inference", "https://public.example/v1"},
+		{"dependency", "inference", "http://user:secret@model-gateway:8081/v1"},
+		{"dependency", "inference", "http://model-gateway:8081/arbitrary"},
+	} {
+		if _, err := NewDockerExecutor(filepath.Join(root, "missing.sock"), root,
+			test.dependency, test.inference, test.endpoint, "65532:65532"); !errors.Is(err, ErrPolicyDenied) {
+			t.Errorf("unsafe network configuration %#v returned %v", test, err)
+		}
+	}
+}
+
 func TestDockerExecutorStopsRunWhenWritableDiskGrowthExceedsLimit(t *testing.T) {
 	root := t.TempDir()
 	jobID := "job_disk_limit"
@@ -168,7 +190,7 @@ func TestDockerExecutorStopsRunWhenWritableDiskGrowthExceedsLimit(t *testing.T) 
 	})
 	socketPath, closeDaemon := dockerFixtureDaemon(t, handler)
 	defer closeDaemon()
-	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "65532:65532")
+	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "inference-only", "http://model-gateway:8081/v1", "65532:65532")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +225,7 @@ func TestDockerExecutorRejectsEscapingMountAndPolicyDowngradesBeforeDaemon(t *te
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer closeDaemon()
-	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "65532:65532")
+	executor, err := NewDockerExecutor(socketPath, root, "dependency-egress", "inference-only", "http://model-gateway:8081/v1", "65532:65532")
 	if err != nil {
 		t.Fatal(err)
 	}

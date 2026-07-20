@@ -58,7 +58,7 @@ func TestServiceResolvesPolicyBeforeStartingExecutorAndBoundsLogs(t *testing.T) 
 	}
 	response.Body.Close()
 	spec, exists := executor.Spec(started.RunID)
-	if !exists || spec.Image == "" || spec.Network != NetworkNone || !spec.Mounts[0].ReadOnly {
+	if !exists || spec.Image == "" || spec.Network != NetworkInferenceOnly || !spec.Mounts[0].ReadOnly {
 		t.Fatalf("executor received unsafe specification: %#v", spec)
 	}
 

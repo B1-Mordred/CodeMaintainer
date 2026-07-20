@@ -57,7 +57,7 @@ func TestDockerExecutorRunsOfflineGoFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	executor, err := NewDockerExecutor(socket, root, "maintainer-dependency-egress", workerUser)
+	executor, err := NewDockerExecutor(socket, root, "maintainer-dependency-egress", "maintainer-inference-only", "http://model-gateway:8081/v1", workerUser)
 	if err != nil {
 		t.Fatal(err)
 	}

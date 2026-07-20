@@ -1,4 +1,4 @@
-.PHONY: bootstrap format test race lint build build-runners compose-check up down
+.PHONY: bootstrap format test race lint build build-runners build-inference compose-check up down
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -19,7 +19,7 @@ lint:
 	docker compose run --rm web-tool npm run check:api
 
 build:
-	docker compose build controller maintainctl runnerd
+	docker compose build controller maintainctl runnerd model-supervisor
 	docker compose run --rm web-tool sh -c 'npm ci && npm run build'
 
 build-runners:
@@ -31,6 +31,11 @@ build-runners:
 	docker build -f images/runners/Dockerfile --target runner-rust -t local/code-maintainer-runner-rust:0.1.0-dev .
 	docker build -f images/runners/Dockerfile --target runner-go -t local/code-maintainer-runner-go:0.1.0-dev .
 	docker build -f images/runners/Dockerfile --target runner-full -t local/code-maintainer-runner-full:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target implementation-agent -t local/code-maintainer-implementation-agent:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target qc-agent -t local/code-maintainer-qc-agent:0.1.0-dev .
+
+build-inference:
+	docker build -f images/inference/Dockerfile --target inference-haswell -t local/code-maintainer-inference:0.1.0-dev .
 
 compose-check:
 	docker compose -f compose.yaml -f compose.dev.yaml config --quiet

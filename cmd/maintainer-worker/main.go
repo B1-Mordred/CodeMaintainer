@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/agents"
 	"github.com/local-code-maintainer/appliance/internal/runners"
 	"github.com/local-code-maintainer/appliance/internal/verification"
 )
@@ -49,6 +50,9 @@ func run(arguments []string) error {
 	if len(arguments) == 1 && arguments[0] == "verification" {
 		return runVerification("/inputs/00", "/workspace", "/artifacts")
 	}
+	if len(arguments) == 1 && (arguments[0] == "implementation" || arguments[0] == "qc") {
+		return runAgent(arguments[0], "/inputs/00", "/workspace", "/artifacts")
+	}
 	if len(arguments) == 2 && arguments[0] == "verify" && arguments[1] == "go-format" {
 		return checkGoFormat(".")
 	}
@@ -63,6 +67,38 @@ func run(arguments []string) error {
 		}
 	}
 	return errors.New("worker mode is not allow-listed")
+}
+
+func runAgent(mode, packetPath, worktree, artifactRoot string) error {
+	file, err := os.Open(packetPath)
+	if err != nil {
+		return fmt.Errorf("open agent packet: %w", err)
+	}
+	payload, readErr := io.ReadAll(io.LimitReader(file, agents.MaxPacketBytes+1))
+	closeErr := file.Close()
+	if readErr != nil || closeErr != nil || len(payload) > agents.MaxPacketBytes {
+		return errors.New("agent packet is unreadable or oversized")
+	}
+	client, err := agents.NewModelClient(os.Getenv("MAINTAINER_MODEL_ENDPOINT"))
+	if err != nil {
+		return err
+	}
+	var result []byte
+	switch mode {
+	case "implementation":
+		result, err = agents.RunImplementation(context.Background(), client, payload, worktree)
+		if err == nil {
+			err = publishArtifact(artifactRoot, "implementation_result", "implementation_result", result)
+		}
+	case "qc":
+		result, err = agents.RunQC(context.Background(), client, payload)
+		if err == nil {
+			err = publishArtifact(artifactRoot, "qc_report", "qc_report", result)
+		}
+	default:
+		err = errors.New("agent mode is not allow-listed")
+	}
+	return err
 }
 
 func runVerification(packetPath, worktree, artifactRoot string) error {

@@ -11,6 +11,26 @@ x-runtime-security: &runtime-security
   restart: unless-stopped
 
 services:
+  model-supervisor:
+    <<: *runtime-security
+    image: local/code-maintainer-fake-model-server:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: fake-model-server
+      args:
+        VERSION: 0.1.0-dev
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    networks:
+      control: {}
+      inference:
+        aliases:
+          - model-supervisor
+    mem_limit: 128m
+    cpus: 0.5
+
   runnerd:
     <<: *runtime-security
     image: local/code-maintainer-runnerd:0.1.0-dev
@@ -175,4 +195,6 @@ networks:
   # this ingress network; untrusted workers never do.
   frontend: {}
   control:
+    internal: true
+  inference:
     internal: true

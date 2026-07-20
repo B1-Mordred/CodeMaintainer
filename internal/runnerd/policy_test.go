@@ -19,7 +19,7 @@ func TestPolicyConstructsHardenedServerOwnedSpecifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if implementation.Network != NetworkNone || !implementation.ReadOnlyRoot || implementation.User == "" ||
+	if implementation.Network != NetworkInferenceOnly || !implementation.ReadOnlyRoot || implementation.User == "" ||
 		!implementation.NoNewPrivileges || !implementation.UseDefaultSeccomp ||
 		len(implementation.DropCapabilities) != 1 || implementation.DropCapabilities[0] != "ALL" {
 		t.Fatalf("implementation specification is not hardened: %#v", implementation)
@@ -105,15 +105,19 @@ func TestPolicyRejectsTraversalMutableImagesAndUnknownKinds(t *testing.T) {
 	}
 }
 
-func TestPolicyMakesQCWorktreeReadOnlyAndEveryOtherPhaseOfflineExceptDependencies(t *testing.T) {
+func TestPolicyMakesAgentsInferenceOnlyVerificationOfflineAndDependenciesEgressOnly(t *testing.T) {
 	policy := testPolicy(t)
 	for _, kind := range []runners.Kind{runners.KindImplementation, runners.KindVerification, runners.KindQC} {
 		spec, err := policy.Resolve(runners.JobRequest{JobID: "job", ProjectID: "project", Kind: kind}, runners.RunID("run_"+string(kind)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if spec.Network != NetworkNone {
-			t.Fatalf("%s unexpectedly has network %s", kind, spec.Network)
+		expected := NetworkInferenceOnly
+		if kind == runners.KindVerification {
+			expected = NetworkNone
+		}
+		if spec.Network != expected {
+			t.Fatalf("%s has network %s, want %s", kind, spec.Network, expected)
 		}
 		if kind == runners.KindQC && !spec.Mounts[0].ReadOnly {
 			t.Fatal("QC worktree is writable")

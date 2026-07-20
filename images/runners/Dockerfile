@@ -21,6 +21,9 @@ WORKDIR /workspace
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/maintainer-worker", "verification"]
 
+FROM runner-base AS qc-agent
+ENTRYPOINT ["/usr/local/bin/maintainer-worker", "qc"]
+
 FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS runner-go
 ARG DEBIAN_SNAPSHOT=20260505T000000Z
 RUN printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "${DEBIAN_SNAPSHOT}" > /etc/apt/sources.list \
@@ -89,3 +92,6 @@ RUN apt-get -o Acquire::Check-Valid-Until=false update \
       nodejs npm gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 USER 65532:65532
+
+FROM runner-full AS implementation-agent
+ENTRYPOINT ["/usr/local/bin/maintainer-worker", "implementation"]

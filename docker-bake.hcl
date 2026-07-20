@@ -3,11 +3,11 @@ variable "VERSION" {
 }
 
 group "default" {
-  targets = ["controller", "maintainctl", "runnerd"]
+  targets = ["controller", "maintainctl", "runnerd", "fake-model-server", "inference"]
 }
 
 group "runners" {
-  targets = ["runner-base", "runner-python", "runner-node", "runner-c", "runner-cpp", "runner-rust", "runner-go", "runner-full"]
+  targets = ["runner-base", "runner-python", "runner-node", "runner-c", "runner-cpp", "runner-rust", "runner-go", "runner-full", "implementation-agent", "qc-agent"]
 }
 
 target "control-plane" {
@@ -34,6 +34,19 @@ target "runnerd" {
   inherits = ["control-plane"]
   target   = "runnerd"
   tags     = ["local/code-maintainer-runnerd:${VERSION}"]
+}
+
+target "fake-model-server" {
+  inherits = ["control-plane"]
+  target   = "fake-model-server"
+  tags     = ["local/code-maintainer-fake-model-server:${VERSION}"]
+}
+
+target "inference" {
+  context    = "."
+  dockerfile = "images/inference/Dockerfile"
+  target     = "inference-haswell"
+  tags       = ["local/code-maintainer-inference:${VERSION}"]
 }
 
 target "runner" {
@@ -87,4 +100,16 @@ target "runner-full" {
   inherits = ["runner"]
   target   = "runner-full"
   tags     = ["local/code-maintainer-runner-full:${VERSION}"]
+}
+
+target "implementation-agent" {
+  inherits = ["runner"]
+  target   = "implementation-agent"
+  tags     = ["local/code-maintainer-implementation-agent:${VERSION}"]
+}
+
+target "qc-agent" {
+  inherits = ["runner"]
+  target   = "qc-agent"
+  tags     = ["local/code-maintainer-qc-agent:${VERSION}"]
 }
