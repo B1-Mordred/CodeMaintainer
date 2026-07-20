@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
@@ -80,10 +83,90 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		store.Close()
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry)))
+	intelligenceService, err := intelligence.NewService(store, nil)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry), WithIntelligence(intelligenceService)))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { store.Close() })
 	return server, store, artifactStore
+}
+
+func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T) {
+	server, store := testServer(t)
+	service, _ := intelligence.NewService(store, nil)
+	content := []byte("package fixture\nfunc Target() {}\n")
+	digest := sha256.Sum256(content)
+	_, err := service.Index(context.Background(), intelligence.IndexRequest{ProjectID: "owner-repo", Repository: "owner/repo", Revision: "abc123", ParserID: "controller-syntax-v1", Files: []intelligence.SourceFile{{Path: "target.go", BlobSHA256: hex.EncodeToString(digest[:]), Content: content}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/projects/owner-repo/intelligence/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status intelligence.Status
+	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || status.Files != 1 || status.ProjectID != "owner-repo" {
+		t.Fatalf("status %d %#v", response.StatusCode, status)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/query", "application/json", strings.NewReader(`{"term":"Target","limit":10}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var query intelligence.QueryResult
+	if err := json.NewDecoder(response.Body).Decode(&query); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(query.Symbols) != 1 {
+		t.Fatalf("query %d %#v", response.StatusCode, query)
+	}
+	packet, err := service.CompileContext(context.Background(), "owner-repo", "", "qc", 512, 128, []intelligence.ContextCandidate{{ID: "target", Source: "index", Version: "abc123", Reason: "changed symbol", Trust: "untrusted", Content: content, Priority: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = http.Get(server.URL + "/api/v1/projects/owner-repo/context-manifests/" + packet.Manifest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest intelligence.ContextManifest
+	if err := json.NewDecoder(response.Body).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || manifest.ProjectID != "owner-repo" || len(manifest.Selections) != 1 {
+		t.Fatalf("manifest %d %#v", response.StatusCode, manifest)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/actions/refresh", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("refresh without trusted source = %d", response.StatusCode)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/actions/rebuild", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("rebuild without audited reason = %d", response.StatusCode)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/actions/rebuild", "application/json", strings.NewReader(`{"reason":"replace stale derived index"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("reasoned rebuild = %d", response.StatusCode)
+	}
 }
 
 func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -34,6 +35,7 @@ type coordinatorStore interface {
 	storage.WorkflowStore
 	storage.FindingStore
 	storage.ProjectStore
+	intelligence.Store
 }
 
 type Coordinator struct {
@@ -44,6 +46,7 @@ type Coordinator struct {
 	artifacts       artifactManager
 	worktreesRoot   string
 	maxReviewCycles int
+	intelligence    *intelligence.Service
 }
 
 func NewCoordinator(store coordinatorStore, git GitBackend, modelManager models.Manager, execution ExecutionBackend,
@@ -52,9 +55,13 @@ func NewCoordinator(store coordinatorStore, git GitBackend, modelManager models.
 		!filepath.IsAbs(worktreesRoot) || maxReviewCycles < 1 || maxReviewCycles > 10 {
 		return nil, storage.ErrInvalid
 	}
+	intelligenceService, err := intelligence.NewService(store, nil)
+	if err != nil {
+		return nil, err
+	}
 	return &Coordinator{
 		store: store, git: git, models: modelManager, execution: execution, artifacts: artifacts,
-		worktreesRoot: filepath.Clean(worktreesRoot), maxReviewCycles: maxReviewCycles,
+		worktreesRoot: filepath.Clean(worktreesRoot), maxReviewCycles: maxReviewCycles, intelligence: intelligenceService,
 	}, nil
 }
 
@@ -349,16 +356,52 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
+	criteriaPayload, _ := json.Marshal(criteria)
+	candidates := []intelligence.ContextCandidate{
+		{ID: "task", Source: "task_contract", Version: job.AcceptanceCriteriaHash, Reason: "operator request", Trust: "trusted", Content: []byte(job.Task), Priority: 1000},
+		{ID: "criteria", Source: "acceptance_criteria", Version: job.AcceptanceCriteriaHash, Reason: "locked completion contract", Trust: "trusted", Content: criteriaPayload, Priority: 990},
+	}
+	for _, file := range files {
+		candidates = append(candidates, intelligence.ContextCandidate{ID: "file:" + file.Path, Source: "repository_file", Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: "bounded relevant source selected by controller policy", Trust: "untrusted", Content: []byte(file.Content), Priority: 500 - contextPriority(file.Path)})
+	}
+	compiled, err := c.intelligence.CompileContext(ctx, job.ProjectID, job.ID, mode, 32_768, 8_192, candidates)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
+	included := map[string]bool{}
+	for _, selection := range compiled.Manifest.Selections {
+		if selection.Included {
+			included[selection.ID] = true
+		}
+	}
+	selectedFiles := make([]agents.FileContext, 0, len(files))
+	for _, file := range files {
+		if included["file:"+file.Path] {
+			selectedFiles = append(selectedFiles, file)
+		}
+	}
+	if len(selectedFiles) == 0 {
+		return agents.TaskPacket{}, errors.New("context compiler selected no bounded repository files")
+	}
 	packet := agents.TaskPacket{
 		SchemaVersion: 1, Mode: mode, JobID: job.ID, OriginalTask: job.Task,
 		AcceptanceCriteria: criteria, BaseSHA: job.BaseSHA, ResultSHA: job.ResultSHA,
-		ReviewCycle: job.ReviewCycle, RelevantFiles: files, BlockingFindings: blockers,
+		ReviewCycle: job.ReviewCycle, RelevantFiles: selectedFiles, BlockingFindings: blockers,
 	}
 	payload, _ := json.Marshal(packet)
 	if _, err := agents.DecodeTaskPacket(payload, mode); err != nil {
 		return agents.TaskPacket{}, err
 	}
 	return packet, nil
+}
+
+func firstNonempty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return "unknown"
 }
 
 func (c *Coordinator) loadRole(ctx context.Context, role string) (models.Status, error) {

@@ -33,6 +33,10 @@ type GitHubMetadataBackend interface {
 	PullRequest(context.Context, string, int) (GitHubPullRequest, error)
 }
 
+type SnapshotBackend interface {
+	Snapshot(context.Context, string, string) (RepositorySnapshot, error)
+}
+
 func NewService(backend Backend, token []byte, logger *slog.Logger) (http.Handler, error) {
 	return NewServiceWithWebhook(backend, token, nil, logger)
 }
@@ -58,6 +62,19 @@ func NewServiceWithWebhook(backend Backend, token []byte, webhook *WebhookValida
 	})
 	mux.HandleFunc("POST /v1/projects/{projectID}/sync", func(w http.ResponseWriter, r *http.Request) {
 		result, err := backend.Sync(r.Context(), r.PathValue("projectID"))
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/projects/{projectID}/snapshots/{revision}", func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := backend.(SnapshotBackend)
+		if !ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "repository snapshots are disabled"})
+			return
+		}
+		result, err := provider.Snapshot(r.Context(), r.PathValue("projectID"), r.PathValue("revision"))
 		if err != nil {
 			writeBackendError(w, err)
 			return

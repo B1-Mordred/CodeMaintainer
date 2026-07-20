@@ -30,6 +30,19 @@ type SyncResult struct {
 	BaseSHA   string `json:"base_sha"`
 }
 
+type SnapshotFile struct {
+	Path    string `json:"path"`
+	Content []byte `json:"content"`
+}
+
+type RepositorySnapshot struct {
+	ProjectID  string         `json:"project_id"`
+	Repository string         `json:"repository"`
+	Revision   string         `json:"revision"`
+	Files      []SnapshotFile `json:"files"`
+	Excluded   int            `json:"excluded"`
+}
+
 type WorktreeRequest struct {
 	ProjectID string `json:"project_id"`
 	JobID     string `json:"job_id"`

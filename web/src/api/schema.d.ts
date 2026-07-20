@@ -961,6 +961,216 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/intelligence/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Inspect project-separated code-intelligence freshness, coverage, failures, and storage */
+        get: operations["getIntelligenceStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/intelligence/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query bounded symbol and relationship evidence from one project index */
+        post: operations["queryIntelligence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/intelligence/actions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize and index a bounded exact Git snapshot without accepting source from the browser */
+        post: operations["refreshIntelligence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/intelligence/actions/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reauthenticated audited purge of derived project index before refresh */
+        post: operations["rebuildIntelligence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/context-manifests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List redacted deterministic context manifests within one project */
+        get: operations["listContextManifests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/context-manifests/{manifestID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                manifestID: string;
+            };
+            cookie?: never;
+        };
+        /** Inspect one redacted deterministic context manifest within its project */
+        get: operations["getContextManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/baselines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List explicit clean-environment baselines and their immutable observations */
+        get: operations["listProjectBaselines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/differentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List deterministic baseline/candidate classifications */
+        get: operations["listProjectDifferentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/test-impacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List explainable targeted-test selections and full-suite requirements */
+        get: operations["listProjectTestImpacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/caches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List project and trust-domain isolated cache evidence */
+        get: operations["listProjectCaches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/caches/actions/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reauthenticated audited purge of an exact project cache kind or all project caches */
+        post: operations["purgeProjectCaches"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/actions/cancel": {
         parameters: {
             query?: never;
@@ -2352,6 +2562,179 @@ export interface components {
             validation_result: components["schemas"]["ValidationResult"];
             rollback_of?: string;
             reason: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        IntelligenceSymbol: {
+            id: string;
+            name: string;
+            kind: string;
+            path: string;
+            start_line: number;
+            end_line: number;
+            confidence: number;
+        };
+        IntelligenceRelation: {
+            from: string;
+            to: string;
+            kind: string;
+            confidence: number;
+        };
+        IntelligenceFileEvidence: {
+            path: string;
+            blob_sha256: string;
+            language: string;
+            /** @enum {string} */
+            status: "indexed" | "failed";
+            failure?: string;
+            reused: boolean;
+        };
+        IntelligenceRun: {
+            id: string;
+            project_id: string;
+            repository: string;
+            revision: string;
+            parser_id: string;
+            /** @enum {string} */
+            state: "complete" | "partial" | "cancelled";
+            files: number;
+            parsed: number;
+            reused: number;
+            failures: number;
+            bytes: number;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            completed_at: string;
+            file_evidence?: components["schemas"]["IntelligenceFileEvidence"][];
+        };
+        IntelligenceStatus: {
+            project_id: string;
+            latest_revision?: string;
+            latest_run_id?: string;
+            /** @enum {string} */
+            state: "never_indexed" | "complete" | "partial" | "cancelled";
+            files: number;
+            languages: string[];
+            failures: number;
+            storage_bytes: number;
+            parser_ids: string[];
+            /** Format: date-time */
+            fresh_at?: string;
+        };
+        IntelligenceQueryRequest: {
+            revision?: string;
+            term: string;
+            /** @default 50 */
+            limit: number;
+        };
+        IntelligenceQueryResult: {
+            project_id: string;
+            revision: string;
+            term: string;
+            symbols: components["schemas"]["IntelligenceSymbol"][];
+            relations: components["schemas"]["IntelligenceRelation"][];
+            partial: boolean;
+            failures: number;
+        };
+        ContextSelection: {
+            id: string;
+            source: string;
+            version: string;
+            reason: string;
+            /** @enum {string} */
+            trust: "trusted" | "untrusted" | "verified_memory";
+            sha256: string;
+            bytes: number;
+            estimated_tokens: number;
+            included: boolean;
+            exclusion?: string;
+            stale: boolean;
+        };
+        ContextManifest: {
+            id: string;
+            project_id: string;
+            job_id?: string;
+            stage: string;
+            /** @constant */
+            schema_version: 1;
+            budget_tokens: number;
+            reserved_output_tokens: number;
+            used_tokens: number;
+            truncated: boolean;
+            selections: components["schemas"]["ContextSelection"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        CacheEntry: {
+            key: string;
+            project_id: string;
+            trust_domain: string;
+            kind: string;
+            input_sha256: string;
+            object_sha256: string;
+            bytes: number;
+            verified: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_hit_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        VerificationObservation: {
+            key: string;
+            kind: string;
+            status: string;
+            value?: unknown;
+            artifact_id?: string;
+            details?: string;
+        };
+        VerificationBaseline: {
+            id: string;
+            project_id: string;
+            revision: string;
+            config_sha256: string;
+            toolchain_id: string;
+            pack_set_sha256: string;
+            actor_id: string;
+            reason: string;
+            observations: components["schemas"]["VerificationObservation"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        DifferentialObservation: {
+            key: string;
+            kind: string;
+            /** @enum {string} */
+            classification: "pre_existing" | "resolved" | "newly_introduced" | "changed" | "indeterminate";
+            baseline?: unknown;
+            candidate?: unknown;
+            explanation: string;
+        };
+        VerificationDifferential: {
+            id: string;
+            baseline_id: string;
+            candidate_sha: string;
+            items: components["schemas"]["DifferentialObservation"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        ImpactSelection: {
+            test_id: string;
+            selected: boolean;
+            reasons: string[];
+            confidence: number;
+            estimated_seconds: number;
+        };
+        TestImpact: {
+            id: string;
+            project_id: string;
+            revision: string;
+            changed_symbols: string[];
+            selections: components["schemas"]["ImpactSelection"][];
+            full_suite_required: boolean;
+            policy_explanation: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -4005,6 +4388,319 @@ export interface operations {
             };
             404: components["responses"]["ErrorResponse"];
             503: components["responses"]["ErrorResponse"];
+        };
+    };
+    getIntelligenceStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Code-intelligence status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntelligenceStatus"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
+        };
+    };
+    queryIntelligence: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntelligenceQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded project-local query result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntelligenceQueryResult"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    refreshIntelligence: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable index run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: components["schemas"]["IntelligenceRun"];
+                        source_excluded: number;
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
+        };
+    };
+    rebuildIntelligence: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Derived index cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "cleared";
+                        /** @constant */
+                        next_action: "refresh";
+                        reason: string;
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listContextManifests: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context manifests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ContextManifest"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    getContextManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                manifestID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted context manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextManifest"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectBaselines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verification baselines */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["VerificationBaseline"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectDifferentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Differential comparisons */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["VerificationDifferential"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectTestImpacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test impact records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TestImpact"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectCaches: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cache entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CacheEntry"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    purgeProjectCaches: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind?: string;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Exact purge result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        purged: number;
+                        kind: string;
+                        reason: string;
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
         };
     };
     cancelJob: {

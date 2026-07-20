@@ -278,6 +278,13 @@ summary { width: fit-content; color: var(--accent); cursor: pointer; }
 .diff-preview li .apply-badge { display: inline-block; margin-top: var(--space-1); }
 .diff-preview del { color: #d08a86; }
 .diff-preview ins { color: #82c8b4; text-decoration: none; }
+.intelligence-query { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-3); margin-top: var(--space-5); }
+.query-results { margin-top: var(--space-4); }
+.query-results > p { margin-bottom: var(--space-2); color: var(--muted); font-size: .8rem; }
+.evidence-stack { display: grid; gap: var(--space-2); }
+.evidence-stack article, .evidence-stack details, .content-section > details { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: #0e1621; }
+.evidence-stack p, .content-section > details p, .content-section > details li { margin-top: var(--space-2); color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.destructive-confirmation { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
 .lifecycle-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 .validation-summary { display: flex; gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: #0e1621; }
 .validation-summary.valid { border-color: #365e53; }
@@ -342,7 +349,7 @@ summary { width: fit-content; color: var(--accent); cursor: pointer; }
   .metric-card { min-height: 7rem; }
   .metric-value { font-size: 1.2rem; }
   .inline-form, .filter-bar, .detail-grid { grid-template-columns: 1fr; }
-  .configuration-toolbar, .configuration-summary, .setting-grid, .configuration-rail, .import-panel { grid-template-columns: 1fr; }
+  .configuration-toolbar, .configuration-summary, .setting-grid, .configuration-rail, .import-panel, .intelligence-query, .destructive-confirmation { grid-template-columns: 1fr; }
   .configuration-toolbar button { width: 100%; }
   .configuration-summary { gap: 1px; }
   .configuration-rail .draft-composer, .import-panel .action-strip { grid-column: auto; }

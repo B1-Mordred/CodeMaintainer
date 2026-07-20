@@ -112,9 +112,72 @@ func run(arguments []string) error {
 		return api.model(arguments[1:])
 	case "config":
 		return api.config(arguments[1:])
+	case "intelligence":
+		return api.intelligence(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) intelligence(arguments []string) error {
+	if len(arguments) < 2 {
+		return errors.New("usage: maintainctl intelligence <status|query|refresh|rebuild|contexts|baselines|differentials|test-impacts|caches|purge-cache> <project-id> [arguments]")
+	}
+	action, projectID := arguments[0], arguments[1]
+	if projectID == "" {
+		return errors.New("project ID is required")
+	}
+	base := "/api/v1/projects/" + url.PathEscape(projectID)
+	switch action {
+	case "status":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl intelligence status <project-id>")
+		}
+		return c.printJSON(http.MethodGet, base+"/intelligence/status", nil)
+	case "query":
+		if len(arguments) != 3 {
+			return errors.New("usage: maintainctl intelligence query <project-id> <term>")
+		}
+		return c.printJSON(http.MethodPost, base+"/intelligence/query", map[string]any{"term": arguments[2], "limit": 100})
+	case "refresh":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl intelligence refresh <project-id>")
+		}
+		return c.printJSON(http.MethodPost, base+"/intelligence/actions/refresh", nil)
+	case "rebuild":
+		flags := flag.NewFlagSet("intelligence rebuild", flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited rebuild reason")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl intelligence rebuild <project-id> --reason <text>; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, base+"/intelligence/actions/rebuild", map[string]any{"reason": *reason})
+	case "contexts":
+		return c.printJSON(http.MethodGet, base+"/context-manifests", nil)
+	case "baselines":
+		return c.printJSON(http.MethodGet, base+"/baselines", nil)
+	case "differentials":
+		return c.printJSON(http.MethodGet, base+"/differentials", nil)
+	case "test-impacts":
+		return c.printJSON(http.MethodGet, base+"/test-impacts", nil)
+	case "caches":
+		return c.printJSON(http.MethodGet, base+"/caches", nil)
+	case "purge-cache":
+		flags := flag.NewFlagSet("intelligence purge-cache", flag.ContinueOnError)
+		kind := flags.String("kind", "", "exact cache kind, or all project caches")
+		reason := flags.String("reason", "", "audited purge reason")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl intelligence purge-cache <project-id> [--kind kind] --reason <text>; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, base+"/caches/actions/purge", map[string]any{"kind": *kind, "reason": *reason})
+	default:
+		return fmt.Errorf("intelligence action %q is not implemented", action)
 	}
 }
 
@@ -712,6 +775,10 @@ Commands:
   config draft review|apply|discard --version <n> --reason <text> <draft-id>
   config history --scope <system|kind:id>
   config registry-rollback --scope-version <n> --reason <text> <revision-id>
+  intelligence status|refresh|rebuild <project-id>
+  intelligence query <project-id> <term>
+  intelligence contexts|baselines|differentials|test-impacts|caches <project-id>
+  intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>
   version`)

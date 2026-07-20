@@ -44,6 +44,15 @@ func (c *Client) Sync(ctx context.Context, projectID string) (SyncResult, error)
 	return result, err
 }
 
+func (c *Client) Snapshot(ctx context.Context, projectID, revision string) (RepositorySnapshot, error) {
+	if !safeID.MatchString(projectID) || !commit.MatchString(revision) {
+		return RepositorySnapshot{}, ErrInvalid
+	}
+	var result RepositorySnapshot
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/snapshots/"+url.PathEscape(revision), struct{}{}, &result)
+	return result, err
+}
+
 func (c *Client) CreateWorktree(ctx context.Context, request WorktreeRequest) (WorktreeResult, error) {
 	var result WorktreeResult
 	err := c.call(ctx, "/v1/worktrees", request, &result)

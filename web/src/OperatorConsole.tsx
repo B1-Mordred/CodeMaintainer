@@ -8,6 +8,7 @@ import {
 import { api, getCSRFToken } from "./api/client";
 import type { components } from "./api/schema";
 import { ConfigurationPage } from "./ConfigurationPage";
+import { IntelligencePage } from "./IntelligencePage";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -25,7 +26,7 @@ type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 
-type PageID = "first-run" | "overview" | "projects" | "jobs" | "quality" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -33,6 +34,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "projects", label: "Projects", icon: <FolderGit2 aria-hidden="true" />, group: "operate" },
   { id: "jobs", label: "Jobs", icon: <TerminalSquare aria-hidden="true" />, group: "operate" },
   { id: "quality", label: "QC / QA", icon: <ClipboardCheck aria-hidden="true" />, group: "operate" },
+  { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
   { id: "github", label: "GitHub", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
@@ -129,6 +131,7 @@ export function OperatorConsole({
       {page === "projects" && <ProjectsPage expert={expert} />}
       {page === "jobs" && <JobsPage initialJobs={initialJobs} expert={expert} />}
       {page === "quality" && <QualityPage jobs={initialJobs} />}
+      {page === "intelligence" && <IntelligencePage />}
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
       {page === "memory" && <MemoryPage />}
       {page === "github" && <GitHubPage jobs={initialJobs} />}

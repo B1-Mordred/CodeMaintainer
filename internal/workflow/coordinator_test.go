@@ -183,6 +183,14 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil || len(phaseRecords) < 18 {
 		t.Fatalf("phase records = %d, %v", len(phaseRecords), err)
 	}
+	manifests, err := store.ListContextManifests(ctx, "fixture", 100)
+	if err != nil || len(manifests) < 3 {
+		t.Fatalf("context manifests = %#v, %v", manifests, err)
+	}
+	manifestPayload, _ := json.Marshal(manifests)
+	if strings.Contains(string(manifestPayload), "package arithmetic") || manifests[0].ReservedOutputTokens == 0 {
+		t.Fatalf("context manifest stored source content or omitted its output reservation: %s", manifestPayload)
+	}
 	jobArtifacts, err := store.ListJobArtifacts(ctx, job.ID, 100)
 	if err != nil || len(jobArtifacts) < 2 {
 		t.Fatalf("job artifacts = %#v, %v", jobArtifacts, err)

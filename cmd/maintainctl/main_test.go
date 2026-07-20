@@ -78,3 +78,50 @@ func TestReadJSONAcceptsBoundedDocument(t *testing.T) {
 		t.Fatalf("unexpected payload %s", payload)
 	}
 }
+
+func TestIntelligenceQueryUsesSharedBoundedAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/intelligence/query" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["term"] != "Target" || body["limit"] != float64(100) {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"project_id":"project-one","revision":"abc","term":"Target","symbols":[],"relations":[],"partial":false,"failures":0}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.intelligence([]string{"query", "project-one", "Target"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIntelligenceRebuildRequiresAndSendsAuditedReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/intelligence/actions/rebuild" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["reason"] != "replace stale derived index" {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"cleared","next_action":"refresh","reason":"replace stale derived index"}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.intelligence([]string{"rebuild", "project-one"}); err == nil {
+		t.Fatal("rebuild accepted without audited reason")
+	}
+	if err := client.intelligence([]string{"rebuild", "project-one", "--reason", "replace stale derived index"}); err != nil {
+		t.Fatal(err)
+	}
+}

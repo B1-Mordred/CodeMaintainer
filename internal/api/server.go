@@ -24,6 +24,7 @@ import (
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
@@ -51,6 +52,7 @@ type Server struct {
 	modelManager   models.Manager
 	backups        BackupService
 	configRegistry *appconfig.RegistryService
+	intelligence   *intelligence.Service
 }
 
 type ArtifactReader interface {
@@ -65,6 +67,7 @@ type GitOperator interface {
 	Register(context.Context, gitbridge.Registration) error
 	Sync(context.Context, string) (gitbridge.SyncResult, error)
 	RepositoryDiagnostics(context.Context, string) (gitbridge.RepositoryDiagnostics, error)
+	Snapshot(context.Context, string, string) (gitbridge.RepositorySnapshot, error)
 }
 
 type BackupService interface {
@@ -115,6 +118,10 @@ func WithConfigRegistry(service *appconfig.RegistryService) Option {
 	return func(server *Server) { server.configRegistry = service }
 }
 
+func WithIntelligence(service *intelligence.Service) Option {
+	return func(server *Server) { server.intelligence = service }
+}
+
 func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -150,6 +157,17 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}", s.disableProject)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/actions/sync", s.syncProject)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/diagnostics", s.projectDiagnostics)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/intelligence/status", s.intelligenceStatus)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/query", s.queryIntelligence)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/actions/refresh", s.refreshIntelligence)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/actions/rebuild", s.rebuildIntelligence)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/context-manifests/{manifestID}", s.getContextManifest)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/context-manifests", s.listContextManifests)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/baselines", s.listProjectBaselines)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/differentials", s.listProjectDifferentials)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/test-impacts", s.listProjectTestImpacts)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/caches", s.listProjectCaches)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/caches/actions/purge", s.purgeProjectCaches)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/memory", s.createProjectMemory)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory/retrievals", s.listProjectMemoryRetrievals)

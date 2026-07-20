@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -133,6 +134,56 @@ func (m *Manager) Sync(ctx context.Context, projectID string) (SyncResult, error
 		return SyncResult{}, ErrNotFound
 	}
 	return SyncResult{ProjectID: projectID, BaseSHA: strings.TrimSpace(base)}, nil
+}
+
+func (m *Manager) Snapshot(ctx context.Context, projectID, revision string) (RepositorySnapshot, error) {
+	registration, err := m.registration(projectID)
+	if err != nil || !commit.MatchString(revision) {
+		return RepositorySnapshot{}, ErrInvalid
+	}
+	mirror := filepath.Join(m.mirrorsRoot, projectID+".git")
+	resolved, err := m.git(ctx, "--git-dir="+mirror, "rev-parse", "--verify", revision+"^{commit}")
+	if err != nil || strings.TrimSpace(resolved) != revision {
+		return RepositorySnapshot{}, ErrNotFound
+	}
+	listing, err := m.git(ctx, "--git-dir="+mirror, "ls-tree", "-r", "-z", "--long", revision)
+	if err != nil {
+		return RepositorySnapshot{}, err
+	}
+	result := RepositorySnapshot{ProjectID: projectID, Repository: registration.Repository, Revision: revision, Files: []SnapshotFile{}}
+	total := 0
+	for _, record := range strings.Split(listing, "\x00") {
+		if record == "" {
+			continue
+		}
+		header, filePath, ok := strings.Cut(record, "\t")
+		if !ok {
+			return RepositorySnapshot{}, ErrInvalid
+		}
+		fields := strings.Fields(header)
+		if len(fields) != 4 || fields[1] != "blob" {
+			result.Excluded++
+			continue
+		}
+		size, sizeErr := strconv.Atoi(fields[3])
+		if sizeErr != nil || size < 0 {
+			return RepositorySnapshot{}, ErrInvalid
+		}
+		if size > 512<<10 || len(result.Files) >= 2000 || total+size > 2<<20 {
+			result.Excluded++
+			continue
+		}
+		content, readErr := m.git(ctx, "--git-dir="+mirror, "cat-file", "blob", fields[2])
+		if readErr != nil {
+			return RepositorySnapshot{}, readErr
+		}
+		if len(content) != size {
+			return RepositorySnapshot{}, ErrInvalid
+		}
+		result.Files = append(result.Files, SnapshotFile{Path: filePath, Content: []byte(content)})
+		total += size
+	}
+	return result, nil
 }
 
 func (m *Manager) CreateWorktree(ctx context.Context, request WorktreeRequest) (WorktreeResult, error) {

@@ -959,6 +959,144 @@ paths:
               schema: { type: string, format: binary }
         "404": { $ref: "#/components/responses/ErrorResponse" }
         "503": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/intelligence/status:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: Inspect project-separated code-intelligence freshness, coverage, failures, and storage
+      operationId: getIntelligenceStatus
+      responses:
+        "200": { description: Code-intelligence status, content: { application/json: { schema: { $ref: "#/components/schemas/IntelligenceStatus" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/intelligence/query:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Query bounded symbol and relationship evidence from one project index
+      operationId: queryIntelligence
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/IntelligenceQueryRequest" } } } }
+      responses:
+        "200": { description: Bounded project-local query result, content: { application/json: { schema: { $ref: "#/components/schemas/IntelligenceQueryResult" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/intelligence/actions/refresh:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Synchronize and index a bounded exact Git snapshot without accepting source from the browser
+      operationId: refreshIntelligence
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201":
+          description: Immutable index run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run, source_excluded]
+                properties:
+                  run: { $ref: "#/components/schemas/IntelligenceRun" }
+                  source_excluded: { type: integer, minimum: 0 }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/intelligence/actions/rebuild:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Reauthenticated audited purge of derived project index before refresh
+      operationId: rebuildIntelligence
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Derived index cleared
+          content: { application/json: { schema: { type: object, required: [status, next_action, reason], properties: { status: { type: string, const: cleared }, next_action: { type: string, const: refresh }, reason: { type: string } } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/context-manifests:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List redacted deterministic context manifests within one project
+      operationId: listContextManifests
+      parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }]
+      responses:
+        "200": { description: Context manifests, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ContextManifest" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/context-manifests/{manifestID}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: manifestID, in: path, required: true, schema: { type: string, pattern: "^context_[a-f0-9]{32}$" } }
+    get:
+      summary: Inspect one redacted deterministic context manifest within its project
+      operationId: getContextManifest
+      responses:
+        "200": { description: Redacted context manifest, content: { application/json: { schema: { $ref: "#/components/schemas/ContextManifest" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/baselines:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List explicit clean-environment baselines and their immutable observations
+      operationId: listProjectBaselines
+      responses:
+        "200": { description: Verification baselines, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/VerificationBaseline" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/differentials:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List deterministic baseline/candidate classifications
+      operationId: listProjectDifferentials
+      responses:
+        "200": { description: Differential comparisons, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/VerificationDifferential" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/test-impacts:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List explainable targeted-test selections and full-suite requirements
+      operationId: listProjectTestImpacts
+      responses:
+        "200": { description: Test impact records, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/TestImpact" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/caches:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List project and trust-domain isolated cache evidence
+      operationId: listProjectCaches
+      parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }]
+      responses:
+        "200": { description: Cache entries, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/CacheEntry" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/caches/actions/purge:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Reauthenticated audited purge of an exact project cache kind or all project caches
+      operationId: purgeProjectCaches
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                kind: { type: string, maxLength: 256 }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Exact purge result
+          content: { application/json: { schema: { type: object, required: [purged, kind, reason], properties: { purged: { type: integer, minimum: 0 }, kind: { type: string }, reason: { type: string } } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/actions/cancel:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -2446,4 +2584,208 @@ components:
         validation_result: { $ref: "#/components/schemas/ValidationResult" }
         rollback_of: { type: string }
         reason: { type: string }
+        created_at: { type: string, format: date-time }
+    IntelligenceSymbol:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, path, start_line, end_line, confidence]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        path: { type: string }
+        start_line: { type: integer, minimum: 1 }
+        end_line: { type: integer, minimum: 1 }
+        confidence: { type: integer, minimum: 0, maximum: 100 }
+    IntelligenceRelation:
+      type: object
+      additionalProperties: false
+      required: [from, to, kind, confidence]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        kind: { type: string }
+        confidence: { type: integer, minimum: 0, maximum: 100 }
+    IntelligenceFileEvidence:
+      type: object
+      additionalProperties: false
+      required: [path, blob_sha256, language, status, reused]
+      properties:
+        path: { type: string }
+        blob_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        language: { type: string }
+        status: { type: string, enum: [indexed, failed] }
+        failure: { type: string }
+        reused: { type: boolean }
+    IntelligenceRun:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, repository, revision, parser_id, state, files, parsed, reused, failures, bytes, started_at, completed_at]
+      properties:
+        id: { type: string, pattern: "^indexrun_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        repository: { type: string }
+        revision: { type: string }
+        parser_id: { type: string }
+        state: { type: string, enum: [complete, partial, cancelled] }
+        files: { type: integer, minimum: 0 }
+        parsed: { type: integer, minimum: 0 }
+        reused: { type: integer, minimum: 0 }
+        failures: { type: integer, minimum: 0 }
+        bytes: { type: integer, minimum: 0 }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        file_evidence: { type: array, items: { $ref: "#/components/schemas/IntelligenceFileEvidence" } }
+    IntelligenceStatus:
+      type: object
+      additionalProperties: false
+      required: [project_id, state, files, languages, failures, storage_bytes, parser_ids]
+      properties:
+        project_id: { type: string }
+        latest_revision: { type: string }
+        latest_run_id: { type: string }
+        state: { type: string, enum: [never_indexed, complete, partial, cancelled] }
+        files: { type: integer, minimum: 0 }
+        languages: { type: array, items: { type: string } }
+        failures: { type: integer, minimum: 0 }
+        storage_bytes: { type: integer, minimum: 0 }
+        parser_ids: { type: array, items: { type: string } }
+        fresh_at: { type: string, format: date-time }
+    IntelligenceQueryRequest:
+      type: object
+      additionalProperties: false
+      required: [term]
+      properties:
+        revision: { type: string, maxLength: 256 }
+        term: { type: string, minLength: 1, maxLength: 256 }
+        limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IntelligenceQueryResult:
+      type: object
+      additionalProperties: false
+      required: [project_id, revision, term, symbols, relations, partial, failures]
+      properties:
+        project_id: { type: string }
+        revision: { type: string }
+        term: { type: string }
+        symbols: { type: array, items: { $ref: "#/components/schemas/IntelligenceSymbol" } }
+        relations: { type: array, items: { $ref: "#/components/schemas/IntelligenceRelation" } }
+        partial: { type: boolean }
+        failures: { type: integer, minimum: 0 }
+    ContextSelection:
+      type: object
+      additionalProperties: false
+      required: [id, source, version, reason, trust, sha256, bytes, estimated_tokens, included, stale]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        version: { type: string }
+        reason: { type: string }
+        trust: { type: string, enum: [trusted, untrusted, verified_memory] }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 0 }
+        estimated_tokens: { type: integer, minimum: 0 }
+        included: { type: boolean }
+        exclusion: { type: string }
+        stale: { type: boolean }
+    ContextManifest:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, stage, schema_version, budget_tokens, reserved_output_tokens, used_tokens, truncated, selections, created_at]
+      properties:
+        id: { type: string, pattern: "^context_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        job_id: { type: string }
+        stage: { type: string }
+        schema_version: { type: integer, const: 1 }
+        budget_tokens: { type: integer, minimum: 1 }
+        reserved_output_tokens: { type: integer, minimum: 1 }
+        used_tokens: { type: integer, minimum: 0 }
+        truncated: { type: boolean }
+        selections: { type: array, items: { $ref: "#/components/schemas/ContextSelection" } }
+        created_at: { type: string, format: date-time }
+    CacheEntry:
+      type: object
+      additionalProperties: false
+      required: [key, project_id, trust_domain, kind, input_sha256, object_sha256, bytes, verified, created_at, last_hit_at, expires_at]
+      properties:
+        key: { type: string, pattern: "^[a-f0-9]{64}$" }
+        project_id: { type: string }
+        trust_domain: { type: string }
+        kind: { type: string }
+        input_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        object_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 0 }
+        verified: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_hit_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    VerificationObservation:
+      type: object
+      additionalProperties: false
+      required: [key, kind, status]
+      properties:
+        key: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        value: {}
+        artifact_id: { type: string }
+        details: { type: string }
+    VerificationBaseline:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, revision, config_sha256, toolchain_id, pack_set_sha256, actor_id, reason, observations, created_at]
+      properties:
+        id: { type: string, pattern: "^baseline_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        revision: { type: string }
+        config_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        toolchain_id: { type: string }
+        pack_set_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        actor_id: { type: string }
+        reason: { type: string }
+        observations: { type: array, items: { $ref: "#/components/schemas/VerificationObservation" } }
+        created_at: { type: string, format: date-time }
+    DifferentialObservation:
+      type: object
+      additionalProperties: false
+      required: [key, kind, classification, explanation]
+      properties:
+        key: { type: string }
+        kind: { type: string }
+        classification: { type: string, enum: [pre_existing, resolved, newly_introduced, changed, indeterminate] }
+        baseline: {}
+        candidate: {}
+        explanation: { type: string }
+    VerificationDifferential:
+      type: object
+      additionalProperties: false
+      required: [id, baseline_id, candidate_sha, items, created_at]
+      properties:
+        id: { type: string, pattern: "^differential_[a-f0-9]{32}$" }
+        baseline_id: { type: string }
+        candidate_sha: { type: string, pattern: "^[a-f0-9]{64}$" }
+        items: { type: array, items: { $ref: "#/components/schemas/DifferentialObservation" } }
+        created_at: { type: string, format: date-time }
+    ImpactSelection:
+      type: object
+      additionalProperties: false
+      required: [test_id, selected, reasons, confidence, estimated_seconds]
+      properties:
+        test_id: { type: string }
+        selected: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+        confidence: { type: integer, minimum: 0, maximum: 100 }
+        estimated_seconds: { type: integer, minimum: 0 }
+    TestImpact:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, revision, changed_symbols, selections, full_suite_required, policy_explanation, created_at]
+      properties:
+        id: { type: string, pattern: "^impact_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        revision: { type: string }
+        changed_symbols: { type: array, items: { type: string } }
+        selections: { type: array, items: { $ref: "#/components/schemas/ImpactSelection" } }
+        full_suite_required: { type: boolean }
+        policy_explanation: { type: string }
         created_at: { type: string, format: date-time }

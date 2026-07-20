@@ -13,6 +13,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
@@ -198,6 +199,7 @@ type Store interface {
 	ProjectStore
 	ApprovalStore
 	GitHubEventStore
+	intelligence.Store
 	Close() error
 }
 

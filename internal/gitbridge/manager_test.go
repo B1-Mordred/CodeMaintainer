@@ -42,6 +42,10 @@ func TestLocalManagerSyncsCommitsDiffsAndPublishesIdempotently(t *testing.T) {
 	if err != nil || !commit.MatchString(synced.BaseSHA) {
 		t.Fatalf("sync = %#v, %v", synced, err)
 	}
+	snapshot, err := manager.Snapshot(ctx, "fixture", synced.BaseSHA)
+	if err != nil || snapshot.Repository != registration.Repository || len(snapshot.Files) != 1 || snapshot.Files[0].Path != "answer.go" || !strings.Contains(string(snapshot.Files[0].Content), "func Add") {
+		t.Fatalf("snapshot = %#v, %v", snapshot, err)
+	}
 	worktree, err := manager.CreateWorktree(ctx, WorktreeRequest{
 		ProjectID: "fixture", JobID: "job_fixture", BaseSHA: synced.BaseSHA,
 	})

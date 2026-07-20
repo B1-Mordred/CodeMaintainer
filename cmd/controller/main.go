@@ -22,6 +22,7 @@ import (
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/githubsync"
+	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
@@ -135,7 +136,11 @@ func run(logger *slog.Logger) error {
 		go func() { indexErrors <- synchronizer.Run(ctx) }()
 	}
 
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithVersion(version)}
+	intelligenceService, err := intelligence.NewService(store, nil)
+	if err != nil {
+		return err
+	}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithIntelligence(intelligenceService), api.WithVersion(version)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err
