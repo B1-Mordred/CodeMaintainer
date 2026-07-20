@@ -20,7 +20,7 @@ RUN cmake -S /src/llama.cpp -B /src/llama.cpp/build -G Ninja \
       -DLLAMA_CURL=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON && \
     cmake --build /src/llama.cpp/build --target llama-server --parallel 4
 
-FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS supervisor-build
+FROM golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS supervisor-build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

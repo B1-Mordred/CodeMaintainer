@@ -34,5 +34,6 @@ compose -f compose.yaml -f compose.dev.yaml build controller maintainctl runnerd
 compose -f compose.yaml -f compose.dev.yaml up -d runnerd controller
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz
 compose -f compose.yaml -f compose.dev.yaml --profile tools run --rm maintainctl doctor
+compose -f compose.yaml -f compose.dev.yaml --profile tools run --rm --build browser-tool
 
-printf '\nFoundation acceptance passed.\n'
+printf '\nLocal application and real-browser acceptance passed.\n'

@@ -278,13 +278,14 @@ services:
     cpus: 0.5
 
   go-tool:
-    image: golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a
+    image: golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58
     user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
     working_dir: /src
     command: ["go", "test", "./..."]
     environment:
       GOCACHE: /cache/build
       GOMODCACHE: /cache/mod
+      GOPATH: /cache/gopath
     volumes:
       - type: bind
         source: .
@@ -330,6 +331,33 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: bridge
+    profiles:
+      - tools
+    restart: "no"
+
+  browser-tool:
+    image: local/code-maintainer-browser-tool:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/browser-acceptance.Dockerfile
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    working_dir: /src
+    environment:
+      HOME: /tmp/browser-home
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      PLAYWRIGHT_OUTPUT_DIR: /src/output/playwright
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=256m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: host
     profiles:
       - tools
     restart: "no"

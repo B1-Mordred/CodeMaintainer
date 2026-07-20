@@ -8,11 +8,22 @@ import (
 )
 
 type Profile struct {
-	ID           string `json:"id"`
-	Role         string `json:"role"`
-	ModelFamily  string `json:"model_family"`
-	Context      int    `json:"context"`
-	Quantization string `json:"quantization"`
+	ID           string   `json:"id"`
+	Role         string   `json:"role"`
+	ModelFamily  string   `json:"model_family"`
+	Filename     string   `json:"filename,omitempty"`
+	SHA256       string   `json:"sha256,omitempty"`
+	Bytes        int64    `json:"bytes,omitempty"`
+	SourceURI    string   `json:"source_uri,omitempty"`
+	License      string   `json:"license,omitempty"`
+	Context      int      `json:"context"`
+	Quantization string   `json:"quantization"`
+	Threads      int      `json:"threads,omitempty"`
+	Batch        int      `json:"batch,omitempty"`
+	UBatch       int      `json:"ubatch,omitempty"`
+	NUMA         string   `json:"numa,omitempty"`
+	MinRAMBytes  int64    `json:"min_ram_bytes,omitempty"`
+	Sampling     Sampling `json:"sampling,omitempty"`
 }
 
 type Status struct {

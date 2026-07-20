@@ -73,6 +73,12 @@ type Report struct {
 	Excluded       []string `json:"excluded"`
 }
 
+type RestoreResult struct {
+	Report          Report `json:"report"`
+	Staged          bool   `json:"staged"`
+	RequiresRestart bool   `json:"requires_restart"`
+}
+
 func New(root, profile string, snapshotter Snapshotter, keyFile string) (*Manager, error) {
 	if root == "" || snapshotter == nil || (profile != "mock" && profile != "production") {
 		return nil, errors.New("invalid backup configuration")
@@ -111,7 +117,7 @@ func (m *Manager) Create(ctx context.Context) (Record, error) {
 	if err := m.addFile(&bundle, database, "database/controller.db"); err != nil {
 		return Record{}, err
 	}
-	for _, directory := range []string{"artifacts", "openviking"} {
+	for _, directory := range []string{"artifacts", "mirrors", filepath.Join("memory", "openviking")} {
 		base := filepath.Join(m.root, directory)
 		_ = filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil || entry == nil || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
@@ -185,30 +191,59 @@ func (m *Manager) Create(ctx context.Context) (Record, error) {
 }
 
 func (m *Manager) Validate(_ context.Context, id string) (Report, error) {
-	path, err := m.resolve(id)
+	bundle, err := m.load(id)
 	if err != nil {
 		return Report{}, err
+	}
+	return validateBundle(id, bundle)
+}
+
+func (m *Manager) StageRestore(_ context.Context, id string) (RestoreResult, error) {
+	bundle, err := m.load(id)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	report, err := validateBundle(id, bundle)
+	if err != nil || !report.Compatible {
+		return RestoreResult{}, errors.New("backup is not compatible")
+	}
+	payload, err := json.Marshal(bundle)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	target := filepath.Join(m.root, "backups", "restore-pending.json")
+	if err := writeAtomic(target, payload); err != nil {
+		return RestoreResult{}, err
+	}
+	report.DryRun = false
+	return RestoreResult{Report: report, Staged: true, RequiresRestart: true}, nil
+}
+
+func (m *Manager) load(id string) (Bundle, error) {
+	path, err := m.resolve(id)
+	if err != nil {
+		return Bundle{}, err
 	}
 	payload, err := os.ReadFile(path)
 	if err != nil {
-		return Report{}, err
+		return Bundle{}, err
 	}
 	if len(payload) > maxBundleBytes {
-		return Report{}, errors.New("backup exceeds validation size limit")
+		return Bundle{}, errors.New("backup exceeds validation size limit")
 	}
 	if strings.HasSuffix(path, ".aesgcm") {
 		if len(m.key) != 32 {
-			return Report{}, errors.New("backup key is unavailable")
+			return Bundle{}, errors.New("backup key is unavailable")
 		}
 		payload, err = decrypt(m.key, payload)
 		if err != nil {
-			return Report{}, err
+			return Bundle{}, err
 		}
 	}
-	bundle, err := decode(payload)
-	if err != nil {
-		return Report{}, err
-	}
+	return decode(payload)
+}
+
+func validateBundle(id string, bundle Bundle) (Report, error) {
 	manifest := struct {
 		SchemaVersion int       `json:"schema_version"`
 		CreatedAt     time.Time `json:"created_at"`
@@ -237,6 +272,78 @@ func (m *Manager) Validate(_ context.Context, id string) (Report, error) {
 		total += file.Bytes
 	}
 	return Report{ID: id, DryRun: true, Compatible: bundle.SchemaVersion == SchemaVersion, SchemaVersion: bundle.SchemaVersion, Files: len(bundle.Files), Bytes: total, ChecksumsValid: true, Excluded: bundle.Excluded}, nil
+}
+
+func ApplyPending(root string) (bool, error) {
+	marker := filepath.Join(root, "backups", "restore-pending.json")
+	payload, err := os.ReadFile(marker)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil || len(payload) > maxBundleBytes {
+		return false, errors.New("pending restore is unreadable or oversized")
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(payload, &bundle); err != nil {
+		return false, err
+	}
+	if _, err := validateBundle("pending", bundle); err != nil {
+		return false, err
+	}
+	for _, file := range bundle.Files {
+		clean := filepath.Clean(filepath.FromSlash(file.Path))
+		if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return false, errors.New("pending restore contains an unsafe path")
+		}
+		data, err := base64.StdEncoding.DecodeString(file.Data)
+		if err != nil {
+			return false, err
+		}
+		target := filepath.Join(root, clean)
+		if clean == filepath.Join("database", "controller.db") {
+			if _, statErr := os.Stat(target); statErr == nil {
+				previous := target + ".pre-restore-" + time.Now().UTC().Format("20060102T150405Z")
+				if err := os.Rename(target, previous); err != nil {
+					return false, err
+				}
+			}
+			_ = os.Remove(target + "-wal")
+			_ = os.Remove(target + "-shm")
+		}
+		if err := writeAtomic(target, data); err != nil {
+			return false, err
+		}
+	}
+	if err := os.Remove(marker); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func writeAtomic(target string, payload []byte) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(target), ".restore-")
+	if err != nil {
+		return err
+	}
+	name := temporary.Name()
+	defer os.Remove(name)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err = temporary.Write(payload); err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(name, target)
 }
 
 func (m *Manager) List(_ context.Context) ([]Record, error) {

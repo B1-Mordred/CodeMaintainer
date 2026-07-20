@@ -1,8 +1,6 @@
 # Local Code Maintainer
 
-Local Code Maintainer is a self-hosted, browser-operated appliance for producing minimal, independently reviewed, deterministically verified maintenance patches across multiple repositories. It is designed for a CPU-only Linux host, works without cloud LLMs, and includes a complete mock profile so development and acceptance do not require GitHub credentials or large model weights.
-
-> Implementation is in progress. Milestone 1 is complete. Milestone 2 now includes the authenticated, hardened, no-network mock `runnerd` boundary and controller Unix client; the real worker-daemon backend, worktrees, verifier, and artifacts still remain. See `execplan/complete-system.md` for exact progress and evidence.
+Local Code Maintainer is a self-hosted, browser-operated appliance for producing minimal, independently reviewed, deterministically verified maintenance patches across multiple repositories. It targets CPU-only Linux, works without cloud LLMs, and ships a complete deterministic mock profile that needs neither GitHub credentials nor model weights.
 
 ## Quick start
 
@@ -10,20 +8,36 @@ The supported toolchain runs in Docker; Go and npm are not required on the host.
 
 ```sh
 ./maintainctl bootstrap
-docker compose build
-docker compose run --rm go-tool go test ./...
-docker compose up --build
+./maintainctl up
 ```
 
-Run the complete reproducible foundation gate with `./scripts/acceptance.sh`.
+Open <http://127.0.0.1:8080>, create the one-time administrator, register the seeded `fixture/arithmetic` project, and submit a smoke task. The controller, UI, worker policy, model supervisor, Git bridge, memory boundary, and publication gate all remain separately testable.
 
-Open <http://127.0.0.1:8080>. The default development configuration binds only to localhost and uses fake integrations. Bootstrap creates a private runnerd token; runnerd itself publishes no port, has no network, and has no Docker socket in this profile. Do not expose this profile directly to a network.
-
-To use the CLI without installing Go:
+Use the same application API from the CLI:
 
 ```sh
-docker compose run --rm maintainctl doctor
-docker compose run --rm maintainctl status
+./maintainctl login --username admin --password-file /path/to/private-password
+./maintainctl reauthenticate --password-file /path/to/private-password
+./maintainctl doctor
+./maintainctl repo add fixture/arithmetic
+./maintainctl run fixture/arithmetic --task "Add a regression test for negative operands"
+./maintainctl status
 ```
 
-Production rootless deployment, real models, GitHub App setup, memory, backup/restore, and upgrades will be documented as their implementation milestones land. `project.md` is the authoritative product and security contract.
+Run the full local gate with `./scripts/acceptance.sh`; run `./scripts/agent-image-acceptance.sh` for the immutable implementation/QC image boundary and `docker compose --profile tools run --rm --build browser-tool` for the pinned real-browser gate. See [deployment](docs/deployment.md), [operations](docs/operations.md), and [security](docs/security.md) before enabling production integrations.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Deployment and remote access](docs/deployment.md)
+- [GitHub App](docs/github-app.md)
+- [Models](docs/models.md)
+- [Memory](docs/memory.md)
+- [Operations and updates](docs/operations.md)
+- [Backup and restore](docs/backup-restore.md)
+- [Security](docs/security.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Licensing and SBOM](docs/licensing.md)
+- [Acceptance evidence](docs/acceptance.md)
+
+`project.md` remains the authoritative product and security contract. `execplan/complete-system.md` records implementation evidence and remaining operator-only validations.

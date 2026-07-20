@@ -62,6 +62,8 @@ func run(arguments []string) error {
 		return api.bootstrap(arguments[1:])
 	case "login":
 		return api.login(arguments[1:])
+	case "reauthenticate":
+		return api.reauthenticate(arguments[1:])
 	case "logout":
 		return api.logout()
 	case "status":
@@ -194,13 +196,14 @@ func (c client) open(arguments []string) error {
 func (c client) restore(arguments []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	dryRun := flags.Bool("dry-run", false, "validate archive compatibility and checksums without changing state")
+	apply := flags.Bool("apply", false, "stage a validated restore for the next full appliance restart")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if flags.NArg() != 1 || !*dryRun {
-		return errors.New("usage: maintainctl restore --dry-run <backup-id>")
+	if flags.NArg() != 1 || *dryRun == *apply {
+		return errors.New("usage: maintainctl restore (--dry-run|--apply) <backup-id>")
 	}
-	return c.printJSON(http.MethodPost, "/api/v1/admin/backups/"+url.PathEscape(flags.Arg(0))+"/actions/restore", map[string]any{"dry_run": true})
+	return c.printJSON(http.MethodPost, "/api/v1/admin/backups/"+url.PathEscape(flags.Arg(0))+"/actions/restore", map[string]any{"dry_run": *dryRun})
 }
 
 func (c client) model(arguments []string) error {
@@ -433,7 +436,7 @@ Commands:
   publish <job-id> --draft-pr [--rationale text]
   open [job-id]
   backup
-  restore --dry-run <backup-id>
+  restore (--dry-run|--apply) <backup-id>
   config export
   config validate [file|-]
   config apply --reason <text> <file|->
@@ -520,6 +523,35 @@ func (c *client) authenticate(path string, body any) error {
 		return err
 	}
 	fmt.Printf("Authenticated as %s (%s); session expires %s\n", result.Principal.User.Username, result.Principal.User.Role, result.Principal.ExpiresAt.Format(time.RFC3339))
+	return nil
+}
+
+func (c *client) reauthenticate(arguments []string) error {
+	flags := flag.NewFlagSet("reauthenticate", flag.ContinueOnError)
+	passwordFile := flags.String("password-file", "", "protected password file, or - for stdin")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *passwordFile == "" {
+		return errors.New("usage: maintainctl reauthenticate --password-file <file|->")
+	}
+	password, err := readPassword(*passwordFile)
+	if err != nil {
+		return err
+	}
+	response, err := c.request(http.MethodPost, "/api/v1/auth/reauthenticate", map[string]string{"password": password})
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode >= 300 {
+		return fmt.Errorf("controller returned %s: %s", response.Status, strings.TrimSpace(string(payload)))
+	}
+	fmt.Println("Recent reauthentication recorded for five minutes.")
 	return nil
 }
 

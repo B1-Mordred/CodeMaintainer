@@ -152,7 +152,7 @@ func routePermission(r *http.Request) maintainerauth.Permission {
 	if strings.HasPrefix(path, "/api/v1/schedules") || strings.HasPrefix(path, "/api/v1/schedule-runs") || strings.HasPrefix(path, "/api/v1/skill-proposals") || strings.HasPrefix(path, "/api/v1/automation-requests") {
 		return maintainerauth.PermissionAdminister
 	}
-	if strings.HasPrefix(path, "/api/v1/projects") || strings.HasPrefix(path, "/api/v1/config") || strings.HasPrefix(path, "/api/v1/admin") {
+	if strings.HasPrefix(path, "/api/v1/projects") || strings.HasPrefix(path, "/api/v1/models") || strings.HasPrefix(path, "/api/v1/config") || strings.HasPrefix(path, "/api/v1/admin") {
 		return maintainerauth.PermissionAdminister
 	}
 	if strings.HasPrefix(path, "/api/v1/auth/") {

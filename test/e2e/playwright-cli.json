@@ -1,0 +1,12 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "chromiumSandbox": false,
+      "headless": true
+    },
+    "contextOptions": {
+      "viewport": { "width": 1440, "height": 1000 }
+    }
+  }
+}

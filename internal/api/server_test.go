@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,12 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/agents"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
@@ -727,6 +730,26 @@ func TestProjectsAreSchemaValidatedBeforeJobsCanReferenceThem(t *testing.T) {
 	if len(listed.Items) != 2 {
 		t.Fatalf("project list = %#v", listed.Items)
 	}
+	request, _ = http.NewRequest(http.MethodDelete, server.URL+"/api/v1/projects/second", nil)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("project disable returned %d", response.StatusCode)
+	}
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(
+		`{"project_id":"second","repository":"fixture/second","task":"x"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("disabled project job returned %d", response.StatusCode)
+	}
 	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(
 		`{"project_id":"missing","repository":"fixture/missing","task":"x"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -737,6 +760,80 @@ func TestProjectsAreSchemaValidatedBeforeJobsCanReferenceThem(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("unregistered project job returned %d", response.StatusCode)
+	}
+}
+
+func TestModelLoadBenchmarkAndUnloadUseAllowListedProfiles(t *testing.T) {
+	store, err := storesqlite.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	manager := models.NewFake([]models.Profile{{ID: "implementation", Role: "implementation", ModelFamily: "fixture", Context: 4096, Quantization: "fake"}})
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock", WithModelManager(manager)))
+	t.Cleanup(server.Close)
+	for _, path := range []string{"/api/v1/models/implementation/actions/load", "/api/v1/models/implementation/actions/benchmark", "/api/v1/models/actions/unload"} {
+		request, _ := http.NewRequest(http.MethodPost, server.URL+path, nil)
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("POST %s returned %d: %s", path, response.StatusCode, body)
+		}
+	}
+	status, _ := manager.Status(context.Background())
+	if status.State != "unloaded" {
+		t.Fatalf("status after unload = %#v", status)
+	}
+}
+
+func TestFindingActionsEnforceLifecycleAndRetainRationale(t *testing.T) {
+	server, store := testServer(t)
+	job, err := store.CreateJob(context.Background(), storage.CreateJobParams{ID: "job_finding_api", ProjectID: "owner-repo", Repository: "owner/repo", Task: "review", ActorID: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := store.ObserveFindings(context.Background(), job.ID, 0, []agents.Finding{{
+		ID: "QC-API-1", Severity: "should_fix", Category: "correctness", Claim: "fixture claim",
+		Location: agents.Location{Path: "main.go", Line: 1}, Evidence: "fixture evidence",
+		RequiredResolution: "fix it", VerificationMethod: "run fixture test",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := records[0].Version
+	for _, action := range []string{"dispute", "accept"} {
+		payload := fmt.Sprintf(`{"rationale":"reviewed fixture evidence","expected_version":%d}`, version)
+		request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs/"+job.ID+"/findings/QC-API-1/actions/"+action, strings.NewReader(payload))
+		request.Header.Set("Content-Type", "application/json")
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		var updated struct {
+			Version int64  `json:"version"`
+			Status  string `json:"status"`
+		}
+		decodeErr := json.NewDecoder(response.Body).Decode(&updated)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK || decodeErr != nil {
+			t.Fatalf("%s returned %d: %#v (%v)", action, response.StatusCode, updated, decodeErr)
+		}
+		version = updated.Version
+	}
+	payload := fmt.Sprintf(`{"rationale":"needs operator attention","expected_version":%d}`, version)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs/"+job.ID+"/findings/QC-API-1/actions/escalate", strings.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("escalate returned %d", response.StatusCode)
 	}
 }
 

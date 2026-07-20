@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	"github.com/local-code-maintainer/appliance/internal/backup"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
@@ -38,6 +40,7 @@ type Server struct {
 	logger       *slog.Logger
 	profile      string
 	started      time.Time
+	version      string
 	handler      http.Handler
 	auth         *maintainerauth.Service
 	memoryIndex  memory.Index
@@ -67,6 +70,7 @@ type BackupService interface {
 	Create(context.Context) (backup.Record, error)
 	List(context.Context) ([]backup.Record, error)
 	Validate(context.Context, string) (backup.Report, error)
+	StageRestore(context.Context, string) (backup.RestoreResult, error)
 }
 
 type Option func(*Server)
@@ -106,6 +110,8 @@ func WithBackupService(service BackupService) Option {
 	return func(server *Server) { server.backups = service }
 }
 
+func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
+
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -130,11 +136,13 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/admin/backups", s.listBackups)
 	mux.HandleFunc("POST /api/v1/admin/backups", s.createBackup)
 	mux.HandleFunc("POST /api/v1/admin/backups/{backupID}/actions/restore", s.restoreBackup)
+	mux.HandleFunc("GET /api/v1/admin/update/preflight", s.updatePreflight)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
 	mux.HandleFunc("POST /api/v1/github/webhooks", s.githubWebhook)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
+	mux.HandleFunc("DELETE /api/v1/projects/{projectID}", s.disableProject)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/actions/sync", s.syncProject)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/diagnostics", s.projectDiagnostics)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/memory", s.listProjectMemory)
@@ -179,9 +187,12 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-publication", s.approvePublication)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/verify", s.requestVerification)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/review", s.requestReview)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/findings/{findingID}/actions/{action}", s.findingAction)
 	mux.HandleFunc("GET /api/v1/models", s.listModels)
 	mux.HandleFunc("GET /api/v1/models/status", s.modelStatus)
 	mux.HandleFunc("POST /api/v1/models/{profileID}/actions/benchmark", s.benchmarkModel)
+	mux.HandleFunc("POST /api/v1/models/{profileID}/actions/load", s.loadModel)
+	mux.HandleFunc("POST /api/v1/models/actions/unload", s.unloadModel)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
 	mux.HandleFunc("POST /api/v1/config/validate", s.validateConfig)
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)
@@ -228,14 +239,47 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	counts := map[jobs.State]int{}
+	phaseCounts := map[jobs.State]int{}
+	findingCounts := map[string]int{}
 	for _, job := range items {
 		counts[job.State]++
+		if phases, phaseErr := s.store.ListPhaseRecords(r.Context(), job.ID, 500); phaseErr == nil {
+			for _, phase := range phases {
+				phaseCounts[phase.PhaseState]++
+			}
+		}
+		if records, findingErr := s.store.ListFindings(r.Context(), job.ID); findingErr == nil {
+			for _, record := range records {
+				findingCounts[record.Severity+":"+string(record.Status)]++
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	fmt.Fprintf(w, "# HELP maintainer_uptime_seconds Controller process uptime.\n# TYPE maintainer_uptime_seconds gauge\nmaintainer_uptime_seconds %d\n", int64(time.Since(s.started).Seconds()))
 	fmt.Fprintln(w, "# HELP maintainer_jobs Retained jobs by durable state.\n# TYPE maintainer_jobs gauge")
 	for _, state := range jobs.AllStates() {
 		fmt.Fprintf(w, "maintainer_jobs{state=%q} %d\n", state, counts[state])
+	}
+	fmt.Fprintln(w, "# HELP maintainer_phase_completions Retained phase completions by workflow phase.\n# TYPE maintainer_phase_completions gauge")
+	for _, state := range jobs.AllStates() {
+		fmt.Fprintf(w, "maintainer_phase_completions{phase=%q} %d\n", state, phaseCounts[state])
+	}
+	fmt.Fprintln(w, "# HELP maintainer_qc_findings Retained QC findings by severity and lifecycle status.\n# TYPE maintainer_qc_findings gauge")
+	for key, count := range findingCounts {
+		parts := strings.SplitN(key, ":", 2)
+		fmt.Fprintf(w, "maintainer_qc_findings{severity=%q,status=%q} %d\n", parts[0], parts[1], count)
+	}
+	if s.modelManager != nil {
+		if model, modelErr := s.modelManager.Status(r.Context()); modelErr == nil {
+			loaded := 0
+			if model.State == "loaded" {
+				loaded = 1
+			}
+			fmt.Fprintln(w, "# HELP maintainer_model_loaded Whether an allow-listed model is resident.\n# TYPE maintainer_model_loaded gauge")
+			fmt.Fprintf(w, "maintainer_model_loaded{profile=%q} %d\n", model.ProfileID, loaded)
+			fmt.Fprintln(w, "# HELP maintainer_model_tokens_per_second Last reported inference throughput.\n# TYPE maintainer_model_tokens_per_second gauge")
+			fmt.Fprintf(w, "maintainer_model_tokens_per_second{kind=\"prompt\"} %g\nmaintainer_model_tokens_per_second{kind=\"decode\"} %g\n", model.PromptTokensSecond, model.DecodeTokensSecond)
+		}
 	}
 }
 
@@ -255,22 +299,68 @@ func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	var disk syscall.Statfs_t
 	_ = syscall.Statfs("/", &disk)
+	var system syscall.Sysinfo_t
+	_ = syscall.Sysinfo(&system)
+	memoryUnit := uint64(system.Unit)
+	if memoryUnit == 0 {
+		memoryUnit = 1
+	}
+	physicalCores, smtEnabled, numaNodes := hostTopology()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "healthy", "profile": s.profile,
+		"status": "healthy", "profile": s.profile, "version": s.version,
 		"uptime_seconds": int64(time.Since(s.started).Seconds()),
 		"host": map[string]any{
-			"logical_cpus":         runtime.NumCPU(),
-			"architecture":         runtime.GOARCH,
-			"operating_system":     runtime.GOOS,
-			"disk_total_bytes":     int64(disk.Blocks) * int64(disk.Bsize),
-			"disk_available_bytes": int64(disk.Bavail) * int64(disk.Bsize),
-			"benchmark_guidance":   "Benchmark physical-core and SMT thread counts; on multi-node hosts compare NUMA local and interleave profiles before selecting a manifest.",
+			"logical_cpus":           runtime.NumCPU(),
+			"physical_cores":         physicalCores,
+			"smt_enabled":            smtEnabled,
+			"numa_nodes":             numaNodes,
+			"memory_total_bytes":     uint64(system.Totalram) * memoryUnit,
+			"memory_available_bytes": uint64(system.Freeram+system.Bufferram) * memoryUnit,
+			"architecture":           runtime.GOARCH,
+			"operating_system":       runtime.GOOS,
+			"disk_total_bytes":       int64(disk.Blocks) * int64(disk.Bsize),
+			"disk_available_bytes":   int64(disk.Bavail) * int64(disk.Bsize),
+			"benchmark_guidance":     "Benchmark physical-core and SMT thread counts; on multi-node hosts compare NUMA local and interleave profiles before selecting a manifest.",
 		},
 		"components": map[string]string{
 			"controller": "healthy", "storage": "healthy",
 			"runner": s.profile, "model": modelStatus, "memory": memoryStatus, "git": s.profile,
 		},
 	})
+}
+
+func hostTopology() (int, bool, string) {
+	payload, _ := os.ReadFile("/proc/cpuinfo")
+	cores := map[string]struct{}{}
+	physicalID, coreID := "0", ""
+	for _, line := range strings.Split(string(payload), "\n") {
+		if strings.HasPrefix(line, "physical id") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				physicalID = strings.TrimSpace(parts[1])
+			}
+		}
+		if strings.HasPrefix(line, "core id") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				coreID = strings.TrimSpace(parts[1])
+			}
+		}
+		if line == "" && coreID != "" {
+			cores[physicalID+":"+coreID] = struct{}{}
+			coreID = ""
+		}
+	}
+	physical := len(cores)
+	if physical == 0 {
+		physical = runtime.NumCPU()
+	}
+	numaPayload, err := os.ReadFile("/sys/devices/system/node/online")
+	numa := "unknown"
+	if err == nil {
+		numa = strings.TrimSpace(string(numaPayload))
+	}
+	return physical, runtime.NumCPU() > physical, numa
 }
 
 func (s *Server) workflowStates(w http.ResponseWriter, _ *http.Request) {
@@ -330,6 +420,15 @@ func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, project)
+}
+
+func (s *Server) disableProject(w http.ResponseWriter, r *http.Request) {
+	project, err := s.store.DisableProject(r.Context(), r.PathValue("projectID"), actorID(r))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
 }
 
 func (s *Server) syncProject(w http.ResponseWriter, r *http.Request) {
@@ -540,6 +639,82 @@ func (s *Server) benchmarkModel(w http.ResponseWriter, r *http.Request) {
 	details, _ := json.Marshal(result)
 	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "model.benchmark", TargetType: "model_profile", TargetID: result.ProfileID, Details: details})
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) loadModel(w http.ResponseWriter, r *http.Request) {
+	if s.modelManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
+		return
+	}
+	profileID := r.PathValue("profileID")
+	status, err := s.modelManager.Load(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "model_load_failed", "the allow-listed model profile could not be loaded")
+		return
+	}
+	details, _ := json.Marshal(status)
+	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "model.load", TargetType: "model_profile", TargetID: profileID, Details: details})
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) unloadModel(w http.ResponseWriter, r *http.Request) {
+	if s.modelManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
+		return
+	}
+	previous, _ := s.modelManager.Status(r.Context())
+	if err := s.modelManager.Unload(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "model_unload_failed", "the loaded model could not be stopped")
+		return
+	}
+	details, _ := json.Marshal(previous)
+	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "model.unload", TargetType: "model_profile", TargetID: previous.ProfileID, Details: details})
+	writeJSON(w, http.StatusOK, models.Status{State: "unloaded"})
+}
+
+func (s *Server) findingAction(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Rationale       string `json:"rationale"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	request.Rationale = strings.TrimSpace(request.Rationale)
+	if request.Rationale == "" || request.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_finding_action", "a rationale and expected_version are required")
+		return
+	}
+	if r.PathValue("action") == "escalate" {
+		rationale := "finding " + r.PathValue("findingID") + " escalation: " + request.Rationale
+		review, err := s.store.CreateApprovalRequest(r.Context(), r.PathValue("jobID"), "review", actorID(r), rationale)
+		if err != nil {
+			s.storageError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, review)
+		return
+	}
+	targets := map[string]findings.Status{
+		"dispute": findings.StatusDisputed,
+		"accept":  findings.StatusAccepted,
+		"waive":   findings.StatusHumanWaived,
+	}
+	target, ok := targets[r.PathValue("action")]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid_finding_action", "the finding action is not allowed")
+		return
+	}
+	principal, _ := principalFromRequest(r)
+	record, err := s.store.TransitionFinding(r.Context(), r.PathValue("jobID"), r.PathValue("findingID"), findings.TransitionRequest{
+		To: target, ActorID: actorID(r), ActorRole: actorRole(r), Rationale: request.Rationale,
+		Reauthenticated: principal.RecentlyReauthenticated(time.Now().UTC()), ExpectedVersion: request.ExpectedVersion,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
 }
 
 func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
@@ -758,6 +933,11 @@ func (s *Server) createConfigRevision(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) rollbackConfigRevision(w http.ResponseWriter, r *http.Request) {
+	principal, ok := principalFromRequest(r)
+	if s.auth != nil && (!ok || !principal.RecentlyReauthenticated(time.Now().UTC())) {
+		writeError(w, http.StatusForbidden, "recent_reauthentication_required", "configuration rollback requires reauthentication within five minutes")
+		return
+	}
 	var request rollbackConfigRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		return

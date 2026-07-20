@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS worker-build
+FROM golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS worker-build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -24,7 +24,7 @@ ENTRYPOINT ["/usr/local/bin/maintainer-worker", "verification"]
 FROM runner-base AS qc-agent
 ENTRYPOINT ["/usr/local/bin/maintainer-worker", "qc"]
 
-FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS runner-go
+FROM golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS runner-go
 ARG DEBIAN_SNAPSHOT=20260505T000000Z
 RUN printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "${DEBIAN_SNAPSHOT}" > /etc/apt/sources.list \
     && rm -f /etc/apt/sources.list.d/* \

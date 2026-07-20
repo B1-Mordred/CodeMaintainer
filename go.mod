@@ -1,6 +1,6 @@
 module github.com/local-code-maintainer/appliance
 
-go 1.25.0
+go 1.25.12
 
 require (
 	golang.org/x/crypto v0.54.0

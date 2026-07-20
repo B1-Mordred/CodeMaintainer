@@ -168,7 +168,11 @@ func (c *Catalog) Profiles() []Profile {
 	for _, manifest := range c.profiles {
 		result = append(result, Profile{
 			ID: manifest.ID, Role: manifest.Role, ModelFamily: manifest.ModelFamily,
+			Filename: manifest.Filename, SHA256: manifest.SHA256, Bytes: manifest.Bytes,
+			SourceURI: manifest.SourceURI, License: manifest.License,
 			Context: manifest.Context, Quantization: manifest.Quantization,
+			Threads: manifest.Threads, Batch: manifest.Batch, UBatch: manifest.UBatch,
+			NUMA: manifest.NUMA, MinRAMBytes: manifest.MinRAMBytes, Sampling: manifest.Sampling,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })

@@ -1,0 +1,53 @@
+# Acceptance evidence and operator-only validation
+
+`project.md` is the authoritative contract. This page records the release gate and separates deterministic local evidence from checks that require operator infrastructure, credentials, or multi-gigabyte weights.
+
+## Deterministic local gate
+
+Run from a clean checkout after `./maintainctl bootstrap`:
+
+```sh
+./scripts/acceptance.sh
+./scripts/agent-image-acceptance.sh
+./scripts/vulnerability-scan.sh
+./scripts/sbom.sh
+```
+
+The first command formats/checks all Go, runs every unit/integration/migration/workflow test, runs Go vet, verifies generated OpenAPI parity, builds and tests the React application with automated accessibility checks, validates Compose, builds the control plane, starts the mock stack, checks authenticated diagnostics, and drives the desktop/mobile application in pinned Chromium. The agent-image gate proves separate immutable implementation and read-only QC containers against the fake OpenAI-compatible model. The security inventory commands cover Go/npm and record the OCI follow-up when no image scanner is installed.
+
+The Go suite covers the complete local bare-remote lifecycle, exact-SHA worktrees and publication, independent model families, malformed output, deterministic verification, stable QC finding repair/waiver rules, publication gates, restart reconciliation, queue and wall/token budgets, GitHub App signing/token/replay/polling fakes, protected paths and secrets, cross-project memory isolation, OpenViking adapter/outbox behavior, Hermes' ten-tool authority boundary, schedules/notifications, authentication/RBAC/CSRF/rate limits, backup dry-run and actual restore, and migrations. No default gate fetches a model weight, uses a real GitHub repository, or requires external inference.
+
+Validated Compose views are:
+
+```sh
+docker compose config --quiet
+docker compose --profile tools config --quiet
+docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet
+MAINTAINER_REMOTE_HOST=maintainer.example.invalid \
+OIDC_GATEWAY_URL=https://auth.example.invalid/verify \
+MAINTAINER_TLS_CERT=/absolute/path/to/cert.pem \
+MAINTAINER_TLS_KEY=/absolute/path/to/key.pem \
+  docker compose -f compose.yaml -f compose.remote.yaml --profile remote config --quiet
+MAINTAINER_DATA_ROOT=/absolute/path/to/data \
+MODEL_MANIFEST_ROOT=/absolute/path/to/model-manifests \
+RUNNERD_POLICY_FILE=/absolute/path/to/runner-policy.json \
+RUNNERD_WORKER_SOCKET=/absolute/path/to/dedicated-worker.sock \
+  docker compose -f compose.yaml -f compose.production.yaml config --quiet
+```
+
+The resolved core publishes only `127.0.0.1:8080`; credential/model/index/Hermes/runner/database boundaries publish no host port. The optional remote edge defaults to loopback TLS and delegates to an operator-supplied OIDC/passkey gateway while retaining local appliance RBAC. Runtime services are non-root, capability-free, `no-new-privileges`, read-only where possible, resource bounded, and do not mount the general Docker socket. Production runnerd accepts only a separately configured dedicated rootless worker-daemon socket.
+
+## Operator-only validation
+
+These are deliberately not claimed by the fake gate:
+
+1. Configure a dedicated rootless worker daemon and the named dependency-egress/inference-only networks, apply the production runner policy, then repeat the offline fixture and inspect every resulting worker's UID, mounts, capabilities, seccomp, resource limits, and network membership.
+2. Import licensed implementation and QC GGUF files whose manifests use different model families. Verify hashes, benchmark physical-core versus SMT and NUMA profiles, exercise sequential load/unload, and record RAM, disk, prompt, and decode measurements. No release process downloads these large weights automatically.
+3. Install a GitHub App in a disposable authorized repository with the documented minimal permissions. Test token expiry, webhook replay, polling fallback, upstream movement, branch protection/CI/review reporting, idempotent draft publication, merge, rejection, and memory disposition. Never point the test at an unapproved real repository.
+4. Configure an embedding provider for OpenViking and run the controller's health/write/scoped-search/delete smoke plus a rebuild while inspecting exact project namespaces and source/license obligations.
+5. Configure the official pinned Hermes profile and verify that discovery exposes exactly ten controller tools, proposed skills stay inert, and Hermes receives no controller token, GitHub credential, worktree, host port, or Docker socket.
+6. Configure real certificates and the trusted OIDC/passkey forward-auth gateway. Test remote login, local session/RBAC/CSRF behavior, WebSocket proxying if enabled later, certificate renewal, firewall policy, and loss of the gateway.
+7. Store the production backup key separately, create an encrypted backup, restore it on a separate host, verify users/projects/audit/memory/artifacts/mirror state and a smoke job, then exercise update promotion and known-good image rollback. Repeat after every schema or key rotation.
+8. Run an approved OCI vulnerability/signature scanner over every resolved production image if Docker Scout is unavailable, review high/critical exceptions, licenses, SBOM/provenance, and host kernel/container-runtime advisories before promotion.
+
+Record dates, exact versions/digests, operators, commands, results, and retained evidence for every production check. A missing external prerequisite is not a reason to weaken or bypass the corresponding controller gate.

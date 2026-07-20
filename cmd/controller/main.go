@@ -47,6 +47,11 @@ func run(logger *slog.Logger) error {
 	profile := env("MAINTAINER_PROFILE", "mock")
 	listen := env("MAINTAINER_LISTEN", "127.0.0.1:8080")
 	databasePath := env("MAINTAINER_DATABASE", filepath.Join(dataRoot, "database", "controller.db"))
+	if applied, err := backup.ApplyPending(dataRoot); err != nil {
+		return err
+	} else if applied {
+		logger.Info("staged restore applied before database open")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -108,7 +113,7 @@ func run(logger *slog.Logger) error {
 		go func() { indexErrors <- synchronizer.Run(ctx) }()
 	}
 
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager)}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithVersion(version)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err

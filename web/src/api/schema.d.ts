@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/update/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check controller, configuration, database, and backup readiness for an operator update */
+        get: operations["getUpdatePreflight"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/status": {
         parameters: {
             query?: never;
@@ -244,6 +261,25 @@ export interface paths {
         /** Register or update a validated project */
         post: operations["upsertProject"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Soft-disable a registered project while retaining audit and job history */
+        delete: operations["disableProject"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1020,6 +1056,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/findings/{findingID}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+                findingID: string;
+                action: "dispute" | "accept" | "waive" | "escalate";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an authenticated, audited QC finding action */
+        post: operations["actOnFinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/models": {
         parameters: {
             query?: never;
@@ -1067,6 +1124,42 @@ export interface paths {
         put?: never;
         /** Run the bounded smoke benchmark for an allow-listed model profile */
         post: operations["benchmarkModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/{profileID}/actions/load": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load one allow-listed model profile, unloading the previous model first */
+        post: operations["loadModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/actions/unload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unload the currently resident allow-listed model */
+        post: operations["unloadModel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1207,6 +1300,13 @@ export interface components {
             bytes: number;
             checksums_valid: boolean;
             excluded: string[];
+        };
+        BackupRestoreResult: {
+            report: components["schemas"]["BackupRestoreReport"];
+            /** @constant */
+            staged: true;
+            /** @constant */
+            requires_restart: true;
         };
         Principal: {
             user: components["schemas"]["User"];
@@ -1558,6 +1658,10 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        FindingActionRequest: {
+            rationale: string;
+            expected_version: number;
+        };
         Approval: {
             id: string;
             job_id: string;
@@ -1584,12 +1688,18 @@ export interface components {
         SystemStatus: {
             status: string;
             profile: string;
+            version: string;
             uptime_seconds: number;
             components: {
                 [key: string]: string;
             };
             host: {
                 logical_cpus: number;
+                physical_cores: number;
+                smt_enabled: boolean;
+                numa_nodes: string;
+                memory_total_bytes: number;
+                memory_available_bytes: number;
                 architecture: string;
                 operating_system: string;
                 disk_total_bytes: number;
@@ -1602,8 +1712,26 @@ export interface components {
             /** @enum {string} */
             role: "implementation" | "qc";
             model_family: string;
+            filename?: string;
+            sha256?: string;
+            bytes?: number;
+            source_uri?: string;
+            license?: string;
             context: number;
             quantization: string;
+            threads?: number;
+            batch?: number;
+            ubatch?: number;
+            /** @enum {string} */
+            numa?: "disabled" | "distribute" | "isolate" | "numactl";
+            min_ram_bytes?: number;
+            sampling?: {
+                temperature?: number;
+                top_p?: number;
+                top_k?: number;
+                min_p?: number;
+                seed?: number;
+            };
         };
         ModelStatus: {
             /** @enum {string} */
@@ -2014,8 +2142,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @constant */
-                    dry_run: true;
+                    dry_run: boolean;
                 };
             };
         };
@@ -2029,9 +2156,51 @@ export interface operations {
                     "application/json": components["schemas"]["BackupRestoreReport"];
                 };
             };
+            /** @description Validated restore staged for the next full appliance restart */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRestoreResult"];
+                };
+            };
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    getUpdatePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Non-mutating update readiness report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ready: boolean;
+                        version: string;
+                        profile: string;
+                        backup_count: number;
+                        checks: {
+                            name: string;
+                            /** @enum {string} */
+                            status: "passed" | "warning" | "failed";
+                            detail: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
         };
     };
     getSystemStatus: {
@@ -2164,6 +2333,33 @@ export interface operations {
             400: components["responses"]["ErrorResponse"];
             409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    disableProject: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disabled project */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
         };
     };
     syncProject: {
@@ -3394,6 +3590,49 @@ export interface operations {
             404: components["responses"]["ErrorResponse"];
         };
     };
+    actOnFinding: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                jobID: components["parameters"]["JobID"];
+                findingID: string;
+                action: "dispute" | "accept" | "waive" | "escalate";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated finding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Finding"];
+                };
+            };
+            /** @description Escalation request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRequest"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
     listModels: {
         parameters: {
             query?: never;
@@ -3466,6 +3705,57 @@ export interface operations {
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    loadModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Loaded model status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelStatus"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    unloadModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unloaded model status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelStatus"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
         };
     };
     getConfig: {

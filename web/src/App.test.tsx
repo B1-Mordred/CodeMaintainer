@@ -13,13 +13,26 @@ const session = {
   csrf_token: "csrf-token-with-at-least-thirty-two-characters",
 };
 
+const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
+  status: 200,
+  headers: { "Content-Type": "application/json" },
+});
+
+const responseByPath = (input: RequestInfo | URL) => {
+  const request = input instanceof Request ? input : new Request(input);
+  const path = new URL(request.url).pathname;
+  if (path === "/api/v1/auth/status") return jsonResponse({ bootstrapped: true, authentication_enabled: true });
+  if (path === "/api/v1/auth/session") return jsonResponse(session);
+  if (path === "/api/v1/system/status") return jsonResponse(status);
+  if (path === "/api/v1/jobs") return jsonResponse(jobs);
+  if (path === "/api/v1/projects") return jsonResponse({ items: [] });
+  if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
+  return new Response(JSON.stringify({ error: { code: "unmocked", message: path } }), { status: 404, headers: { "Content-Type": "application/json" } });
+};
+
 describe("App", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ bootstrapped: true, authentication_enabled: true }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(session), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(status), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(jobs), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn(responseByPath));
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -35,7 +48,7 @@ describe("App", () => {
   });
 
   it("renders the one-time administrator bootstrap without critical accessibility violations", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ bootstrapped: false, authentication_enabled: true }), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(jsonResponse({ bootstrapped: false, authentication_enabled: true })));
     const { container } = render(<App />);
     expect(await screen.findByRole("heading", { name: "Create the local administrator" })).toBeInTheDocument();
     const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });

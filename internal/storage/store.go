@@ -87,6 +87,7 @@ type WorkflowStore interface {
 
 type ProjectStore interface {
 	UpsertProject(context.Context, projects.UpsertRequest, string) (projects.Project, error)
+	DisableProject(context.Context, string, string) (projects.Project, error)
 	GetProject(context.Context, string) (projects.Project, error)
 	ListProjects(context.Context, int) ([]projects.Project, error)
 }

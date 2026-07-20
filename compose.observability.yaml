@@ -1,0 +1,24 @@
+services:
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.12.0-distroless@sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=15d", "--web.enable-lifecycle=false"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=16m,mode=1777,noexec,nosuid,nodev]
+    volumes:
+      - type: bind
+        source: ./config/prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - prometheus-data:/prometheus
+    networks: [control]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+
+volumes:
+  prometheus-data: {}

@@ -58,6 +58,35 @@ func (s *Store) UpsertProject(ctx context.Context, request projects.UpsertReques
 	return s.GetProject(ctx, request.ID)
 }
 
+func (s *Store) DisableProject(ctx context.Context, id, actorID string) (projects.Project, error) {
+	if !projects.ValidID(id) {
+		return projects.Project{}, storage.ErrInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return projects.Project{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, "UPDATE projects SET enabled=0, updated_at=? WHERE id=? AND enabled=1", s.now().Format(timestampFormat), id)
+	if err != nil {
+		return projects.Project{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return projects.Project{}, storage.ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE schedules SET enabled=0, version=version+1, updated_at=? WHERE project_id=? AND enabled=1", s.now().Format(timestampFormat), id); err != nil {
+		return projects.Project{}, err
+	}
+	details, _ := json.Marshal(map[string]bool{"enabled": false})
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: required(actorID, "system"), ActorRole: "administrator", Action: "project.disable", TargetType: "project", TargetID: id, Details: details}); err != nil {
+		return projects.Project{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return projects.Project{}, err
+	}
+	return s.GetProject(ctx, id)
+}
+
 const projectSelect = `SELECT id, provider, repository, default_branch, local_remote_name,
 	enabled, created_at, updated_at FROM projects`
 

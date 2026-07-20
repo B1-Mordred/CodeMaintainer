@@ -8,7 +8,7 @@ COPY web ./
 COPY internal/api/openapi.yaml /src/internal/api/openapi.yaml
 RUN npm run generate:api && npm run build
 
-FROM golang:1.25.0-bookworm@sha256:81dc45d05a7444ead8c92a389621fafabc8e40f8fd1a19d7e5df14e61e98bc1a AS build
+FROM golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

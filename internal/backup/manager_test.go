@@ -43,4 +43,16 @@ func TestBackupCreatesChecksumBoundBundleAndValidatesDryRun(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].ID != record.ID {
 		t.Fatalf("list = %#v, %v", items, err)
 	}
+	staged, err := manager.StageRestore(context.Background(), record.ID)
+	if err != nil || !staged.Staged || !staged.RequiresRestart {
+		t.Fatalf("stage = %#v, %v", staged, err)
+	}
+	applied, err := ApplyPending(root)
+	if err != nil || !applied {
+		t.Fatalf("apply pending = %v, %v", applied, err)
+	}
+	payload, err := os.ReadFile(filepath.Join(root, "database", "controller.db"))
+	if err != nil || string(payload) != "sqlite snapshot fixture" {
+		t.Fatalf("restored database = %q, %v", payload, err)
+	}
 }

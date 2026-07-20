@@ -5,6 +5,7 @@ info:
   description: Trusted workflow control API. No endpoint accepts arbitrary commands, images, mounts, model paths, or container options.
   license:
     name: Unlicensed foundation build
+    identifier: LicenseRef-Proprietary
 servers:
   - url: http://127.0.0.1:8080/api/v1
 security:
@@ -195,12 +196,41 @@ paths:
               additionalProperties: false
               required: [dry_run]
               properties:
-                dry_run: { type: boolean, const: true }
+                dry_run: { type: boolean }
       responses:
         "200": { description: Restore dry-run report, content: { application/json: { schema: { $ref: "#/components/schemas/BackupRestoreReport" } } } }
+        "202": { description: Validated restore staged for the next full appliance restart, content: { application/json: { schema: { $ref: "#/components/schemas/BackupRestoreResult" } } } }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /admin/update/preflight:
+    get:
+      summary: Check controller, configuration, database, and backup readiness for an operator update
+      operationId: getUpdatePreflight
+      responses:
+        "200":
+          description: Non-mutating update readiness report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ready, version, profile, backup_count, checks]
+                properties:
+                  ready: { type: boolean }
+                  version: { type: string }
+                  profile: { type: string }
+                  backup_count: { type: integer, minimum: 0 }
+                  checks:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, status, detail]
+                      properties:
+                        name: { type: string }
+                        status: { type: string, enum: [passed, warning, failed] }
+                        detail: { type: string }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /system/status:
     get:
       summary: Get bounded system and component status
@@ -285,6 +315,17 @@ paths:
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    delete:
+      summary: Soft-disable a registered project while retaining audit and job history
+      operationId: disableProject
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Disabled project, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/actions/sync:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     post:
@@ -994,6 +1035,27 @@ paths:
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/findings/{findingID}/actions/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+      - { name: findingID, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      - { name: action, in: path, required: true, schema: { type: string, enum: [dispute, accept, waive, escalate] } }
+    post:
+      summary: Apply an authenticated, audited QC finding action
+      operationId: actOnFinding
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FindingActionRequest" }
+      responses:
+        "200": { description: Updated finding, content: { application/json: { schema: { $ref: "#/components/schemas/Finding" } } } }
+        "202": { description: Escalation request accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRequest" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
   /models:
     get:
       summary: List allow-listed model profiles and current supervisor status
@@ -1031,6 +1093,27 @@ paths:
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /models/{profileID}/actions/load:
+    parameters:
+      - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" } }
+    post:
+      summary: Load one allow-listed model profile, unloading the previous model first
+      operationId: loadModel
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Loaded model status, content: { application/json: { schema: { $ref: "#/components/schemas/ModelStatus" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /models/actions/unload:
+    post:
+      summary: Unload the currently resident allow-listed model
+      operationId: unloadModel
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Unloaded model status, content: { application/json: { schema: { $ref: "#/components/schemas/ModelStatus" } } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /config:
     get:
       summary: Get the current validated configuration
@@ -1241,6 +1324,14 @@ components:
         bytes: { type: integer, minimum: 1 }
         checksums_valid: { type: boolean }
         excluded: { type: array, items: { type: string } }
+    BackupRestoreResult:
+      type: object
+      additionalProperties: false
+      required: [report, staged, requires_restart]
+      properties:
+        report: { $ref: "#/components/schemas/BackupRestoreReport" }
+        staged: { type: boolean, const: true }
+        requires_restart: { type: boolean, const: true }
     Principal:
       type: object
       required: [user, expires_at]
@@ -1631,6 +1722,13 @@ components:
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    FindingActionRequest:
+      type: object
+      additionalProperties: false
+      required: [rationale, expected_version]
+      properties:
+        rationale: { type: string, minLength: 1, maxLength: 4096 }
+        expected_version: { type: integer, minimum: 1 }
     Approval:
       type: object
       required: [id, job_id, kind, subject_sha, actor_id, actor_role, rationale, reauthenticated, created_at]
@@ -1655,18 +1753,24 @@ components:
         created_at: { type: string, format: date-time }
     SystemStatus:
       type: object
-      required: [status, profile, uptime_seconds, components, host]
+      required: [status, profile, version, uptime_seconds, components, host]
       properties:
         status: { type: string }
         profile: { type: string }
+        version: { type: string }
         uptime_seconds: { type: integer, minimum: 0 }
         components: { type: object, additionalProperties: { type: string } }
         host:
           type: object
           additionalProperties: false
-          required: [logical_cpus, architecture, operating_system, disk_total_bytes, disk_available_bytes, benchmark_guidance]
+          required: [logical_cpus, physical_cores, smt_enabled, numa_nodes, memory_total_bytes, memory_available_bytes, architecture, operating_system, disk_total_bytes, disk_available_bytes, benchmark_guidance]
           properties:
             logical_cpus: { type: integer, minimum: 1 }
+            physical_cores: { type: integer, minimum: 1 }
+            smt_enabled: { type: boolean }
+            numa_nodes: { type: string }
+            memory_total_bytes: { type: integer, minimum: 0 }
+            memory_available_bytes: { type: integer, minimum: 0 }
             architecture: { type: string }
             operating_system: { type: string }
             disk_total_bytes: { type: integer, minimum: 0 }
@@ -1680,8 +1784,27 @@ components:
         id: { type: string }
         role: { type: string, enum: [implementation, qc] }
         model_family: { type: string }
+        filename: { type: string }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 0 }
+        source_uri: { type: string }
+        license: { type: string }
         context: { type: integer, minimum: 1 }
         quantization: { type: string }
+        threads: { type: integer, minimum: 0 }
+        batch: { type: integer, minimum: 0 }
+        ubatch: { type: integer, minimum: 0 }
+        numa: { type: string, enum: [disabled, distribute, isolate, numactl] }
+        min_ram_bytes: { type: integer, minimum: 0 }
+        sampling:
+          type: object
+          additionalProperties: false
+          properties:
+            temperature: { type: number }
+            top_p: { type: number }
+            top_k: { type: integer }
+            min_p: { type: number }
+            seed: { type: integer }
     ModelStatus:
       type: object
       additionalProperties: false
