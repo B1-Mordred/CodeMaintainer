@@ -196,7 +196,10 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		if _, err := c.artifacts.Put(ctx, artifactfiles.PutRequest{
 			JobID: job.ID, ProjectID: job.ProjectID, Kind: "publication", MediaType: "application/json",
 			Producer: "workflow-controller", IdempotencyKey: phaseKey(job) + "_publication",
-			Metadata: mustJSON(map[string]any{"draft": true}), Reader: bytes.NewReader(payload),
+			Metadata: mustJSON(map[string]any{
+				"draft": true, "provider": publication.Provider, "number": publication.Number,
+				"external_id": publication.ExternalID, "branch": publication.Branch, "result_sha": publication.ResultSHA,
+			}), Reader: bytes.NewReader(payload),
 		}); err != nil {
 			return Outcome{}, err
 		}

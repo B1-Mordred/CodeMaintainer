@@ -56,6 +56,13 @@ if [[ ! -e "$git_bridge_token" ]]; then
 fi
 chmod 600 "$git_bridge_token"
 
+github_webhook_secret=.data/secrets/github-webhook.secret
+if [[ ! -e "$github_webhook_secret" ]]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$github_webhook_secret"
+fi
+chmod 600 "$github_webhook_secret"
+
 hermes_control_token=.data/secrets/hermes-control.token
 if [[ ! -e "$hermes_control_token" ]]; then
   umask 077

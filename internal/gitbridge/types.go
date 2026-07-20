@@ -79,4 +79,5 @@ type Publication struct {
 	Draft      bool   `json:"draft"`
 	ExternalID string `json:"external_id"`
 	URL        string `json:"url"`
+	Number     int    `json:"number,omitempty"`
 }

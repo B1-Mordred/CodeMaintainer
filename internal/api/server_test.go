@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
@@ -77,6 +79,40 @@ func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
 		if response.Header.Get("X-Frame-Options") != "DENY" || response.Header.Get("Content-Security-Policy") == "" {
 			t.Fatalf("GET %s missing security headers", path)
 		}
+	}
+}
+
+type rejectingWebhookValidator struct{}
+
+func (rejectingWebhookValidator) ValidateWebhook(context.Context, gitbridge.WebhookValidationRequest) (gitbridge.PullRequestEvent, error) {
+	return gitbridge.PullRequestEvent{}, errors.New("fixture signature rejected")
+}
+
+func TestGitHubWebhookIsPublicButFailsClosedAtIsolatedValidator(t *testing.T) {
+	store, err := storesqlite.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	authService, err := maintainerauth.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock",
+		WithAuthentication(authService, false), WithGitHubWebhookValidator(rejectingWebhookValidator{})))
+	t.Cleanup(server.Close)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/github/webhooks", strings.NewReader(`{"action":"closed"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Delivery", "delivery-fixture")
+	request.Header.Set("X-GitHub-Event", "pull_request")
+	request.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid public webhook returned %d", response.StatusCode)
 	}
 }
 

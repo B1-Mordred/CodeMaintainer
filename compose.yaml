@@ -24,6 +24,7 @@ services:
     environment:
       GIT_BRIDGE_DATA_ROOT: /var/lib/maintainer
       GIT_BRIDGE_TOKEN_FILE: /run/secrets/git-bridge.token
+      GIT_BRIDGE_WEBHOOK_SECRET_FILE: /run/secrets/github-webhook.secret
     volumes:
       - type: bind
         source: ./.data/mirrors
@@ -37,6 +38,10 @@ services:
       - type: bind
         source: ./.data/secrets/git-bridge.token
         target: /run/secrets/git-bridge.token
+        read_only: true
+      - type: bind
+        source: ./.data/secrets/github-webhook.secret
+        target: /run/secrets/github-webhook.secret
         read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777

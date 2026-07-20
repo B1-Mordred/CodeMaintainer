@@ -118,6 +118,28 @@ paths:
               schema: { $ref: "#/components/schemas/SystemStatus" }
         default: { $ref: "#/components/responses/ErrorResponse" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
+  /github/webhooks:
+    post:
+      security: []
+      summary: Receive a GitHub pull-request webhook and validate its HMAC in the isolated GitHub bridge
+      operationId: receiveGitHubWebhook
+      parameters:
+        - { name: X-GitHub-Delivery, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: X-GitHub-Event, in: header, required: true, schema: { type: string, const: pull_request } }
+        - { name: X-Hub-Signature-256, in: header, required: true, schema: { type: string, pattern: "^sha256=[a-f0-9]{64}$" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Authenticated delivery was atomically applied or recognized as a replay
+          content: { application/json: { schema: { $ref: "#/components/schemas/GitHubDeliveryResult" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /workflow/states:
     get:
       summary: List stable workflow state names
@@ -1224,6 +1246,15 @@ components:
         requested_by: { type: string }
         rationale: { type: string }
         created_at: { type: string, format: date-time }
+    GitHubDeliveryResult:
+      type: object
+      additionalProperties: false
+      required: [delivery_id, outcome, affected_memory, replay]
+      properties:
+        delivery_id: { type: string }
+        outcome: { type: string, enum: [merged, rejected] }
+        affected_memory: { type: integer, minimum: 0 }
+        replay: { type: boolean }
     JobState:
       type: string
       enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]

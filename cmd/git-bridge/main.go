@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -38,7 +39,21 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler, err := gitbridge.NewService(manager, token, logger)
+	if err := configureGitHub(manager); err != nil {
+		return err
+	}
+	var webhook *gitbridge.WebhookValidator
+	if webhookPath := strings.TrimSpace(os.Getenv("GIT_BRIDGE_WEBHOOK_SECRET_FILE")); webhookPath != "" {
+		secret, readErr := os.ReadFile(webhookPath)
+		if readErr != nil {
+			return readErr
+		}
+		webhook, err = gitbridge.NewWebhookValidator([]byte(strings.TrimSpace(string(secret))))
+		if err != nil {
+			return err
+		}
+	}
+	handler, err := gitbridge.NewServiceWithWebhook(manager, token, webhook, logger)
 	if err != nil {
 		return err
 	}
@@ -62,6 +77,43 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+func configureGitHub(manager *gitbridge.Manager) error {
+	appIDValue := strings.TrimSpace(os.Getenv("GITHUB_APP_ID"))
+	installationValue := strings.TrimSpace(os.Getenv("GITHUB_APP_INSTALLATION_ID"))
+	keyPath := strings.TrimSpace(os.Getenv("GITHUB_APP_PRIVATE_KEY_FILE"))
+	if appIDValue == "" && installationValue == "" && keyPath == "" {
+		return nil
+	}
+	if appIDValue == "" || installationValue == "" || keyPath == "" {
+		return errors.New("GitHub App activation requires app ID, installation ID, and private-key file")
+	}
+	appID, err := strconv.ParseInt(appIDValue, 10, 64)
+	if err != nil {
+		return errors.New("GITHUB_APP_ID is invalid")
+	}
+	installationID, err := strconv.ParseInt(installationValue, 10, 64)
+	if err != nil {
+		return errors.New("GITHUB_APP_INSTALLATION_ID is invalid")
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return err
+	}
+	if len(key) > 64<<10 {
+		return errors.New("GitHub App private key is oversized")
+	}
+	apiBase := env("GITHUB_API_URL", "https://api.github.com")
+	tokens, err := gitbridge.NewGitHubAppTokenSource(appID, installationID, key, apiBase, nil)
+	if err != nil {
+		return err
+	}
+	configuration, err := gitbridge.NewGitHubConfiguration(apiBase, env("GITHUB_GIT_URL", "https://github.com"), tokens, nil)
+	if err != nil {
+		return err
+	}
+	return manager.EnableGitHub(configuration)
 }
 
 func env(key, fallback string) string {

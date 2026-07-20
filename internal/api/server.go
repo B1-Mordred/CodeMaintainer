@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
@@ -36,10 +38,15 @@ type Server struct {
 	memoryIndex  memory.Index
 	secureCookie bool
 	hermesToken  []byte
+	githubEvents GitHubWebhookValidator
 }
 
 type ArtifactReader interface {
 	Open(context.Context, string, string) (storage.ArtifactRecord, io.ReadCloser, error)
+}
+
+type GitHubWebhookValidator interface {
+	ValidateWebhook(context.Context, gitbridge.WebhookValidationRequest) (gitbridge.PullRequestEvent, error)
 }
 
 type Option func(*Server)
@@ -63,6 +70,10 @@ func WithHermesToken(token []byte) Option {
 	return func(server *Server) { server.hermesToken = append([]byte(nil), token...) }
 }
 
+func WithGitHubWebhookValidator(validator GitHubWebhookValidator) Option {
+	return func(server *Server) { server.githubEvents = validator }
+}
+
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -81,6 +92,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/auth/reauthenticate", s.authReauthenticate)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.authLogout)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
+	mux.HandleFunc("POST /api/v1/github/webhooks", s.githubWebhook)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
@@ -180,6 +192,33 @@ func (s *Server) systemStatus(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) workflowStates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": jobs.AllStates()})
+}
+
+func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.githubEvents == nil {
+		writeError(w, http.StatusServiceUnavailable, "github_webhooks_disabled", "GitHub webhook validation is disabled")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	payload, err := io.ReadAll(r.Body)
+	if err != nil || len(payload) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_webhook", "the bounded webhook payload is invalid")
+		return
+	}
+	event, err := s.githubEvents.ValidateWebhook(r.Context(), gitbridge.WebhookValidationRequest{
+		DeliveryID: r.Header.Get("X-GitHub-Delivery"), Event: r.Header.Get("X-GitHub-Event"),
+		Signature256: r.Header.Get("X-Hub-Signature-256"), Payload: base64.StdEncoding.EncodeToString(payload),
+	})
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_webhook_signature", "the GitHub webhook could not be authenticated")
+		return
+	}
+	result, err := s.store.ApplyGitHubPullRequestEvent(r.Context(), event)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {

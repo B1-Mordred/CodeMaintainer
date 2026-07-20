@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,6 +65,48 @@ func (c *Client) Diff(ctx context.Context, request DiffRequest) (DiffResult, err
 func (c *Client) Publish(ctx context.Context, request PublishRequest) (Publication, error) {
 	var result Publication
 	err := c.call(ctx, "/v1/publications", request, &result)
+	return result, err
+}
+
+func (c *Client) ValidateWebhook(ctx context.Context, request WebhookValidationRequest) (PullRequestEvent, error) {
+	var result PullRequestEvent
+	err := c.call(ctx, "/v1/webhooks/validate", request, &result)
+	return result, err
+}
+
+func (c *Client) PullRequestEvent(ctx context.Context, projectID string, number int) (PullRequestEvent, error) {
+	if !safeID.MatchString(projectID) || number <= 0 {
+		return PullRequestEvent{}, ErrInvalid
+	}
+	var result PullRequestEvent
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/pulls/"+strconv.Itoa(number)+"/event", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) RepositoryDiagnostics(ctx context.Context, projectID string) (RepositoryDiagnostics, error) {
+	if !safeID.MatchString(projectID) {
+		return RepositoryDiagnostics{}, ErrInvalid
+	}
+	var result RepositoryDiagnostics
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/diagnostics", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) Issue(ctx context.Context, projectID string, number int) (GitHubIssue, error) {
+	if !safeID.MatchString(projectID) || number <= 0 {
+		return GitHubIssue{}, ErrInvalid
+	}
+	var result GitHubIssue
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/issues/"+strconv.Itoa(number), struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) PullRequest(ctx context.Context, projectID string, number int) (GitHubPullRequest, error) {
+	if !safeID.MatchString(projectID) || number <= 0 {
+		return GitHubPullRequest{}, ErrInvalid
+	}
+	var result GitHubPullRequest
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/pulls/"+strconv.Itoa(number), struct{}{}, &result)
 	return result, err
 }
 

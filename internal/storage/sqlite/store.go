@@ -58,6 +58,12 @@ var migration011 string
 //go:embed migrations/012_job_budgets.sql
 var migration012 string
 
+//go:embed migrations/013_github_events.sql
+var migration013 string
+
+//go:embed migrations/014_rebuild_memory_index_queue.sql
+var migration014 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -114,7 +120,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}, {13, migration013}, {14, migration014}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {

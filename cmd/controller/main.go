@@ -20,6 +20,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/local-code-maintainer/appliance/internal/githubsync"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
@@ -103,6 +104,21 @@ func run(logger *slog.Logger) error {
 	}
 
 	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie)}
+	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
+	if err != nil {
+		return err
+	}
+	gitWebhookClient, err := gitbridge.NewClient(env("MAINTAINER_GIT_BRIDGE_URL", "http://git-bridge:8083"), gitToken)
+	if err != nil {
+		return err
+	}
+	serverOptions = append(serverOptions, api.WithGitHubWebhookValidator(gitWebhookClient))
+	githubReconciler, err := githubsync.New(store, artifactStore, gitWebhookClient, 5*time.Minute, logger.With("component", "github-poll"))
+	if err != nil {
+		return err
+	}
+	githubErrors := make(chan error, 1)
+	go func() { githubErrors <- githubReconciler.Run(ctx) }()
 	if memoryIndex != nil {
 		serverOptions = append(serverOptions, api.WithMemoryIndex(memoryIndex))
 	}
@@ -151,6 +167,11 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	case err := <-schedulerErrors:
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	case err := <-githubErrors:
 		if ctx.Err() != nil {
 			return nil
 		}

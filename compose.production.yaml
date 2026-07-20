@@ -14,6 +14,10 @@ services:
         source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/secrets/git-bridge.token
         target: /run/secrets/git-bridge.token
         read_only: true
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/secrets/github-webhook.secret
+        target: /run/secrets/github-webhook.secret
+        read_only: true
 
   model-supervisor:
     image: local/code-maintainer-inference:0.1.0-dev

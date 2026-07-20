@@ -12,6 +12,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
+	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
 	"github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/projects"
@@ -181,5 +182,17 @@ type Store interface {
 	FindingStore
 	ProjectStore
 	ApprovalStore
+	GitHubEventStore
 	Close() error
+}
+
+type GitHubDeliveryResult struct {
+	DeliveryID     string `json:"delivery_id"`
+	Outcome        string `json:"outcome"`
+	AffectedMemory int    `json:"affected_memory"`
+	Replay         bool   `json:"replay"`
+}
+
+type GitHubEventStore interface {
+	ApplyGitHubPullRequestEvent(context.Context, gitbridge.PullRequestEvent) (GitHubDeliveryResult, error)
 }

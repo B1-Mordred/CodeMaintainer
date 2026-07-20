@@ -1,0 +1,84 @@
+package gitbridge
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestWebhookValidatorAuthenticatesAndNormalizesMerge(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	validator, err := NewWebhookValidator(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"action":"closed","number":23,"repository":{"full_name":"owner/repo"},"pull_request":{"state":"closed","merged":true,"merge_commit_sha":"abcdef0123456789abcdef0123456789abcdef01","head":{"ref":"maintainer/job_23","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main"}}}`)
+	request := WebhookValidationRequest{
+		DeliveryID: "delivery-23", Event: "pull_request", Signature256: webhookSignature(secret, payload),
+		Payload: base64.StdEncoding.EncodeToString(payload),
+	}
+	event, err := validator.Validate(context.Background(), request)
+	if err != nil || event.Outcome != "merged" || event.Repository != "owner/repo" || event.Number != 23 || event.MergedCommit == "" {
+		t.Fatalf("event = %#v, %v", event, err)
+	}
+	request.Signature256 = webhookSignature(secret, append(payload, ' '))
+	if _, err := validator.Validate(context.Background(), request); err == nil {
+		t.Fatal("tampered webhook was accepted")
+	}
+}
+
+func TestWebhookValidatorNormalizesClosedUnmergedAsRejected(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	validator, err := NewWebhookValidator(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"action":"closed","number":23,"repository":{"full_name":"owner/repo"},"pull_request":{"state":"closed","merged":false,"merge_commit_sha":null,"head":{"ref":"maintainer/job_23","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main"}}}`)
+	event, err := validator.Validate(context.Background(), WebhookValidationRequest{
+		DeliveryID: "delivery-24", Event: "pull_request", Signature256: webhookSignature(secret, payload),
+		Payload: base64.StdEncoding.EncodeToString(payload),
+	})
+	if err != nil || event.Outcome != "rejected" || event.MergedCommit != "" {
+		t.Fatalf("event = %#v, %v", event, err)
+	}
+}
+
+func TestWebhookValidationStaysBehindAuthenticatedBridgeClient(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	validator, err := NewWebhookValidator(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := []byte("abcdef0123456789abcdef0123456789")
+	handler, err := NewServiceWithWebhook(&fixtureBackend{}, token, validator, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"action":"closed","number":23,"repository":{"full_name":"owner/repo"},"pull_request":{"state":"closed","merged":false,"merge_commit_sha":null,"head":{"ref":"maintainer/job_23","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main"}}}`)
+	event, err := client.ValidateWebhook(context.Background(), WebhookValidationRequest{
+		DeliveryID: "delivery-client", Event: "pull_request", Signature256: webhookSignature(secret, payload),
+		Payload: base64.StdEncoding.EncodeToString(payload),
+	})
+	if err != nil || event.Outcome != "rejected" {
+		t.Fatalf("validated event = %#v, %v", event, err)
+	}
+}
+
+func webhookSignature(secret, payload []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	return fmt.Sprintf("sha256=%s", hex.EncodeToString(mac.Sum(nil)))
+}

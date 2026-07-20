@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -22,7 +23,21 @@ type Backend interface {
 	Publish(context.Context, PublishRequest) (Publication, error)
 }
 
+type PullEventBackend interface {
+	PullRequestEvent(context.Context, string, int) (PullRequestEvent, error)
+}
+
+type GitHubMetadataBackend interface {
+	RepositoryDiagnostics(context.Context, string) (RepositoryDiagnostics, error)
+	Issue(context.Context, string, int) (GitHubIssue, error)
+	PullRequest(context.Context, string, int) (GitHubPullRequest, error)
+}
+
 func NewService(backend Backend, token []byte, logger *slog.Logger) (http.Handler, error) {
+	return NewServiceWithWebhook(backend, token, nil, logger)
+}
+
+func NewServiceWithWebhook(backend Backend, token []byte, webhook *WebhookValidator, logger *slog.Logger) (http.Handler, error) {
 	if backend == nil || len(token) < 32 || logger == nil {
 		return nil, errors.New("Git bridge backend, private token, and logger are required")
 	}
@@ -98,6 +113,84 @@ func NewService(backend Backend, token []byte, logger *slog.Logger) (http.Handle
 		logger.InfoContext(r.Context(), "draft publication created", "project_id", request.ProjectID, "job_id", request.JobID, "branch", result.Branch)
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("POST /v1/webhooks/validate", func(w http.ResponseWriter, r *http.Request) {
+		if webhook == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "GitHub webhooks are disabled"})
+			return
+		}
+		var request WebhookValidationRequest
+		if !decode(w, r, &request) {
+			return
+		}
+		result, err := webhook.Validate(r.Context(), request)
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/projects/{projectID}/pulls/{number}/event", func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := backend.(PullEventBackend)
+		if !ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "GitHub polling is disabled"})
+			return
+		}
+		number, err := strconv.Atoi(r.PathValue("number"))
+		if err != nil {
+			writeBackendError(w, ErrInvalid)
+			return
+		}
+		result, err := provider.PullRequestEvent(r.Context(), r.PathValue("projectID"), number)
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/projects/{projectID}/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := backend.(GitHubMetadataBackend)
+		if !ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "provider diagnostics are disabled"})
+			return
+		}
+		result, err := provider.RepositoryDiagnostics(r.Context(), r.PathValue("projectID"))
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	metadataHandler := func(kind string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			provider, ok := backend.(GitHubMetadataBackend)
+			if !ok {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "GitHub metadata is disabled"})
+				return
+			}
+			number, err := strconv.Atoi(r.PathValue("number"))
+			if err != nil || number <= 0 {
+				writeBackendError(w, ErrInvalid)
+				return
+			}
+			if kind == "issue" {
+				result, err := provider.Issue(r.Context(), r.PathValue("projectID"), number)
+				if err != nil {
+					writeBackendError(w, err)
+					return
+				}
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+			result, err := provider.PullRequest(r.Context(), r.PathValue("projectID"), number)
+			if err != nil {
+				writeBackendError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, result)
+		}
+	}
+	mux.HandleFunc("POST /v1/projects/{projectID}/issues/{number}", metadataHandler("issue"))
+	mux.HandleFunc("POST /v1/projects/{projectID}/pulls/{number}", metadataHandler("pull"))
 	authenticated := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			mux.ServeHTTP(w, r)

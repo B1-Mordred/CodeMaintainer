@@ -215,12 +215,59 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 12 {
-		t.Fatalf("applied migration count = %d, want 12", migrations)
+	if migrations != 14 {
+		t.Fatalf("applied migration count = %d, want 14", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
 		t.Fatalf("job_leases table missing: %v", err)
+	}
+}
+
+func TestMigration14PreservesHistoricalMemoryIndexQueueWithoutSequence(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "historical.db")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := []string{
+		`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
+		`WITH RECURSIVE versions(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM versions WHERE value < 13)
+		 INSERT INTO schema_migrations SELECT value, '2026-07-20T00:00:00Z' FROM versions`,
+		`CREATE TABLE memory_records(id TEXT PRIMARY KEY)`,
+		`CREATE TABLE memory_index_operations (
+		 id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES memory_records(id), owner TEXT NOT NULL,
+		 repository TEXT NOT NULL, action TEXT NOT NULL, record_version INTEGER NOT NULL, state TEXT NOT NULL,
+		 attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt_at TEXT NOT NULL,
+		 lease_owner TEXT NOT NULL DEFAULT '', lease_expires_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+		 UNIQUE(record_id, record_version, action))`,
+		`INSERT INTO memory_records(id) VALUES('memory_0123456789abcdef0123456789abcdef')`,
+		`INSERT INTO memory_index_operations(id, record_id, owner, repository, action, record_version, state,
+		 next_attempt_at, created_at, updated_at) VALUES('operation', 'memory_0123456789abcdef0123456789abcdef',
+		 'owner', 'repo', 'upsert', 2, 'pending', '2026-07-20T00:00:00Z', '2026-07-20T00:00:00Z', '2026-07-20T00:00:00Z')`,
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var sequence int64
+	var id string
+	if err := store.db.QueryRowContext(ctx, "SELECT sequence, id FROM memory_index_operations").Scan(&sequence, &id); err != nil {
+		t.Fatal(err)
+	}
+	if sequence != 1 || id != "operation" {
+		t.Fatalf("preserved operation = sequence %d id %q", sequence, id)
 	}
 }
 

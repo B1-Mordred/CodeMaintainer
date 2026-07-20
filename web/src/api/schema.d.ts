@@ -123,6 +123,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/github/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive a GitHub pull-request webhook and validate its HMAC in the isolated GitHub bridge */
+        post: operations["receiveGitHubWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow/states": {
         parameters: {
             query?: never;
@@ -1143,6 +1160,13 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        GitHubDeliveryResult: {
+            delivery_id: string;
+            /** @enum {string} */
+            outcome: "merged" | "rejected";
+            affected_memory: number;
+            replay: boolean;
+        };
         /** @enum {string} */
         JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         CreateJobRequest: {
@@ -1511,6 +1535,40 @@ export interface operations {
             };
             400: components["responses"]["ErrorResponse"];
             default: components["responses"]["ErrorResponse"];
+        };
+    };
+    receiveGitHubWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-GitHub-Delivery": string;
+                "X-GitHub-Event": "pull_request";
+                "X-Hub-Signature-256": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Authenticated delivery was atomically applied or recognized as a replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubDeliveryResult"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     listWorkflowStates: {
