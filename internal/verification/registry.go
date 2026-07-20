@@ -18,7 +18,7 @@ func NewRegistry() *Registry {
 	)
 	registry.add(LanguagePython,
 		Command{Class: ClassCompile, Executable: "python3", Arguments: []string{"-m", "compileall", "-q", "."}},
-		Command{Class: ClassLint, Executable: "python3", Arguments: []string{"-m", "ruff", "check", "."}},
+		Command{Class: ClassLint, Executable: "python3", Arguments: []string{"-m", "flake8", "."}},
 		Command{Class: ClassTargetedTests, Executable: "python3", Arguments: []string{"-m", "pytest", "-q"}},
 		Command{Class: ClassFullTests, Executable: "python3", Arguments: []string{"-m", "pytest"}},
 		Command{Class: ClassPropertyTests, Executable: "python3", Arguments: []string{"-m", "pytest", "-m", "property"}},

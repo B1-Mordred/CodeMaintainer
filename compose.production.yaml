@@ -1,0 +1,34 @@
+services:
+  runnerd:
+    environment:
+      RUNNERD_PROFILE: production
+      RUNNERD_DATA_ROOT: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}
+      RUNNERD_POLICY_FILE: /etc/maintainer/runner-policy.json
+      RUNNERD_DOCKER_SOCKET: /run/worker-docker/docker.sock
+      RUNNERD_DEPENDENCY_NETWORK: ${RUNNERD_DEPENDENCY_NETWORK:-maintainer-dependency-egress}
+    volumes: !override
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}
+        target: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/run
+        target: /run/maintainer
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/secrets/runnerd.token
+        target: /run/secrets/runnerd.token
+        read_only: true
+      - type: bind
+        source: ${RUNNERD_POLICY_FILE:?set RUNNERD_POLICY_FILE to the immutable host policy file}
+        target: /etc/maintainer/runner-policy.json
+        read_only: true
+      - type: bind
+        source: ${RUNNERD_WORKER_SOCKET:?set RUNNERD_WORKER_SOCKET to the dedicated rootless worker daemon socket}
+        target: /run/worker-docker/docker.sock
+
+  controller:
+    environment:
+      MAINTAINER_PROFILE: production
+    volumes: !override
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}
+        target: /var/lib/maintainer

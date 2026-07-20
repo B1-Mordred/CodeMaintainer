@@ -13,7 +13,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [x] (2026-07-20 09:30Z) Read the complete product contract, inspected the initially empty repository, and verified the available host toolchain and Docker support.
 - [x] (2026-07-20 09:35Z) Selected a small Go control plane with SQLite, a statically built TypeScript dashboard, narrow HTTP/Unix-socket service contracts, and deterministic in-process fakes for default tests.
 - [x] (2026-07-20 10:31Z) Milestone 1 foundation: repository conventions, pinned containerized Go/Node toolchains, system/QC schemas, versioned SQLite migration and WAL store, audited configuration apply/validate/rollback, durable queue leases, controller API and valid OpenAPI contract, generated typed frontend client with drift gate, replayable SSE, React/TypeScript UI shell, narrow fake adapters, and restart/reclaim tests for every resumable phase. The complete foundation unit, migration, API, frontend, schema, image-build, live-migration, CLI, and runtime acceptance run passed.
-- [ ] Milestone 2 secure execution (completed through 2026-07-20 11:15Z: authenticated runnerd boundary and hardened policy; SQLite artifact index and audited content-addressed store; exact-SHA offline worktrees with durable claim/retirement and never-reuse semantics; fixed Go/Python/Node/C/C++/Rust verifier class registry; bounded local fixture executor; deterministic protected-path, workflow, CODEOWNERS, submodule, symlink, binary, patch/file-size and secret scans; command-result, JUnit, SARIF, coverage-status and verification-report artifacts; job-scoped artifact listing/integrity-checked downloads and authorized input staging; full offline Go defect checkout/fix/verify test; remaining: dedicated rootless worker-daemon backend, immutable real worker images including the worker harness, runnerd-backed rather than local fixture acceptance, and production dependency-egress enforcement evidence).
+- [ ] Milestone 2 secure execution (completed through 2026-07-20 13:05Z: authenticated runnerd boundary and hardened server policy; SQLite artifact index and audited content-addressed store; exact-SHA offline worktrees with durable claim/retirement and never-reuse semantics; fixed Go/Python/Node/C/C++/Rust verifier registry; protected-path and secret scans; standard verification artifacts; a production Docker-API executor restricted to an operator-supplied dedicated Unix socket; digest-only images, fixed mounts and networks, non-root/read-only/capability/seccomp/CPU/RAM/PID/tmpfs/log/artifact/wall/disk-growth limits; immutable worker harness and base/Python/Node/C/C++/Rust/Go/full images; and a real-daemon runnerd-backed offline Go fixture. Remaining: dependency-acquisition worker behavior and real named-egress acceptance, implementation/QC worker images supplied by Milestone 3, controller workflow dispatch through the runner client, and operator validation against a dedicated rootless rather than this host's rootful development daemon).
 - [ ] Milestone 3 inference and agents: implement model manifests/supervision, pinned llama.cpp build, separate implementation and QC images/prompts/contracts, locked QA criteria, finding lifecycle, repair loop, and deterministic fake-model acceptance workflow.
 - [ ] Milestone 4 publication: implement GitHub App authentication, mirror synchronization, local bare provider, publication policy, protected-path checks, webhook validation, upstream movement handling, and idempotent draft publication.
 - [ ] Milestone 5 memory and scheduling: implement repository-scoped memory namespaces, quarantine and promotion, provenance, retrieval traces and context budgets, OpenViking adapter/profile, Hermes tools, schedules, and reviewed skill proposals.
@@ -40,6 +40,12 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: `npm install` rejected TypeScript 7.0.2 with `ERESOLVE`; the official registry identified TypeScript 5.9.3 as the latest compatible stable release. Pinning 5.9.3 produced a zero-vulnerability lockfile, deterministic schema generation, a clean type check, and a successful production Vite build.
 - Observation: standards-based `Request` construction in Node rejects relative URLs before a mocked fetch implementation sees the request.
   Evidence: the first generated-client frontend test failed with `Failed to parse URL from /api/v1/system/status`. Building a same-origin absolute API base from `window.location.origin` preserves browser routing and made the Node/jsdom accessibility test pass.
+- Observation: this Docker installation has no buildx plugin, and Docker 29 rejects `compress=true` for the `local` log driver even though older examples commonly include it.
+  Evidence: `docker buildx bake` was unavailable; legacy multi-stage builds completed every runner target. A real create call rejected the original local-log options until runnerd retained `max-size` and `max-file=1` while setting `compress=false`.
+- Observation: a containerized integration test that asks the host daemon to create bind-mounted workers must use paths visible identically to both the test container and host daemon and a numeric worker identity that owns those paths.
+  Evidence: mounting `/srv/coder` at the identical path and using the test process UID/GID let the production executor run the offline fixture; profile user `65532` remains the image default and production policy must match the owner of the deployment data root.
+- Observation: composing a useful full runner from Debian packages silently selected old distro Go and Rust releases.
+  Evidence: the first full-runner smoke test reported the distro toolchains. Re-basing full on the pinned Rust 1.92 stage and copying the pinned Go 1.25 tree preserved current compiled toolchains while adding Python, Node, GCC, and CMake.
 
 ## Decision Log
 
@@ -66,6 +72,12 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-20 / Codex
 - Decision: keep verifier commands in a compiled language/class registry and make policy scanning intrinsic to every verification run rather than accepting project- or browser-supplied argument arrays.
   Rationale: this preserves the no-arbitrary-command boundary. The same registry can run through the explicit local fixture executor or inside a runnerd-managed worker, while deterministic policy findings remain controller-verifiable and independent of model output.
+  Date/Author: 2026-07-20 / Codex
+- Decision: translate runner policy directly into Docker Engine API v1.44 requests over only a configured Unix socket, with no general Docker client library or arbitrary container-specification route.
+  Rationale: the small adapter makes every accepted image, bind root, target, user, network, capability, security option, resource bound, and operation directly auditable. Production Compose mounts only the dedicated worker socket into runnerd; the controller and every worker remain socket-free.
+  Date/Author: 2026-07-20 / Codex
+- Decision: enforce writable bind growth with a runnerd-owned baseline watchdog in addition to bounded tmpfs, logs, and artifact validation.
+  Rationale: read-only container roots and tmpfs sizes do not limit job worktree and artifact bind mounts. Runnerd records a trusted start baseline, stops growth beyond the kind-specific ceiling, and reattaches the watchdog from validated labels after inspection following a restart. Production operators should still place the data root on a quota-controlled filesystem for a hard storage backstop.
   Date/Author: 2026-07-20 / Codex
 
 ## Outcomes & Retrospective
@@ -220,7 +232,21 @@ Secure-runner boundary evidence:
     socket mode=600 owner=1000:1000
     token regular file mode=600 owner=1000:1000
 
-The live Unix-socket probe returned `{"status":"ok"}`, rejected an unauthenticated start with HTTP 401, and accepted the same bounded request with the private token as run `run_2648f02b9373ebdc80204c071604e353`. Unit and race tests prove unknown caller fields such as image, command, mounts, network, capabilities, and environment are rejected before executor invocation; traversal and mutable image inputs are denied; only dependency preparation receives the named egress network; and implementation, verification, and QC remain offline. The mock service has no Docker socket and deliberately refuses a non-mock profile until the dedicated worker backend lands.
+The live Unix-socket probe returned `{"status":"ok"}`, rejected an unauthenticated start with HTTP 401, and accepted the same bounded request with the private token as run `run_2648f02b9373ebdc80204c071604e353`. Unit and race tests prove unknown caller fields such as image, command, mounts, network, capabilities, and environment are rejected before executor invocation; traversal and mutable image inputs are denied; only dependency preparation receives the named egress network; and implementation, verification, and QC remain offline. The explicit mock profile has no Docker socket; the production profile refuses startup unless it can load a strict immutable policy and resolve the configured data root and dedicated worker-socket path.
+
+Production-executor and immutable-runner evidence:
+
+    $ go test -race ./internal/runnerd ./cmd/runnerd ./cmd/maintainer-worker ./internal/verification
+    ok  internal/runnerd
+    ok  cmd/maintainer-worker
+    ok  internal/verification
+
+    $ RUNNERD_DOCKER_INTEGRATION=1 ... go test -v -run TestDockerExecutorRunsOfflineGoFixture ./internal/runnerd
+    --- PASS: TestDockerExecutorRunsOfflineGoFixture (21.31s)
+
+The real-daemon fixture used the production executor, an immutable local SHA-256 image ID, network `none`, fixed read-only root/capability/security/resource policy, an exact job worktree, and a read-only bounded verification packet. It compiled and tested an offline Go module and returned a hash-verified immutable command-result artifact. This proves the adapter against the available rootful development daemon only; production Compose requires a separately provisioned dedicated worker socket and never mounts the host's main socket.
+
+Legacy multi-stage builds produced all required base, Python, Node, C, C++, Rust, Go, and full worker tags from digest-pinned bases and a fixed Debian snapshot. Inspection reports user `65532:65532` and entrypoint `["/usr/local/bin/maintainer-worker","verification"]`. A read-only, network-none, cap-drop-all smoke of the full image reported Python 3.11.2, pytest 7.2.1, flake8 5.0.4, Node 18.20.4, npm 9.2.0, GCC/G++ 12.2.0, Rust/Clippy 1.92.0, and Go 1.25.0; the language-specific tags independently reported their pinned or snapshot-selected tools. The disk-growth race test creates more than a one-byte allowance and observes runnerd stop the worker within the watchdog interval.
 
 Artifact evidence:
 
@@ -261,3 +287,5 @@ Revision note (2026-07-20 10:53Z): began Milestone 2 with the runnerd containmen
 Revision note (2026-07-20 11:00Z): added migration v3 and the artifact evidence core. Objects are content-addressed, bounded, atomically published without overwrite, read-only, integrity-checked on access, and associated immutably with jobs in audited SQLite metadata. Kept artifact API/staging and verifier-produced JUnit/SARIF/coverage/command results in the remaining Milestone 2 scope.
 
 Revision note (2026-07-20 11:15Z): completed the trusted worktree, deterministic verifier, standard artifact-format, artifact API, and authorized staging portions of Milestone 2. Added an offline Go defect checkout/fix/verification integration test and policy fixtures for the required high-risk patch classes. Kept Milestone 2 open because actual immutable worker images and a production executor attached only to a dedicated rootless worker daemon are not yet implemented or accepted.
+
+Revision note (2026-07-20 13:05Z): implemented the production Unix-socket Docker API executor, strict bootstrap policy file, immutable verification worker, all required language runner targets, production Compose separation, real-daemon offline fixture, and writable disk-growth watchdog. Recorded the exact rootful-development evidence and retained the dedicated-rootless-daemon check as an operator production validation. Milestone 2 remains open until dependency acquisition, controller dispatch, and the Milestone 3 implementation/QC images complete every job kind.

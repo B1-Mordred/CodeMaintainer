@@ -2,6 +2,8 @@ package runnerd
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -48,6 +50,37 @@ func TestPolicyConstructsHardenedServerOwnedSpecifications(t *testing.T) {
 	}
 	if !foundScopedCache {
 		t.Fatalf("dependency cache is not project scoped: %#v", dependencies.Mounts)
+	}
+}
+
+func TestLoadPolicyFileAcceptsOnlyACompletePrivateImmutableAllowList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.json")
+	digest := strings.Repeat("b", 64)
+	document := `{"schema_version":1,"worker_user":"1000:1000","images":{` +
+		`"dependencies":"example/dependencies@sha256:` + digest + `",` +
+		`"implementation":"example/implementation@sha256:` + digest + `",` +
+		`"verification":"example/verification@sha256:` + digest + `",` +
+		`"qc":"example/qc@sha256:` + digest + `"}}`
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPolicyFile(path, "/srv/maintainer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o622); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPolicyFile(path, "/srv/maintainer"); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("group-writable policy returned %v", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(document, "@sha256:", ":latest", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPolicyFile(path, "/srv/maintainer"); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("mutable policy image returned %v", err)
 	}
 }
 

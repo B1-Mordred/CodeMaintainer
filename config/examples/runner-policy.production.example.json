@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "worker_user": "1000:1000",
+  "images": {
+    "dependencies": "registry.invalid/local-code-maintainer/dependencies@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "implementation": "registry.invalid/local-code-maintainer/implementation-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "verification": "registry.invalid/local-code-maintainer/runner-full@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "qc": "registry.invalid/local-code-maintainer/qc-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

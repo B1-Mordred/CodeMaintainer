@@ -42,7 +42,7 @@ func (LocalExecutor) Run(parent context.Context, worktree string, command Comman
 	cacheKey := strings.NewReplacer("/", "_", string(filepath.Separator), "_").Replace(filepath.Base(worktree))
 	temporaryRoot := os.TempDir()
 	process.Env = []string{
-		"HOME=/nonexistent", "LANG=C", "LC_ALL=C", "PATH=/usr/local/bin:/usr/bin:/bin",
+		"HOME=/nonexistent", "LANG=C", "LC_ALL=C", "PATH=/usr/local/go/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin",
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0",
 		"GOCACHE=" + filepath.Join(temporaryRoot, "maintainer-gocache-"+cacheKey),
 		"GOMODCACHE=" + filepath.Join(temporaryRoot, "maintainer-gomodcache-"+cacheKey),
