@@ -201,6 +201,9 @@ func (s *Store) DispatchDueSchedule(ctx context.Context, actor string) (automati
 				VALUES(?, NULL, ?, ?, ?, ?, ?)`, jobID, jobs.StateQueued, actor, "scheduled job submitted", string(details), formatTime(now))
 		}
 		if err == nil {
+			err = s.snapshotAcceptedJobTx(ctx, tx, jobID, project.ID, now)
+		}
+		if err == nil {
 			_, err = tx.ExecContext(ctx, `INSERT INTO schedule_runs(id, schedule_id, job_id, status, reason, due_at, created_at)
 				VALUES(?, ?, ?, ?, ?, ?, ?)`, run.ID, run.ScheduleID, run.JobID, run.Status, run.Reason, formatTime(run.DueAt), formatTime(now))
 		}

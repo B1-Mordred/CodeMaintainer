@@ -82,6 +82,9 @@ func run(logger *slog.Logger) error {
 	if _, err := configRegistry.EnsureSystemScope(ctx, activeConfig, activeRevision.ID); err != nil {
 		return err
 	}
+	if err := store.SetConfigurationRegistry(registry); err != nil {
+		return err
+	}
 	artifactStore, err := artifactfiles.New(filepath.Join(dataRoot, "artifacts"), store)
 	if err != nil {
 		return err

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api, getCSRFToken } from "./api/client";
 import type { components } from "./api/schema";
+import { ConfigurationPage } from "./ConfigurationPage";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -24,7 +25,7 @@ type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 
-type PageID = "first-run" | "overview" | "projects" | "jobs" | "quality" | "models" | "memory" | "github" | "automation" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "jobs" | "quality" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -36,6 +37,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
   { id: "github", label: "GitHub", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
   { id: "automation", label: "Scheduling / Hermes", icon: <FileClock aria-hidden="true" />, group: "integrate" },
+  { id: "configuration", label: "Configuration", icon: <SlidersHorizontal aria-hidden="true" />, group: "manage" },
   { id: "administration", label: "Administration", icon: <Settings aria-hidden="true" />, group: "manage" },
 ];
 
@@ -131,6 +133,7 @@ export function OperatorConsole({
       {page === "memory" && <MemoryPage />}
       {page === "github" && <GitHubPage jobs={initialJobs} />}
       {page === "automation" && <AutomationPage expert={expert} />}
+      {page === "configuration" && <ConfigurationPage expert={expert} />}
       {page === "administration" && <AdministrationPage status={initialStatus} />}
     </div>
   </div>;
@@ -310,7 +313,8 @@ function JobsPage({ initialJobs, expert }: { initialJobs: Job[]; expert: boolean
     <Section title="Job history" eyebrow="Durable queue" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}><JobTable jobs={jobs} onSelect={(job) => void inspect(job)} /></Section>
     {selected && <Section title={`Job ${selected.id}`} eyebrow="Inspection">
       <div className="detail-grid"><article className="detail-panel"><h3>Task and commits</h3><p>{selected.task}</p><dl><div><dt>State</dt><dd><Badge value={selected.state} /></dd></div><div><dt>Base SHA</dt><dd><code>{selected.base_sha || "Pending"}</code></dd></div><div><dt>Result SHA</dt><dd><code>{selected.result_sha || "Pending"}</code></dd></div><div><dt>Token budget</dt><dd>{selected.reserved_tokens.toLocaleString()} / {selected.max_tokens.toLocaleString()}</dd></div></dl><div className="card-actions"><button className="secondary-button" type="button" onClick={() => void action("retry")}>Retry / resume</button><button className="secondary-button" type="button" onClick={() => void inspectAction("verify")}>Inspect verification</button><button className="secondary-button" type="button" onClick={() => void inspectAction("review")}>Request review</button><button className="danger-button" type="button" disabled={["completed", "failed", "cancelled"].includes(selected.state)} onClick={() => void action("cancel")}>Cancel</button></div></article>
-      <article className="detail-panel"><h3>Acceptance criteria</h3><pre>{JSON.stringify(selected.acceptance_criteria, null, 2)}</pre></article></div>
+      <article className="detail-panel"><h3>Acceptance criteria</h3><pre>{JSON.stringify(selected.acceptance_criteria, null, 2)}</pre></article>
+      {detail?.configuration_snapshot && <article className="detail-panel"><h3>Accepted configuration</h3><p>This immutable redacted snapshot remains stable when live settings change.</p><dl><div><dt>Snapshot</dt><dd><code>{detail.configuration_snapshot.sha256}</code></dd></div><div><dt>Registry</dt><dd><code>{detail.configuration_snapshot.registry_hash}</code></dd></div><div><dt>Accepted</dt><dd>{date(detail.configuration_snapshot.created_at)}</dd></div></dl>{expert && <details><summary>Effective values and provenance</summary><pre>{JSON.stringify(detail.configuration_snapshot.document, null, 2)}</pre></details>}</article>}</div>
       {selected.state === "awaiting_operator" && <div className="detail-panel"><h3>Exact-commit publication approval</h3><label>Reviewer rationale<textarea required rows={2} maxLength={4096} value={rationale} onChange={(event) => setRationale(event.target.value)} /></label><label>Current reviewer password<input type="password" autoComplete="current-password" minLength={14} value={password} onChange={(event) => setPassword(event.target.value)} /></label><button type="button" onClick={() => void approve()}>Approve draft publication for {shortSHA(selected.result_sha)}</button></div>}
       {message && <p className="inline-message" role="status">{message}</p>}
       <div className="timeline"><h3>State timeline</h3>{detail?.transitions?.map((transition: any, index: number, transitions: any[]) => { const elapsed = index > 0 ? Math.max(0, new Date(transition.created_at).getTime() - new Date(transitions[index - 1].created_at).getTime()) : 0; return <div className="timeline-row" key={transition.sequence}><span /><div><strong>{label(transition.to)}</strong><p>{transition.reason}{index > 0 ? ` · ${(elapsed / 1000).toFixed(1)}s in prior state` : " · queued"}</p></div><time>{date(transition.created_at)}</time></div>; })}</div>

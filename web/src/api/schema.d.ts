@@ -2287,6 +2287,18 @@ export interface components {
                 [key: string]: components["schemas"]["ConfigEffectiveValue"];
             };
         };
+        JobConfigSnapshot: {
+            job_id: string;
+            schema_version: number;
+            registry_hash: string;
+            sha256: string;
+            /** @description Complete immutable redacted configuration snapshot with effective-value provenance. */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
         SystemConfig: {
             /** @constant */
             schema_version: 1;
@@ -3907,6 +3919,7 @@ export interface operations {
                         findings: components["schemas"]["Finding"][];
                         approvals: components["schemas"]["Approval"][];
                         phases: components["schemas"]["PhaseRecord"][];
+                        configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
             };

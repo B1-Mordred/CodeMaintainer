@@ -6,8 +6,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/automation"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 )
 
@@ -188,4 +191,100 @@ func TestJobConfigurationSnapshotIsImmutableAndIdempotent(t *testing.T) {
 	if err != nil || loaded.SHA256 != created.SHA256 {
 		t.Fatalf("load snapshot = %#v, %v", loaded, err)
 	}
+}
+
+func TestConfiguredRegistrySnapshotsDirectAndScheduledJobsAtomicallyAtAcceptance(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	clock := time.Date(2026, 7, 20, 22, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return clock }
+	registry, err := appconfig.BuiltInRegistry(appconfig.Default(".data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.ApplyConfigScope(ctx, appconfig.ApplyScopeRequest{
+		Scope: appconfig.ScopeRef{Kind: appconfig.ScopeSystem}, ExpectedVersion: 0,
+		ActorID: "admin", ActorRole: "administrator", Operation: "apply", Reason: "system snapshot fixture",
+		Changes: []appconfig.ScopeChange{{Key: "workflow.max_review_cycles", Value: json.RawMessage(`3`), Configured: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projectScope := appconfig.ScopeRef{Kind: appconfig.ScopeProject, ID: "owner-repo"}
+	if _, _, err := store.ApplyConfigScope(ctx, appconfig.ApplyScopeRequest{
+		Scope: projectScope, ExpectedVersion: 0, ActorID: "admin", ActorRole: "administrator",
+		Operation: "apply", Reason: "project snapshot fixture",
+		Changes: []appconfig.ScopeChange{{Key: "workflow.max_review_cycles", Value: json.RawMessage(`5`), Configured: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetConfigurationRegistry(registry); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job-automatic-config", ProjectID: "owner-repo", Repository: "owner/repo",
+		Task: "prove atomic configuration", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := readJobSnapshotDocument(t, store, job.ID)
+	if got := string(first.Values["workflow.max_review_cycles"].Value); got != "5" {
+		t.Fatalf("accepted direct job review cycles = %s, want project override 5", got)
+	}
+	if len(first.Values) != len(registry.Descriptors()) {
+		t.Fatalf("automatic snapshot has %d values, want %d", len(first.Values), len(registry.Descriptors()))
+	}
+
+	if _, _, err := store.ApplyConfigScope(ctx, appconfig.ApplyScopeRequest{
+		Scope: projectScope, ExpectedVersion: 1, ActorID: "admin", ActorRole: "administrator",
+		Operation: "apply", Reason: "later project change",
+		Changes: []appconfig.ScopeChange{{Key: "workflow.max_review_cycles", Value: json.RawMessage(`6`), Configured: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	replayed := readJobSnapshotDocument(t, store, job.ID)
+	if got := string(replayed.Values["workflow.max_review_cycles"].Value); got != "5" || replayed.SHA256 != first.SHA256 {
+		t.Fatalf("later change altered accepted job snapshot: got=%s first=%s replay=%s", got, first.SHA256, replayed.SHA256)
+	}
+
+	if _, err := store.UpsertProject(ctx, projects.UpsertRequest{
+		ID: "owner-repo", Provider: "local", Repository: "owner/repo", DefaultBranch: "main", LocalRemoteName: "fixture.git",
+	}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SaveSchedule(ctx, automation.ScheduleRequest{
+		ProjectID: "owner-repo", Name: "configuration snapshot schedule", TaskType: "maintenance",
+		Task: "snapshot scheduled configuration", IntervalSeconds: 3600, WindowStartMinute: 0, WindowEndMinute: 0,
+		MaxWallSeconds: 600, MaxTokens: 1000, Enabled: true, NextRunAt: clock.Add(-time.Minute),
+	}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.DispatchDueSchedule(ctx, "controller-scheduler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduled := readJobSnapshotDocument(t, store, run.JobID)
+	if got := string(scheduled.Values["workflow.max_review_cycles"].Value); got != "6" {
+		t.Fatalf("scheduled job review cycles = %s, want acceptance-time value 6", got)
+	}
+}
+
+func readJobSnapshotDocument(t *testing.T, store *Store, jobID string) appconfig.Snapshot {
+	t.Helper()
+	stored, err := store.GetJobConfigSnapshot(context.Background(), jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document appconfig.Snapshot
+	if err := json.Unmarshal(stored.Document, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.SHA256 != stored.SHA256 || document.RegistryHash != stored.RegistryHash {
+		t.Fatalf("snapshot envelope mismatch: %#v %#v", document, stored)
+	}
+	return document
 }

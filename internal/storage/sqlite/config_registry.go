@@ -543,27 +543,89 @@ func (s *Store) SaveJobConfigSnapshot(ctx context.Context, snapshot appconfig.Jo
 		return appconfig.JobSnapshot{}, fmt.Errorf("begin job configuration snapshot: %w", err)
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO job_config_snapshots(job_id, schema_version,
-		registry_hash, snapshot_sha256, document, created_at) VALUES(?, ?, ?, ?, ?, ?)`,
-		snapshot.JobID, snapshot.SchemaVersion, snapshot.RegistryHash, snapshot.SHA256,
-		string(snapshot.Document), snapshot.CreatedAt.Format(timestampFormat))
-	if err != nil {
-		if strings.Contains(err.Error(), "FOREIGN KEY") {
-			return appconfig.JobSnapshot{}, storage.ErrNotFound
-		}
-		return appconfig.JobSnapshot{}, fmt.Errorf("insert job configuration snapshot: %w", err)
-	}
-	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{
-		ActorID: "controller", ActorRole: "system", Action: "config_registry.snapshot",
-		TargetType: "job", TargetID: snapshot.JobID,
-		Details: json.RawMessage(fmt.Sprintf(`{"registry_hash":%q,"snapshot_sha256":%q}`, snapshot.RegistryHash, snapshot.SHA256)),
-	}); err != nil {
+	if err := insertJobConfigSnapshotTx(ctx, tx, s.now, snapshot); err != nil {
 		return appconfig.JobSnapshot{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return appconfig.JobSnapshot{}, fmt.Errorf("commit job configuration snapshot: %w", err)
 	}
 	return snapshot, nil
+}
+
+func (s *Store) snapshotAcceptedJobTx(ctx context.Context, tx *sql.Tx, jobID, projectID string, createdAt time.Time) error {
+	if s.configRegistry == nil {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT setting_key, scope_kind, scope_id, value_json,
+		configured, secret, version, revision_id FROM config_scope_values
+		WHERE (scope_kind = 'system' AND scope_id = '') OR (scope_kind = 'project' AND scope_id = ?)
+		ORDER BY setting_key, scope_kind`, projectID)
+	if err != nil {
+		return fmt.Errorf("read accepted job configuration: %w", err)
+	}
+	values := make(map[string][]appconfig.ScopedValue)
+	for rows.Next() {
+		var value appconfig.ScopedValue
+		var scopeKind, scopeID string
+		var raw sql.NullString
+		if err := rows.Scan(&value.Key, &scopeKind, &scopeID, &raw, &value.Configured,
+			&value.Secret, &value.Version, &value.SourceRevision); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan accepted job configuration: %w", err)
+		}
+		value.Scope = appconfig.ScopeRef{Kind: appconfig.ScopeKind(scopeKind), ID: scopeID}
+		if raw.Valid && !value.Secret {
+			value.Value = json.RawMessage(raw.String)
+		}
+		values[value.Key] = append(values[value.Key], value)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("read accepted job configuration rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close accepted job configuration rows: %w", err)
+	}
+	snapshot, err := s.configRegistry.Snapshot(values)
+	if err != nil {
+		return fmt.Errorf("resolve accepted job configuration: %w", err)
+	}
+	document, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("encode accepted job configuration: %w", err)
+	}
+	return insertJobConfigSnapshotTx(ctx, tx, s.now, appconfig.JobSnapshot{
+		JobID: jobID, SchemaVersion: snapshot.SchemaVersion, RegistryHash: snapshot.RegistryHash,
+		SHA256: snapshot.SHA256, Document: document, CreatedAt: createdAt,
+	})
+}
+
+func insertJobConfigSnapshotTx(ctx context.Context, tx *sql.Tx, now func() time.Time, snapshot appconfig.JobSnapshot) error {
+	if snapshot.JobID == "" || snapshot.SchemaVersion < 1 || !validHexDigest(snapshot.RegistryHash) ||
+		!validHexDigest(snapshot.SHA256) || len(snapshot.Document) == 0 || len(snapshot.Document) > 4<<20 || !json.Valid(snapshot.Document) {
+		return storage.ErrInvalid
+	}
+	if snapshot.CreatedAt.IsZero() {
+		snapshot.CreatedAt = now()
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO job_config_snapshots(job_id, schema_version,
+		registry_hash, snapshot_sha256, document, created_at) VALUES(?, ?, ?, ?, ?, ?)`,
+		snapshot.JobID, snapshot.SchemaVersion, snapshot.RegistryHash, snapshot.SHA256,
+		string(snapshot.Document), snapshot.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY") {
+			return storage.ErrNotFound
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return storage.ErrConflict
+		}
+		return fmt.Errorf("insert job configuration snapshot: %w", err)
+	}
+	return appendAuditTx(ctx, tx, now, audit.AppendRequest{
+		ActorID: "controller", ActorRole: "system", Action: "config_registry.snapshot",
+		TargetType: "job", TargetID: snapshot.JobID,
+		Details: json.RawMessage(fmt.Sprintf(`{"registry_hash":%q,"snapshot_sha256":%q}`, snapshot.RegistryHash, snapshot.SHA256)),
+	})
 }
 
 func (s *Store) GetJobConfigSnapshot(ctx context.Context, jobID string) (appconfig.JobSnapshot, error) {

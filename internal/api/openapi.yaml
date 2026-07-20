@@ -905,6 +905,7 @@ paths:
                   findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
                   approvals: { type: array, items: { $ref: "#/components/schemas/Approval" } }
                   phases: { type: array, items: { $ref: "#/components/schemas/PhaseRecord" } }
+                  configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/events:
     parameters:
@@ -2359,6 +2360,20 @@ components:
         schema_version: { type: integer, const: 1 }
         scopes: { type: array, items: { $ref: "#/components/schemas/ConfigScopeRef" } }
         values: { type: object, additionalProperties: { $ref: "#/components/schemas/ConfigEffectiveValue" } }
+    JobConfigSnapshot:
+      type: object
+      additionalProperties: false
+      required: [job_id, schema_version, registry_hash, sha256, document, created_at]
+      properties:
+        job_id: { type: string }
+        schema_version: { type: integer, minimum: 1 }
+        registry_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        document:
+          type: object
+          additionalProperties: true
+          description: Complete immutable redacted configuration snapshot with effective-value provenance.
+        created_at: { type: string, format: date-time }
     SystemConfig:
       type: object
       additionalProperties: false

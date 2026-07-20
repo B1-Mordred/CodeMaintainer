@@ -76,8 +76,17 @@ var migration017 string
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db             *sql.DB
+	now            func() time.Time
+	configRegistry *appconfig.Registry
+}
+
+func (s *Store) SetConfigurationRegistry(registry *appconfig.Registry) error {
+	if registry == nil {
+		return errors.New("configuration registry is required")
+	}
+	s.configRegistry = registry
+	return nil
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -245,6 +254,9 @@ func (s *Store) CreateJob(ctx context.Context, params storage.CreateJobParams) (
 		Action: "job.create", TargetType: "job", TargetID: job.ID,
 		Details: normalizeJSON(params.Details),
 	}); err != nil {
+		return jobs.Job{}, err
+	}
+	if err := s.snapshotAcceptedJobTx(ctx, tx, job.ID, job.ProjectID, now); err != nil {
 		return jobs.Job{}, err
 	}
 	if err := tx.Commit(); err != nil {

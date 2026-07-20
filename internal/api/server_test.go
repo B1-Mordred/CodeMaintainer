@@ -63,6 +63,10 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		store.Close()
 		t.Fatal(err)
 	}
+	if err := store.SetConfigurationRegistry(registry); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
 	if _, err := store.UpsertProject(context.Background(), projects.UpsertRequest{
 		ID: "owner-repo", Provider: "local", Repository: "owner/repo",
 		DefaultBranch: "main", LocalRemoteName: "fixture.git",
@@ -901,12 +905,14 @@ func TestCreateInspectCancelRetryJob(t *testing.T) {
 			State   string `json:"state"`
 			Version int64  `json:"version"`
 		} `json:"job"`
-		Transitions []any `json:"transitions"`
+		Transitions           []any                 `json:"transitions"`
+		ConfigurationSnapshot appconfig.JobSnapshot `json:"configuration_snapshot"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&inspected); err != nil {
 		t.Fatal(err)
 	}
-	if inspected.Job.State != "queued" || inspected.Job.Version != 3 || len(inspected.Transitions) != 3 {
+	if inspected.Job.State != "queued" || inspected.Job.Version != 3 || len(inspected.Transitions) != 3 ||
+		inspected.ConfigurationSnapshot.JobID != created.ID || len(inspected.ConfigurationSnapshot.Document) == 0 {
 		t.Fatalf("unexpected inspected job: %#v", inspected)
 	}
 }

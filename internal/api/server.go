@@ -574,9 +574,17 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"job": job, "transitions": transitions, "findings": findings, "approvals": approvals, "phases": phases,
-	})
+	}
+	configurationSnapshot, err := s.store.GetJobConfigSnapshot(r.Context(), job.ID)
+	if err == nil {
+		response["configuration_snapshot"] = configurationSnapshot
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
