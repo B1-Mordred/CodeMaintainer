@@ -1,14 +1,50 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
 )
+
+type intelligenceProjectConfiguration struct {
+	IndexingEnabled bool
+	RetentionDays   int
+	CacheQuotaBytes int64
+}
+
+func (s *Server) projectIntelligenceConfiguration(ctx context.Context, projectID string) (intelligenceProjectConfiguration, error) {
+	result := intelligenceProjectConfiguration{IndexingEnabled: true, RetentionDays: 30, CacheQuotaBytes: 512 << 20}
+	if s.configRegistry == nil {
+		return result, nil
+	}
+	effective, err := s.configRegistry.Effective(ctx, []appconfig.ScopeRef{{Kind: appconfig.ScopeSystem}, {Kind: appconfig.ScopeProject, ID: projectID}})
+	if err != nil {
+		return result, err
+	}
+	if value, ok := effective.Values["intelligence.indexing_enabled"]; ok {
+		if err := json.Unmarshal(value.Value, &result.IndexingEnabled); err != nil {
+			return result, err
+		}
+	}
+	if value, ok := effective.Values["intelligence.index_retention_days"]; ok {
+		if err := json.Unmarshal(value.Value, &result.RetentionDays); err != nil {
+			return result, err
+		}
+	}
+	if value, ok := effective.Values["intelligence.cache_quota_bytes"]; ok {
+		if err := json.Unmarshal(value.Value, &result.CacheQuotaBytes); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
 
 func (s *Server) requireIntelligence(w http.ResponseWriter) (*intelligence.Service, bool) {
 	if s.intelligence == nil {
@@ -28,6 +64,14 @@ func (s *Server) intelligenceStatus(w http.ResponseWriter, r *http.Request) {
 		s.storageError(w, r, err)
 		return
 	}
+	configuration, err := s.projectIntelligenceConfiguration(r.Context(), r.PathValue("projectID"))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	status.IndexingEnabled = configuration.IndexingEnabled
+	status.RetentionDays = configuration.RetentionDays
+	status.CacheQuotaBytes = configuration.CacheQuotaBytes
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -64,6 +108,15 @@ func (s *Server) refreshIntelligence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := r.PathValue("projectID")
+	configuration, err := s.projectIntelligenceConfiguration(r.Context(), projectID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !configuration.IndexingEnabled {
+		writeError(w, http.StatusConflict, "indexing_paused", "project indexing is paused by effective configuration")
+		return
+	}
 	project, err := s.store.GetProject(r.Context(), projectID)
 	if err != nil {
 		s.storageError(w, r, err)
@@ -84,7 +137,11 @@ func (s *Server) refreshIntelligence(w http.ResponseWriter, r *http.Request) {
 		digest := sha256.Sum256(file.Content)
 		files = append(files, intelligence.SourceFile{Path: file.Path, BlobSHA256: hex.EncodeToString(digest[:]), Content: file.Content})
 	}
-	run, err := service.Index(r.Context(), intelligence.IndexRequest{ProjectID: projectID, Repository: project.Repository, Revision: snapshot.Revision, ParserID: "controller-syntax-v1", Files: files})
+	if len(files) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, "no_indexable_files", "the bounded trusted snapshot contained no indexable source files")
+		return
+	}
+	run, err := service.Index(r.Context(), intelligence.IndexRequest{ProjectID: projectID, Repository: project.Repository, Revision: snapshot.Revision, ParserID: "controller-syntax-v1", CacheRetentionDays: configuration.RetentionDays, CacheQuotaBytes: configuration.CacheQuotaBytes, Files: files})
 	if err != nil {
 		s.storageError(w, r, err)
 		return

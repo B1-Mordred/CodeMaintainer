@@ -249,7 +249,22 @@ func (m *Manager) Diff(ctx context.Context, request DiffRequest) (DiffResult, er
 	if err != nil {
 		return DiffResult{}, err
 	}
-	return DiffResult{Patch: patch}, nil
+	names, err := m.git(ctx, "-C", path, "diff", "--name-only", "-z", "--no-ext-diff", request.BaseSHA+".."+request.ResultSHA)
+	if err != nil {
+		return DiffResult{}, err
+	}
+	changed := make([]string, 0)
+	for _, name := range strings.Split(names, "\x00") {
+		if name == "" {
+			continue
+		}
+		clean := filepath.ToSlash(filepath.Clean(name))
+		if clean != name || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") || len(clean) > 1024 {
+			return DiffResult{}, ErrConflict
+		}
+		changed = append(changed, clean)
+	}
+	return DiffResult{Patch: patch, ChangedPaths: changed}, nil
 }
 
 func (m *Manager) Publish(ctx context.Context, request PublishRequest) (Publication, error) {

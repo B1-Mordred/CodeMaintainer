@@ -75,7 +75,8 @@ type DiffRequest struct {
 }
 
 type DiffResult struct {
-	Patch string `json:"patch"`
+	Patch        string   `json:"patch"`
+	ChangedPaths []string `json:"changed_paths"`
 }
 
 type PublishRequest struct {

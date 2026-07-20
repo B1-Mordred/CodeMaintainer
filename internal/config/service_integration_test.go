@@ -107,6 +107,17 @@ func TestRegistryServiceEnforcesContextualDependencies(t *testing.T) {
 	if err != nil || !report.Valid || draft.ID == "" {
 		t.Fatalf("inactive dependency result = %#v %#v %v", draft, report, err)
 	}
+
+	draft, report, err = service.CreateDraft(ctx, appconfig.CreateDraftRequest{
+		Scope: scope, BaseScopeVersion: 0, AuthorID: "author", Reason: "invalid context allocation",
+		Entries: []appconfig.DraftEntry{
+			{Key: "intelligence.context_input_tokens", Value: json.RawMessage(`4096`), Configured: true},
+			{Key: "intelligence.context_output_reserve_tokens", Value: json.RawMessage(`4096`), Configured: true},
+		},
+	})
+	if err != nil || report.Valid || draft.ID != "" || len(report.Issues) != 1 || report.Issues[0].Code != "cross_field_validation" {
+		t.Fatalf("context budget relation result = %#v %#v %v", draft, report, err)
+	}
 }
 
 func TestRegistryServiceRunsTrustedPrerequisiteAndDryRunHandlers(t *testing.T) {

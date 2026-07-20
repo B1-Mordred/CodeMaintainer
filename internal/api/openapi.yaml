@@ -384,6 +384,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/MemoryRecord" } } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory/retrievals:
     parameters:
@@ -997,6 +998,7 @@ paths:
                   run: { $ref: "#/components/schemas/IntelligenceRun" }
                   source_excluded: { type: integer, minimum: 0 }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
         "503": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/intelligence/actions/rebuild:
@@ -2639,7 +2641,7 @@ components:
     IntelligenceStatus:
       type: object
       additionalProperties: false
-      required: [project_id, state, files, languages, failures, storage_bytes, parser_ids]
+      required: [project_id, state, files, languages, failures, storage_bytes, parser_ids, indexing_enabled, retention_days, cache_quota_bytes]
       properties:
         project_id: { type: string }
         latest_revision: { type: string }
@@ -2651,6 +2653,9 @@ components:
         storage_bytes: { type: integer, minimum: 0 }
         parser_ids: { type: array, items: { type: string } }
         fresh_at: { type: string, format: date-time }
+        indexing_enabled: { type: boolean }
+        retention_days: { type: integer, minimum: 1, maximum: 3650 }
+        cache_quota_bytes: { type: integer, minimum: 1048576 }
     IntelligenceQueryRequest:
       type: object
       additionalProperties: false
@@ -2706,7 +2711,7 @@ components:
     CacheEntry:
       type: object
       additionalProperties: false
-      required: [key, project_id, trust_domain, kind, input_sha256, object_sha256, bytes, verified, created_at, last_hit_at, expires_at]
+      required: [key, project_id, trust_domain, kind, input_sha256, object_sha256, bytes, verified, created_at, last_hit_at, expires_at, quota_bytes, last_result, result_reason]
       properties:
         key: { type: string, pattern: "^[a-f0-9]{64}$" }
         project_id: { type: string }
@@ -2719,6 +2724,9 @@ components:
         created_at: { type: string, format: date-time }
         last_hit_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
+        quota_bytes: { type: integer, minimum: 1048576 }
+        last_result: { type: string, enum: [hit, miss] }
+        result_reason: { type: string }
     VerificationObservation:
       type: object
       additionalProperties: false
@@ -2759,11 +2767,12 @@ components:
     VerificationDifferential:
       type: object
       additionalProperties: false
-      required: [id, baseline_id, candidate_sha, items, created_at]
+      required: [id, baseline_id, candidate_sha, purpose, items, created_at]
       properties:
         id: { type: string, pattern: "^differential_[a-f0-9]{32}$" }
         baseline_id: { type: string }
         candidate_sha: { type: string, pattern: "^[a-f0-9]{64}$" }
+        purpose: { type: string }
         items: { type: array, items: { $ref: "#/components/schemas/DifferentialObservation" } }
         created_at: { type: string, format: date-time }
     ImpactSelection:

@@ -2621,6 +2621,9 @@ export interface components {
             parser_ids: string[];
             /** Format: date-time */
             fresh_at?: string;
+            indexing_enabled: boolean;
+            retention_days: number;
+            cache_quota_bytes: number;
         };
         IntelligenceQueryRequest: {
             revision?: string;
@@ -2681,6 +2684,10 @@ export interface components {
             last_hit_at: string;
             /** Format: date-time */
             expires_at: string;
+            quota_bytes: number;
+            /** @enum {string} */
+            last_result: "hit" | "miss";
+            result_reason: string;
         };
         VerificationObservation: {
             key: string;
@@ -2716,6 +2723,7 @@ export interface components {
             id: string;
             baseline_id: string;
             candidate_sha: string;
+            purpose: string;
             items: components["schemas"]["DifferentialObservation"][];
             /** Format: date-time */
             created_at: string;
@@ -3415,6 +3423,7 @@ export interface operations {
             };
             403: components["responses"]["ErrorResponse"];
             404: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
         };
     };
@@ -4470,6 +4479,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
             503: components["responses"]["ErrorResponse"];
         };

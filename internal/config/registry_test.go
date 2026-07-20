@@ -17,10 +17,12 @@ func TestBuiltInRegistryInventoriesEverySystemField(t *testing.T) {
 	descriptors := registry.Descriptors()
 	wantKeys := []string{
 		"deployment.data_root", "deployment.listen_address", "deployment.profile",
+		"intelligence.cache_quota_bytes", "intelligence.context_input_tokens", "intelligence.context_output_reserve_tokens",
+		"intelligence.index_retention_days", "intelligence.indexing_enabled",
 		"notifications.local_inbox_enabled", "protected_paths.patterns", "qc.block_on",
 		"qc.human_waiver_enabled", "qc.require_evidence_for_blocking",
 		"qc.require_verification_method", "qc.waiver_rationale_required",
-		"workflow.max_log_bytes", "workflow.max_review_cycles", "workflow.max_wall_seconds",
+		"verification.clean_final_cache_required", "workflow.max_log_bytes", "workflow.max_review_cycles", "workflow.max_wall_seconds",
 	}
 	gotKeys := make([]string, 0, len(descriptors))
 	for _, descriptor := range descriptors {
@@ -122,8 +124,8 @@ func TestSnapshotIsCompleteDeterministicAndRejectsUnknownKeys(t *testing.T) {
 	if first.SHA256 == "" || first.RegistryHash == "" || first.SHA256 != second.SHA256 || first.RegistryHash != second.RegistryHash {
 		t.Fatalf("snapshots are not deterministic: %#v %#v", first, second)
 	}
-	if len(first.Values) != 13 {
-		t.Fatalf("snapshot has %d values, want 13", len(first.Values))
+	if len(first.Values) != 19 {
+		t.Fatalf("snapshot has %d values, want 19", len(first.Values))
 	}
 	if got := string(first.Values["workflow.max_wall_seconds"].Value); got != "14400" {
 		t.Fatalf("wall-time value = %s", got)

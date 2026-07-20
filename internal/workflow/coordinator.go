@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
+	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
@@ -25,6 +28,7 @@ import (
 type GitBackend interface {
 	Register(context.Context, gitbridge.Registration) error
 	Sync(context.Context, string) (gitbridge.SyncResult, error)
+	Snapshot(context.Context, string, string) (gitbridge.RepositorySnapshot, error)
 	CreateWorktree(context.Context, gitbridge.WorktreeRequest) (gitbridge.WorktreeResult, error)
 	Commit(context.Context, gitbridge.CommitRequest) (gitbridge.CommitResult, error)
 	Diff(context.Context, gitbridge.DiffRequest) (gitbridge.DiffResult, error)
@@ -33,6 +37,7 @@ type GitBackend interface {
 
 type coordinatorStore interface {
 	storage.WorkflowStore
+	storage.ConfigStore
 	storage.FindingStore
 	storage.ProjectStore
 	intelligence.Store
@@ -84,7 +89,26 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		if err != nil {
 			return Outcome{}, err
 		}
-		return Outcome{Details: mustJSON(map[string]any{"base_sha": synced.BaseSHA}), Metadata: storage.JobMetadataPatch{BaseSHA: &synced.BaseSHA}}, nil
+		if !c.jobConfigBool(ctx, job.ID, "intelligence.indexing_enabled", true) {
+			return Outcome{Details: mustJSON(map[string]any{"base_sha": synced.BaseSHA, "index_state": "paused_by_job_configuration"}), Metadata: storage.JobMetadataPatch{BaseSHA: &synced.BaseSHA}}, nil
+		}
+		snapshot, err := c.git.Snapshot(ctx, job.ProjectID, synced.BaseSHA)
+		if err != nil {
+			return Outcome{}, err
+		}
+		indexed := intelligence.IndexRun{State: "unavailable"}
+		if len(snapshot.Files) != 0 {
+			sources := make([]intelligence.SourceFile, 0, len(snapshot.Files))
+			for _, file := range snapshot.Files {
+				digest := sha256.Sum256(file.Content)
+				sources = append(sources, intelligence.SourceFile{Path: file.Path, BlobSHA256: hex.EncodeToString(digest[:]), Content: file.Content})
+			}
+			indexed, err = c.intelligence.Index(ctx, intelligence.IndexRequest{ProjectID: job.ProjectID, Repository: job.Repository, Revision: synced.BaseSHA, ParserID: "controller-syntax-v1", CacheRetentionDays: c.jobConfigInt(ctx, job.ID, "intelligence.index_retention_days", 30), CacheQuotaBytes: c.jobConfigInt64(ctx, job.ID, "intelligence.cache_quota_bytes", 512<<20), Files: sources})
+			if err != nil {
+				return Outcome{}, err
+			}
+		}
+		return Outcome{Details: mustJSON(map[string]any{"base_sha": synced.BaseSHA, "index_run_id": indexed.ID, "index_state": indexed.State, "index_files": indexed.Files, "index_failures": indexed.Failures, "snapshot_excluded": snapshot.Excluded}), Metadata: storage.JobMetadataPatch{BaseSHA: &synced.BaseSHA}}, nil
 	case jobs.StateCreatingWorktree:
 		created, err := c.git.CreateWorktree(ctx, gitbridge.WorktreeRequest{ProjectID: job.ProjectID, JobID: job.ID, BaseSHA: job.BaseSHA})
 		if err != nil {
@@ -120,14 +144,29 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		}
 		return detailOutcome(map[string]any{"profile_id": status.ProfileID, "model_family": status.ModelFamily}), nil
 	case jobs.StateReproducing:
-		result, err := c.execution.Verify(ctx, job, detectLanguage(c.worktree(job.ID)), []verification.Class{verification.ClassTargetedTests}, "reproduction")
+		language := detectLanguage(c.worktree(job.ID))
+		baseline, found, err := c.findBaseline(ctx, job, language)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if !found {
+			baselineResult, verifyErr := c.execution.Verify(ctx, job, language, baselineClasses(language), "baseline")
+			if verifyErr != nil {
+				return Outcome{}, verifyErr
+			}
+			baseline, err = c.captureBaseline(ctx, job, language, baselineResult)
+			if err != nil {
+				return Outcome{}, err
+			}
+		}
+		result, err := c.execution.Verify(ctx, job, language, []verification.Class{verification.ClassTargetedTests}, "reproduction")
 		if err != nil {
 			return Outcome{}, err
 		}
 		if result.Passed {
 			return Outcome{}, errors.New("the locked targeted test passed before implementation; the defect was not reproduced")
 		}
-		return detailOutcome(map[string]any{"reproduced": true, "targeted_passed": false}), nil
+		return detailOutcome(map[string]any{"reproduced": true, "targeted_passed": false, "baseline_id": baseline.ID, "baseline_revision": baseline.Revision}), nil
 	case jobs.StateImplementing:
 		recovered, err := c.git.Commit(ctx, gitbridge.CommitRequest{
 			ProjectID: job.ProjectID, JobID: job.ID, ExpectedHead: job.BaseSHA, OperationID: phaseKey(job),
@@ -136,8 +175,12 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 			return Outcome{}, err
 		}
 		if recovered.ResultSHA != job.BaseSHA {
+			impact, impactErr := c.recordTestImpact(ctx, job, recovered.ResultSHA)
+			if impactErr != nil {
+				return Outcome{}, impactErr
+			}
 			return Outcome{
-				Details:  mustJSON(map[string]any{"result_sha": recovered.ResultSHA, "recovered": true}),
+				Details:  mustJSON(map[string]any{"result_sha": recovered.ResultSHA, "recovered": true, "test_impact_id": impact.ID}),
 				Metadata: storage.JobMetadataPatch{ResultSHA: &recovered.ResultSHA},
 			}, nil
 		}
@@ -155,8 +198,12 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		if err != nil {
 			return Outcome{}, err
 		}
+		impact, err := c.recordTestImpact(ctx, job, committed.ResultSHA)
+		if err != nil {
+			return Outcome{}, err
+		}
 		return Outcome{
-			Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "edit_count": len(implementation.Edits)}),
+			Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "edit_count": len(implementation.Edits), "test_impact_id": impact.ID}),
 			Metadata: storage.JobMetadataPatch{ResultSHA: &committed.ResultSHA},
 		}, nil
 	case jobs.StateVerifyingTargeted:
@@ -219,16 +266,239 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 }
 
 func (c *Coordinator) requiredVerification(ctx context.Context, job jobs.Job, classes []verification.Class, purpose string) (Outcome, error) {
-	result, err := c.execution.Verify(ctx, job, detectLanguage(c.worktree(job.ID)), classes, purpose)
+	language := detectLanguage(c.worktree(job.ID))
+	executionPurpose := purpose
+	cleanFinalCache := purpose == "final" && c.jobConfigBool(ctx, job.ID, "verification.clean_final_cache_required", true)
+	if cleanFinalCache {
+		executionPurpose = "final_clean"
+	}
+	result, err := c.execution.Verify(ctx, job, language, classes, executionPurpose)
 	if err != nil {
 		return Outcome{}, err
 	}
-	if !result.Passed || result.Scan == nil || result.Scan.HeadSHA != job.ResultSHA {
+	if result.Scan == nil || result.Scan.HeadSHA != job.ResultSHA || len(result.Scan.PatchSHA256) != 64 {
 		return Outcome{}, errors.New("required verification did not pass for the exact result commit")
+	}
+	baseline, found, err := c.findBaseline(ctx, job, language)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if !found {
+		return Outcome{}, errors.New("required verification has no exact configuration/toolchain baseline")
+	}
+	comparable := comparableBaseline(baseline, verificationObservations(result))
+	differential, err := c.intelligence.CompareAndSave(ctx, comparable, result.Scan.PatchSHA256, purpose, verificationObservations(result))
+	if err != nil {
+		return Outcome{}, err
+	}
+	if purpose == "final" {
+		impact, found, impactErr := c.intelligence.FindTestImpact(ctx, job.ProjectID, job.ResultSHA)
+		if impactErr != nil {
+			return Outcome{}, impactErr
+		}
+		if !found {
+			impact, impactErr = c.recordTestImpact(ctx, job, job.ResultSHA)
+		}
+		if impactErr != nil || !impact.FullSuiteRequired {
+			return Outcome{}, errors.New("final verification is missing mandatory full-suite impact policy evidence")
+		}
+	}
+	if !result.Passed {
+		return Outcome{}, fmt.Errorf("required verification did not pass for the exact result commit; differential %s retained", differential.ID)
 	}
 	return detailOutcome(map[string]any{
 		"passed": true, "head_sha": result.Scan.HeadSHA, "patch_sha256": result.Scan.PatchSHA256, "classes": classes,
+		"baseline_id": baseline.ID, "differential_id": differential.ID, "purpose": purpose, "clean_cache_required": cleanFinalCache,
 	}), nil
+}
+
+func (c *Coordinator) baselineIdentity(ctx context.Context, job jobs.Job, language verification.Language) (string, string, error) {
+	snapshot, err := c.store.GetJobConfigSnapshot(ctx, job.ID)
+	configSHA256 := ""
+	if err == nil {
+		configSHA256 = snapshot.SHA256
+	} else if errors.Is(err, storage.ErrNotFound) {
+		// Retained Increment 1 databases and focused stores may not have had the
+		// registry attached when the job was accepted. Keep that compatibility
+		// state explicit and content-bound instead of pretending it is current.
+		digest := sha256.Sum256([]byte("increment-1-no-registry-snapshot-v1"))
+		configSHA256 = hex.EncodeToString(digest[:])
+	} else {
+		return "", "", err
+	}
+	toolchainID := "verification-worker-v1-" + string(language)
+	return configSHA256, toolchainID, nil
+}
+
+func (c *Coordinator) jobConfigSnapshot(ctx context.Context, jobID string) (appconfig.Snapshot, bool) {
+	stored, err := c.store.GetJobConfigSnapshot(ctx, jobID)
+	if err != nil {
+		return appconfig.Snapshot{}, false
+	}
+	var snapshot appconfig.Snapshot
+	if json.Unmarshal(stored.Document, &snapshot) != nil || snapshot.SHA256 != stored.SHA256 {
+		return appconfig.Snapshot{}, false
+	}
+	return snapshot, true
+}
+
+func (c *Coordinator) jobConfigInt(ctx context.Context, jobID, key string, fallback int) int {
+	snapshot, ok := c.jobConfigSnapshot(ctx, jobID)
+	if !ok {
+		return fallback
+	}
+	value, exists := snapshot.Values[key]
+	if !exists || json.Unmarshal(value.Value, &fallback) != nil {
+		return fallback
+	}
+	return fallback
+}
+
+func (c *Coordinator) jobConfigInt64(ctx context.Context, jobID, key string, fallback int64) int64 {
+	snapshot, ok := c.jobConfigSnapshot(ctx, jobID)
+	if !ok {
+		return fallback
+	}
+	value, exists := snapshot.Values[key]
+	if !exists || json.Unmarshal(value.Value, &fallback) != nil {
+		return fallback
+	}
+	return fallback
+}
+
+func (c *Coordinator) jobConfigBool(ctx context.Context, jobID, key string, fallback bool) bool {
+	snapshot, ok := c.jobConfigSnapshot(ctx, jobID)
+	if !ok {
+		return fallback
+	}
+	value, exists := snapshot.Values[key]
+	if !exists || json.Unmarshal(value.Value, &fallback) != nil {
+		return fallback
+	}
+	return fallback
+}
+
+func packSetIdentity() string {
+	digest := sha256.Sum256([]byte("built-in-pack-set-v1"))
+	return hex.EncodeToString(digest[:])
+}
+
+func (c *Coordinator) findBaseline(ctx context.Context, job jobs.Job, language verification.Language) (intelligence.Baseline, bool, error) {
+	configSHA256, toolchainID, err := c.baselineIdentity(ctx, job, language)
+	if err != nil {
+		return intelligence.Baseline{}, false, err
+	}
+	return c.intelligence.FindBaseline(ctx, job.ProjectID, job.BaseSHA, configSHA256, toolchainID, packSetIdentity())
+}
+
+func (c *Coordinator) captureBaseline(ctx context.Context, job jobs.Job, language verification.Language, result VerificationResult) (intelligence.Baseline, error) {
+	configSHA256, toolchainID, err := c.baselineIdentity(ctx, job, language)
+	if err != nil {
+		return intelligence.Baseline{}, err
+	}
+	return c.intelligence.CaptureBaseline(ctx, intelligence.Baseline{
+		ProjectID: job.ProjectID, Revision: job.BaseSHA, ConfigSHA256: configSHA256,
+		ToolchainID: toolchainID, PackSetSHA256: packSetIdentity(), ActorID: "workflow-controller",
+		Reason:       "policy-defined pre-modification verification in the clean verification worker",
+		Observations: verificationObservations(result),
+	})
+}
+
+func verificationObservations(result VerificationResult) []intelligence.Observation {
+	observations := make([]intelligence.Observation, 0, len(result.Results))
+	for _, item := range result.Results {
+		status := "passed"
+		if item.ExitCode != 0 || item.TimedOut {
+			status = "failed"
+		}
+		value, _ := json.Marshal(map[string]any{"exit_code": item.ExitCode, "timed_out": item.TimedOut, "truncated": item.Truncated})
+		observations = append(observations, intelligence.Observation{Key: string(item.Class), Kind: "verification", Status: status, Value: value})
+	}
+	sort.Slice(observations, func(i, j int) bool { return observations[i].Key < observations[j].Key })
+	return observations
+}
+
+func comparableBaseline(baseline intelligence.Baseline, candidate []intelligence.Observation) intelligence.Baseline {
+	keys := make(map[string]bool, len(candidate))
+	for _, item := range candidate {
+		keys[item.Kind+"\x00"+item.Key] = true
+	}
+	filtered := make([]intelligence.Observation, 0, len(candidate))
+	for _, item := range baseline.Observations {
+		if keys[item.Kind+"\x00"+item.Key] {
+			filtered = append(filtered, item)
+		}
+	}
+	baseline.Observations = filtered
+	return baseline
+}
+
+func (c *Coordinator) recordTestImpact(ctx context.Context, job jobs.Job, revision string) (intelligence.TestImpact, error) {
+	if existing, found, err := c.intelligence.FindTestImpact(ctx, job.ProjectID, revision); err != nil || found {
+		return existing, err
+	}
+	diff, err := c.git.Diff(ctx, gitbridge.DiffRequest{ProjectID: job.ProjectID, JobID: job.ID, BaseSHA: job.BaseSHA, ResultSHA: revision})
+	if err != nil {
+		return intelligence.TestImpact{}, err
+	}
+	if len(diff.ChangedPaths) == 0 {
+		return intelligence.TestImpact{}, errors.New("candidate commit has no changed paths for test-impact analysis")
+	}
+	changedSet := make(map[string]bool, len(diff.ChangedPaths))
+	for _, changed := range diff.ChangedPaths {
+		changedSet[changed] = true
+		query, queryErr := c.intelligence.Query(ctx, intelligence.Query{ProjectID: job.ProjectID, Revision: job.BaseSHA, Term: changed, Limit: 200})
+		if queryErr == nil {
+			for _, symbol := range query.Symbols {
+				changedSet[symbol.Name] = true
+			}
+		}
+	}
+	changed := make([]string, 0, len(changedSet))
+	for value := range changedSet {
+		changed = append(changed, value)
+	}
+	sort.Strings(changed)
+	files, err := BuildRelevantFiles(c.worktree(job.ID), 64, 2<<20)
+	if err != nil {
+		return intelligence.TestImpact{}, err
+	}
+	tests := make(map[string][]string)
+	for _, file := range files {
+		if targets := likelyTestTargets(file.Path); len(targets) != 0 {
+			tests[file.Path] = targets
+		}
+	}
+	if len(tests) == 0 {
+		tests["policy:full-suite"] = append([]string(nil), diff.ChangedPaths...)
+	}
+	impact, err := intelligence.NewTestImpact(job.ProjectID, revision, changed, tests, true)
+	if err != nil {
+		return intelligence.TestImpact{}, err
+	}
+	for index := range impact.Selections {
+		impact.Selections[index].EstimatedSeconds = 60
+	}
+	impact.PolicyExplanation = "Changed paths and indexed symbols select the bounded inner-loop suite; every publishable candidate still requires a fresh complete final suite."
+	return c.intelligence.RecordTestImpact(ctx, impact)
+}
+
+func likelyTestTargets(filePath string) []string {
+	slash := filepath.ToSlash(filePath)
+	switch {
+	case strings.HasSuffix(slash, "_test.go"):
+		return []string{slash, strings.TrimSuffix(slash, "_test.go") + ".go"}
+	case strings.HasSuffix(slash, ".test.ts"):
+		return []string{slash, strings.TrimSuffix(slash, ".test.ts") + ".ts"}
+	case strings.HasSuffix(slash, ".test.tsx"):
+		return []string{slash, strings.TrimSuffix(slash, ".test.tsx") + ".tsx"}
+	case strings.HasSuffix(slash, "Test.php"):
+		return []string{slash, strings.TrimSuffix(slash, "Test.php") + ".php"}
+	case strings.HasPrefix(filepath.Base(slash), "test_") && strings.HasSuffix(slash, ".py"):
+		return []string{slash, filepath.ToSlash(filepath.Join(filepath.Dir(slash), strings.TrimPrefix(filepath.Base(slash), "test_")))}
+	default:
+		return nil
+	}
 }
 
 func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error) {
@@ -297,8 +567,12 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 			return Outcome{}, err
 		}
 		nextCycle := job.ReviewCycle + 1
+		impact, impactErr := c.recordTestImpact(ctx, job, recovered.ResultSHA)
+		if impactErr != nil {
+			return Outcome{}, impactErr
+		}
 		return Outcome{
-			Details:  mustJSON(map[string]any{"result_sha": recovered.ResultSHA, "review_cycle": nextCycle, "recovered": true}),
+			Details:  mustJSON(map[string]any{"result_sha": recovered.ResultSHA, "review_cycle": nextCycle, "recovered": true, "test_impact_id": impact.ID}),
 			Metadata: storage.JobMetadataPatch{ResultSHA: &recovered.ResultSHA, ReviewCycle: &nextCycle},
 		}, nil
 	}
@@ -341,8 +615,12 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 		return Outcome{}, err
 	}
 	nextCycle := job.ReviewCycle + 1
+	impact, err := c.recordTestImpact(ctx, job, committed.ResultSHA)
+	if err != nil {
+		return Outcome{}, err
+	}
 	return Outcome{
-		Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "review_cycle": nextCycle, "repaired_findings": len(blocking)}),
+		Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "review_cycle": nextCycle, "repaired_findings": len(blocking), "test_impact_id": impact.ID}),
 		Metadata: storage.JobMetadataPatch{ResultSHA: &committed.ResultSHA, ReviewCycle: &nextCycle},
 	}, nil
 }
@@ -364,7 +642,12 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	for _, file := range files {
 		candidates = append(candidates, intelligence.ContextCandidate{ID: "file:" + file.Path, Source: "repository_file", Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: "bounded relevant source selected by controller policy", Trust: "untrusted", Content: []byte(file.Content), Priority: 500 - contextPriority(file.Path)})
 	}
-	compiled, err := c.intelligence.CompileContext(ctx, job.ProjectID, job.ID, mode, 32_768, 8_192, candidates)
+	inputBudget := c.jobConfigInt(ctx, job.ID, "intelligence.context_input_tokens", 32_768)
+	outputReserve := c.jobConfigInt(ctx, job.ID, "intelligence.context_output_reserve_tokens", 8_192)
+	if outputReserve >= inputBudget {
+		return agents.TaskPacket{}, errors.New("job configuration context output reserve must be below its input budget")
+	}
+	compiled, err := c.intelligence.CompileContext(ctx, job.ProjectID, job.ID, mode, inputBudget, outputReserve, candidates)
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
@@ -499,6 +782,10 @@ func fullClasses(language verification.Language) []verification.Class {
 	default:
 		return []verification.Class{verification.ClassCompile, verification.ClassFullTests}
 	}
+}
+
+func baselineClasses(language verification.Language) []verification.Class {
+	return append([]verification.Class{verification.ClassTargetedTests}, fullClasses(language)...)
 }
 
 func detailOutcome(value any) Outcome { return Outcome{Details: mustJSON(value)} }

@@ -25,6 +25,17 @@ func BuiltInRegistry(active System) (*Registry, error) {
 		booleanDescriptor("qc.waiver_rationale_required", "Require waiver rationale", "Require a bounded audited rationale for every human waiver.", 50, defaults.QC.WaiverRationaleRequired, scopes(ScopeBuiltIn, ScopeSystem, ScopeProject), ApplyNewJobs),
 		pathArrayDescriptor("protected_paths.patterns", "Protected path patterns", "Repository-relative patterns that require deterministic protection policy.", 10, defaults.Protected.Patterns, scopes(ScopeBuiltIn, ScopeSystem, ScopePack, ScopeProject), ApplyNewJobs),
 		booleanDescriptor("notifications.local_inbox_enabled", "Local operator inbox", "Create durable local notifications for schedule and workflow attention events.", 10, defaults.Notifications.LocalInboxEnabled, scopes(ScopeBuiltIn, ScopeSystem), ApplyLive),
+		booleanDescriptor("intelligence.indexing_enabled", "Enable incremental indexing", "Permit trusted Git snapshots to refresh the project-separated derived code index.", 10, true, scopes(ScopeBuiltIn, ScopeSystem, ScopeProject), ApplyLive),
+		integerDescriptor("intelligence.index_retention_days", "Parsed-blob retention", "Retention window for verified project-isolated parsed-blob cache identities.", 20, 30, 1, 3650, scopes(ScopeBuiltIn, ScopeSystem, ScopeProject), ApplyLive),
+		integerDescriptor("intelligence.cache_quota_bytes", "Project cache quota", "Maximum verified cache metadata and object bytes retained for one project trust boundary.", 25, 512<<20, 1<<20, int64(1)<<40, scopes(ScopeBuiltIn, ScopeSystem, ScopeProject), ApplyLive),
+		integerDescriptor("intelligence.context_input_tokens", "Context input budget", "Maximum deterministic per-stage input budget before the reserved model-output capacity.", 30, 32768, 1024, 262144, allMutableScopes(), ApplyNewJobs),
+		integerDescriptor("intelligence.context_output_reserve_tokens", "Context output reserve", "Capacity reserved for agent output and excluded from selectable repository context.", 40, 8192, 256, 131072, allMutableScopes(), ApplyNewJobs),
+		booleanDescriptor("verification.clean_final_cache_required", "Require clean final verification caches", "Require the final publishable suite to run in a fresh worker cache environment.", 10, true, scopes(ScopeBuiltIn, ScopeSystem, ScopePack, ScopeProject, ScopeEnvironment, ScopeJobTemplate, ScopeJobOverride), ApplyNewJobs),
+	}
+	for index := range descriptors {
+		if descriptors[index].Namespace == "intelligence" || descriptors[index].Namespace == "verification" {
+			descriptors[index].UI.DocumentationLink = "/docs/intelligence.md#configuration"
+		}
 	}
 	for index := range descriptors {
 		if descriptors[index].Key == "qc.human_waiver_enabled" {

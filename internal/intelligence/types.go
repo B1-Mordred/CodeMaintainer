@@ -19,11 +19,14 @@ type SourceFile struct {
 }
 
 type IndexRequest struct {
-	ProjectID  string       `json:"project_id"`
-	Repository string       `json:"repository"`
-	Revision   string       `json:"revision"`
-	ParserID   string       `json:"parser_id"`
-	Files      []SourceFile `json:"-"`
+	ProjectID          string       `json:"project_id"`
+	Repository         string       `json:"repository"`
+	Revision           string       `json:"revision"`
+	ParserID           string       `json:"parser_id"`
+	CacheRetentionDays int          `json:"-"`
+	CacheQuotaBytes    int64        `json:"-"`
+	TerminalState      string       `json:"-"`
+	Files              []SourceFile `json:"-"`
 }
 
 type Symbol struct {
@@ -81,16 +84,19 @@ type IndexRun struct {
 }
 
 type Status struct {
-	ProjectID      string    `json:"project_id"`
-	LatestRevision string    `json:"latest_revision,omitempty"`
-	LatestRunID    string    `json:"latest_run_id,omitempty"`
-	State          string    `json:"state"`
-	Files          int       `json:"files"`
-	Languages      []string  `json:"languages"`
-	Failures       int       `json:"failures"`
-	StorageBytes   int64     `json:"storage_bytes"`
-	ParserIDs      []string  `json:"parser_ids"`
-	FreshAt        time.Time `json:"fresh_at,omitempty"`
+	ProjectID       string    `json:"project_id"`
+	LatestRevision  string    `json:"latest_revision,omitempty"`
+	LatestRunID     string    `json:"latest_run_id,omitempty"`
+	State           string    `json:"state"`
+	Files           int       `json:"files"`
+	Languages       []string  `json:"languages"`
+	Failures        int       `json:"failures"`
+	StorageBytes    int64     `json:"storage_bytes"`
+	ParserIDs       []string  `json:"parser_ids"`
+	FreshAt         time.Time `json:"fresh_at,omitempty"`
+	IndexingEnabled bool      `json:"indexing_enabled"`
+	RetentionDays   int       `json:"retention_days"`
+	CacheQuotaBytes int64     `json:"cache_quota_bytes"`
 }
 
 type Query struct {
@@ -189,6 +195,7 @@ type Differential struct {
 	ID           string                    `json:"id"`
 	BaselineID   string                    `json:"baseline_id"`
 	CandidateSHA string                    `json:"candidate_sha"`
+	Purpose      string                    `json:"purpose"`
 	Items        []DifferentialObservation `json:"items"`
 	CreatedAt    time.Time                 `json:"created_at"`
 }
@@ -224,6 +231,15 @@ type CacheEntry struct {
 	CreatedAt    time.Time `json:"created_at"`
 	LastHitAt    time.Time `json:"last_hit_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	QuotaBytes   int64     `json:"quota_bytes"`
+	LastResult   string    `json:"last_result"`
+	ResultReason string    `json:"result_reason"`
+}
+
+type RetentionResult struct {
+	RunsRemoved   int `json:"runs_removed"`
+	BlobsRemoved  int `json:"blobs_removed"`
+	CachesRemoved int `json:"caches_removed"`
 }
 
 type Store interface {
@@ -232,14 +248,17 @@ type Store interface {
 	IntelligenceStatus(context.Context, string) (Status, error)
 	QueryIntelligence(context.Context, Query) (QueryResult, error)
 	RebuildIntelligence(context.Context, string, string, string) error
+	PruneIntelligence(context.Context, string, time.Time, time.Time) (RetentionResult, error)
 	SaveContextManifest(context.Context, ContextManifest) (ContextManifest, error)
 	GetContextManifest(context.Context, string, string) (ContextManifest, error)
 	ListContextManifests(context.Context, string, int) ([]ContextManifest, error)
 	SaveBaseline(context.Context, Baseline) (Baseline, error)
+	FindBaseline(context.Context, string, string, string, string, string) (Baseline, bool, error)
 	ListBaselines(context.Context, string, int) ([]Baseline, error)
 	SaveDifferential(context.Context, Differential) (Differential, error)
 	ListDifferentials(context.Context, string, int) ([]Differential, error)
 	SaveTestImpact(context.Context, TestImpact) (TestImpact, error)
+	FindTestImpact(context.Context, string, string) (TestImpact, bool, error)
 	ListTestImpacts(context.Context, string, int) ([]TestImpact, error)
 	PutCacheEntry(context.Context, CacheEntry) (CacheEntry, error)
 	ListCacheEntries(context.Context, string, int) ([]CacheEntry, error)

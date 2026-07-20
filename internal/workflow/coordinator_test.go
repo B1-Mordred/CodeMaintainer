@@ -11,6 +11,7 @@ import (
 
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
+	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -126,6 +127,18 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotSHA := strings.Repeat("c", 64)
+	snapshotDocument, _ := json.Marshal(appconfig.Snapshot{SchemaVersion: 1, RegistryHash: strings.Repeat("b", 64), SHA256: snapshotSHA, Values: map[string]appconfig.EffectiveValue{
+		"intelligence.indexing_enabled":              {Key: "intelligence.indexing_enabled", Value: json.RawMessage(`true`)},
+		"intelligence.index_retention_days":          {Key: "intelligence.index_retention_days", Value: json.RawMessage(`7`)},
+		"intelligence.cache_quota_bytes":             {Key: "intelligence.cache_quota_bytes", Value: json.RawMessage(`10485760`)},
+		"intelligence.context_input_tokens":          {Key: "intelligence.context_input_tokens", Value: json.RawMessage(`4096`)},
+		"intelligence.context_output_reserve_tokens": {Key: "intelligence.context_output_reserve_tokens", Value: json.RawMessage(`1024`)},
+		"verification.clean_final_cache_required":    {Key: "verification.clean_final_cache_required", Value: json.RawMessage(`true`)},
+	}})
+	if _, err := store.SaveJobConfigSnapshot(ctx, appconfig.JobSnapshot{JobID: job.ID, SchemaVersion: 1, RegistryHash: strings.Repeat("b", 64), SHA256: snapshotSHA, Document: snapshotDocument}); err != nil {
+		t.Fatal(err)
+	}
 	artifacts, err := artifactfiles.New(filepath.Join(root, "artifacts"), store)
 	if err != nil {
 		t.Fatal(err)
@@ -188,8 +201,45 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		t.Fatalf("context manifests = %#v, %v", manifests, err)
 	}
 	manifestPayload, _ := json.Marshal(manifests)
-	if strings.Contains(string(manifestPayload), "package arithmetic") || manifests[0].ReservedOutputTokens == 0 {
+	if strings.Contains(string(manifestPayload), "package arithmetic") || manifests[0].BudgetTokens != 4096 || manifests[0].ReservedOutputTokens != 1024 {
 		t.Fatalf("context manifest stored source content or omitted its output reservation: %s", manifestPayload)
+	}
+	indexStatus, err := store.IntelligenceStatus(ctx, "fixture")
+	if err != nil || indexStatus.LatestRevision != job.BaseSHA || indexStatus.Files != 3 {
+		t.Fatalf("workflow index status = %#v, %v", indexStatus, err)
+	}
+	baselines, err := store.ListBaselines(ctx, "fixture", 10)
+	if err != nil || len(baselines) != 1 || baselines[0].Revision != job.BaseSHA || len(baselines[0].Observations) < 2 {
+		t.Fatalf("workflow baselines = %#v, %v", baselines, err)
+	}
+	differentials, err := store.ListDifferentials(ctx, "fixture", 10)
+	if err != nil || len(differentials) < 3 {
+		t.Fatalf("workflow differentials = %#v, %v", differentials, err)
+	}
+	purposes := map[string]bool{}
+	for _, differential := range differentials {
+		purposes[differential.Purpose] = true
+	}
+	if !purposes["targeted"] || !purposes["full"] || !purposes["final"] {
+		t.Fatalf("workflow differential purposes = %#v", purposes)
+	}
+	impacts, err := store.ListTestImpacts(ctx, "fixture", 10)
+	if err != nil || len(impacts) != 2 {
+		t.Fatalf("workflow test impacts = %#v, %v", impacts, err)
+	}
+	for _, impact := range impacts {
+		if !impact.FullSuiteRequired {
+			t.Fatalf("workflow impact omitted final full-suite policy: %#v", impact)
+		}
+	}
+	caches, err := store.ListCacheEntries(ctx, "fixture", 10)
+	if err != nil || len(caches) != 3 {
+		t.Fatalf("workflow parsed-blob caches = %#v, %v", caches, err)
+	}
+	for _, cache := range caches {
+		if cache.Kind != "source-parse" || !cache.Verified || cache.ObjectSHA256 == "" {
+			t.Fatalf("unverified workflow cache = %#v", cache)
+		}
 	}
 	jobArtifacts, err := store.ListJobArtifacts(ctx, job.ID, 100)
 	if err != nil || len(jobArtifacts) < 2 {

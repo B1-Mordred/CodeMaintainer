@@ -44,12 +44,27 @@ func NewService(store Store, analyzer Analyzer) (*Service, error) {
 }
 
 func (service *Service) Index(ctx context.Context, request IndexRequest) (IndexRun, error) {
+	if request.CacheRetentionDays == 0 {
+		request.CacheRetentionDays = 30
+	}
+	if request.CacheQuotaBytes == 0 {
+		request.CacheQuotaBytes = 512 << 20
+	}
 	if err := validateIndexRequest(request); err != nil {
 		return IndexRun{}, err
 	}
 	analyses := make([]BlobAnalysis, 0, len(request.Files))
+	allAnalyses := make([]BlobAnalysis, 0, len(request.Files))
 	files := make([]IndexedFile, 0, len(request.Files))
 	for _, file := range request.Files {
+		if ctx.Err() != nil {
+			if len(files) == 0 {
+				return IndexRun{}, ctx.Err()
+			}
+			request.Files = request.Files[:len(files)]
+			request.TerminalState = "cancelled"
+			break
+		}
 		analysis, found, err := service.store.FindBlobAnalysis(ctx, request.ProjectID, request.Repository, file.BlobSHA256, request.ParserID)
 		if err != nil {
 			return IndexRun{}, err
@@ -61,17 +76,60 @@ func (service *Service) Index(ctx context.Context, request IndexRequest) (IndexR
 			analysis.Bytes = int64(len(file.Content))
 			analyses = append(analyses, analysis)
 		}
+		allAnalyses = append(allAnalyses, analysis)
 		status := "indexed"
 		if analysis.Failure != "" {
 			status = "failed"
 		}
 		files = append(files, IndexedFile{Path: file.Path, BlobSHA256: file.BlobSHA256, Language: analysis.Language, Status: status, Failure: analysis.Failure, Reused: found})
 	}
-	return service.store.CommitIndex(ctx, request, analyses, files)
+	commitContext := ctx
+	cancelCommit := func() {}
+	if request.TerminalState == "cancelled" {
+		commitContext, cancelCommit = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	}
+	defer cancelCommit()
+	run, err := service.store.CommitIndex(commitContext, request, analyses, files)
+	if err != nil {
+		return IndexRun{}, err
+	}
+	for index, file := range request.Files {
+		if err := service.registerParseCache(commitContext, request, file, allAnalyses[index]); err != nil {
+			return IndexRun{}, fmt.Errorf("verify parsed-blob cache identity for %q: %w", file.Path, err)
+		}
+	}
+	if run.State != "cancelled" {
+		if _, err := service.store.PruneIntelligence(commitContext, request.ProjectID, time.Now().UTC().Add(-time.Duration(request.CacheRetentionDays)*24*time.Hour), time.Now().UTC()); err != nil {
+			return IndexRun{}, fmt.Errorf("apply index retention: %w", err)
+		}
+	}
+	return run, nil
+}
+
+func (service *Service) registerParseCache(ctx context.Context, request IndexRequest, file SourceFile, analysis BlobAnalysis) error {
+	const trustDomain = "trusted-source"
+	const kind = "source-parse"
+	key, err := NewCacheKey(request.ProjectID, trustDomain, kind, request.Repository, file.BlobSHA256, request.ParserID, fmt.Sprintf("schema-%d", SchemaVersion))
+	if err != nil {
+		return err
+	}
+	inputDigest := sha256.Sum256([]byte(strings.Join([]string{request.Repository, file.BlobSHA256, request.ParserID, fmt.Sprintf("schema-%d", SchemaVersion)}, "\x00")))
+	payload, err := json.Marshal(analysis)
+	if err != nil {
+		return err
+	}
+	objectDigest := sha256.Sum256(payload)
+	_, err = service.RegisterCacheEntry(ctx, CacheEntry{
+		Key: key, ProjectID: request.ProjectID, TrustDomain: trustDomain, Kind: kind,
+		InputSHA256: hex.EncodeToString(inputDigest[:]), ObjectSHA256: hex.EncodeToString(objectDigest[:]),
+		Bytes: int64(len(payload)), Verified: true, ExpiresAt: time.Now().UTC().Add(time.Duration(request.CacheRetentionDays) * 24 * time.Hour),
+		QuotaBytes: request.CacheQuotaBytes,
+	})
+	return err
 }
 
 func validateIndexRequest(request IndexRequest) error {
-	if ValidateIdentity(request.ProjectID) != nil || ValidateIdentity(request.Repository) != nil || ValidateIdentity(request.Revision) != nil || ValidateIdentity(request.ParserID) != nil {
+	if ValidateIdentity(request.ProjectID) != nil || ValidateIdentity(request.Repository) != nil || ValidateIdentity(request.Revision) != nil || ValidateIdentity(request.ParserID) != nil || request.CacheRetentionDays < 1 || request.CacheRetentionDays > 3650 || request.CacheQuotaBytes < 1<<20 || request.CacheQuotaBytes > 1<<40 || (request.TerminalState != "" && request.TerminalState != "cancelled") {
 		return errors.New("project, repository, revision, and parser identities are required and bounded")
 	}
 	if len(request.Files) == 0 || len(request.Files) > maxIndexFiles {
@@ -377,11 +435,18 @@ func (service *Service) CaptureBaseline(ctx context.Context, baseline Baseline) 
 	return service.store.SaveBaseline(ctx, baseline)
 }
 
-func (service *Service) CompareAndSave(ctx context.Context, baseline Baseline, candidateSHA string, observations []Observation) (Differential, error) {
-	if baseline.ID == "" || len(candidateSHA) != 64 || len(observations) > 10_000 {
-		return Differential{}, errors.New("stored baseline, candidate hash, and bounded observations are required")
+func (service *Service) FindBaseline(ctx context.Context, projectID, revision, configSHA256, toolchainID, packSetSHA256 string) (Baseline, bool, error) {
+	if ValidateIdentity(projectID) != nil || ValidateIdentity(revision) != nil || len(configSHA256) != 64 || ValidateIdentity(toolchainID) != nil || len(packSetSHA256) != 64 {
+		return Baseline{}, false, errors.New("complete baseline identity is required")
 	}
-	differential := Differential{BaselineID: baseline.ID, CandidateSHA: candidateSHA, Items: CompareObservations(baseline.Observations, observations)}
+	return service.store.FindBaseline(ctx, projectID, revision, configSHA256, toolchainID, packSetSHA256)
+}
+
+func (service *Service) CompareAndSave(ctx context.Context, baseline Baseline, candidateSHA, purpose string, observations []Observation) (Differential, error) {
+	if baseline.ID == "" || len(candidateSHA) != 64 || ValidateIdentity(purpose) != nil || len(observations) == 0 || len(observations) > 10_000 {
+		return Differential{}, errors.New("stored baseline, candidate hash, purpose, and bounded observations are required")
+	}
+	differential := Differential{BaselineID: baseline.ID, CandidateSHA: candidateSHA, Purpose: purpose, Items: CompareObservations(baseline.Observations, observations)}
 	return service.store.SaveDifferential(ctx, differential)
 }
 
@@ -392,8 +457,18 @@ func (service *Service) RecordTestImpact(ctx context.Context, impact TestImpact)
 	return service.store.SaveTestImpact(ctx, impact)
 }
 
+func (service *Service) FindTestImpact(ctx context.Context, projectID, revision string) (TestImpact, bool, error) {
+	if ValidateIdentity(projectID) != nil || ValidateIdentity(revision) != nil {
+		return TestImpact{}, false, errors.New("project and revision identities are required")
+	}
+	return service.store.FindTestImpact(ctx, projectID, revision)
+}
+
 func (service *Service) RegisterCacheEntry(ctx context.Context, entry CacheEntry) (CacheEntry, error) {
-	if ValidateIdentity(entry.ProjectID) != nil || ValidateIdentity(entry.TrustDomain) != nil || ValidateIdentity(entry.Kind) != nil || len(entry.Key) != 64 || len(entry.InputSHA256) != 64 || len(entry.ObjectSHA256) != 64 || entry.Bytes < 0 || !entry.Verified || entry.ExpiresAt.Before(time.Now().UTC()) {
+	if entry.QuotaBytes == 0 {
+		entry.QuotaBytes = 512 << 20
+	}
+	if ValidateIdentity(entry.ProjectID) != nil || ValidateIdentity(entry.TrustDomain) != nil || ValidateIdentity(entry.Kind) != nil || len(entry.Key) != 64 || len(entry.InputSHA256) != 64 || len(entry.ObjectSHA256) != 64 || entry.Bytes < 0 || entry.QuotaBytes < 1<<20 || entry.QuotaBytes > 1<<40 || entry.Bytes > entry.QuotaBytes || !entry.Verified || entry.ExpiresAt.Before(time.Now().UTC()) {
 		return CacheEntry{}, errors.New("cache entry requires project-isolated identities, complete hashes, verified content, and future retention")
 	}
 	return service.store.PutCacheEntry(ctx, entry)

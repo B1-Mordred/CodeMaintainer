@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/projects"
+	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
 )
 
@@ -47,6 +49,10 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if second.State != "partial" || second.Parsed != 0 || second.Reused != 3 || second.Failures != 1 {
 		t.Fatalf("second index = %#v", second)
 	}
+	retention, err := store.PruneIntelligence(ctx, "project-one", time.Now().UTC().Add(time.Hour), time.Now().UTC())
+	if err != nil || retention.RunsRemoved != 1 {
+		t.Fatalf("retention result = %#v %v", retention, err)
+	}
 	query, err := service.Query(ctx, intelligence.Query{ProjectID: "project-one", Revision: "abc123", Term: "Run", Limit: 10})
 	if err != nil || len(query.Symbols) != 1 || query.Symbols[0].Name != "Run" || !query.Partial {
 		t.Fatalf("query = %#v %v", query, err)
@@ -76,12 +82,16 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	differential, err := service.CompareAndSave(ctx, baseline, hash("candidate"), []intelligence.Observation{{Key: "unit", Kind: "test", Status: "passed", Value: json.RawMessage(`{"failures":0}`)}, {Key: "security", Kind: "scan", Status: "failed", Value: json.RawMessage(`{"findings":1}`)}})
+	differential, err := service.CompareAndSave(ctx, baseline, hash("candidate"), "full", []intelligence.Observation{{Key: "unit", Kind: "test", Status: "passed", Value: json.RawMessage(`{"failures":0}`)}, {Key: "security", Kind: "scan", Status: "failed", Value: json.RawMessage(`{"findings":1}`)}})
 	if err != nil || len(differential.Items) != 3 {
 		t.Fatalf("differential = %#v %v", differential, err)
 	}
 	if listed, listErr := store.ListBaselines(ctx, "project-one", 10); listErr != nil || len(listed) != 1 {
 		t.Fatalf("baseline list = %#v %v", listed, listErr)
+	}
+	foundBaseline, found, findErr := service.FindBaseline(ctx, baseline.ProjectID, baseline.Revision, baseline.ConfigSHA256, baseline.ToolchainID, baseline.PackSetSHA256)
+	if findErr != nil || !found || foundBaseline.ID != baseline.ID {
+		t.Fatalf("baseline identity lookup = %#v %t %v", foundBaseline, found, findErr)
 	}
 	if listed, listErr := store.ListDifferentials(ctx, "project-one", 10); listErr != nil || len(listed) != 1 {
 		t.Fatalf("differential list = %#v %v", listed, listErr)
@@ -109,6 +119,9 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if listed, listErr := store.ListTestImpacts(ctx, "project-one", 10); listErr != nil || len(listed) != 1 {
 		t.Fatalf("impact list = %#v %v", listed, listErr)
 	}
+	if foundImpact, found, findErr := service.FindTestImpact(ctx, impact.ProjectID, impact.Revision); findErr != nil || !found || foundImpact.ID != impact.ID {
+		t.Fatalf("impact identity lookup = %#v %t %v", foundImpact, found, findErr)
+	}
 
 	cacheKey, _ := intelligence.NewCacheKey("project-one", "trusted", "parse", "owner/repo", "abc123", "bounded-parser-v1")
 	entry, err := service.RegisterCacheEntry(ctx, intelligence.CacheEntry{Key: cacheKey, ProjectID: "project-one", TrustDomain: "trusted", Kind: "parse", InputSHA256: hash("inputs"), ObjectSHA256: hash("object"), Bytes: 123, Verified: true, ExpiresAt: time.Now().UTC().Add(time.Hour)})
@@ -116,8 +129,21 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 		t.Fatalf("cache entry = %#v %v", entry, err)
 	}
 	entries, err := service.CacheEntries(ctx, "project-one", 10)
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 4 {
 		t.Fatalf("cache list = %#v %v", entries, err)
+	}
+	hits := 0
+	for _, cached := range entries {
+		if cached.Kind == "source-parse" && cached.LastResult == "hit" && cached.QuotaBytes == 512<<20 {
+			hits++
+		}
+	}
+	if hits != 3 {
+		t.Fatalf("parsed-blob cache results = %#v", entries)
+	}
+	overQuotaKey, _ := intelligence.NewCacheKey("project-one", "trusted", "quota-test", "complete-input")
+	if _, err := service.RegisterCacheEntry(ctx, intelligence.CacheEntry{Key: overQuotaKey, ProjectID: "project-one", TrustDomain: "trusted", Kind: "quota-test", InputSHA256: hash("quota-input"), ObjectSHA256: hash("quota-object"), Bytes: 1 << 20, QuotaBytes: 1 << 20, Verified: true, ExpiresAt: time.Now().UTC().Add(time.Hour)}); !errors.Is(err, storage.ErrBudgetExceeded) {
+		t.Fatalf("aggregate project cache quota returned %v", err)
 	}
 	if _, err := service.PurgeCache(ctx, "project-one", "parse", "admin", "test denial", false); err == nil {
 		t.Fatal("cache purge bypassed reauthentication")
@@ -133,6 +159,25 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if err != nil || status.State != "never_indexed" {
 		t.Fatalf("rebuilt status = %#v %v", status, err)
 	}
+	cancelContext, cancel := context.WithCancel(ctx)
+	analyzer := &cancellingAnalyzer{cancel: cancel}
+	cancellable, _ := intelligence.NewService(store, analyzer)
+	cancelled, err := cancellable.Index(cancelContext, intelligence.IndexRequest{ProjectID: "project-one", Repository: "owner/repo", Revision: "cancelled-revision", ParserID: "bounded-parser-v2", Files: []intelligence.SourceFile{source("one.go", "package one\n"), source("two.go", "package two\n")}})
+	if err != nil || cancelled.State != "cancelled" || cancelled.Files != 1 || analyzer.calls != 1 {
+		t.Fatalf("cancelled index = %#v calls=%d %v", cancelled, analyzer.calls, err)
+	}
+}
+
+type cancellingAnalyzer struct {
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (analyzer *cancellingAnalyzer) Analyze(ctx context.Context, path, parserID string, content []byte) intelligence.BlobAnalysis {
+	analyzer.calls++
+	result := (intelligence.LexicalAnalyzer{}).Analyze(ctx, path, parserID, content)
+	analyzer.cancel()
+	return result
 }
 
 func source(path, content string) intelligence.SourceFile {

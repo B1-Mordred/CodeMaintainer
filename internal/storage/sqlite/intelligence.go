@@ -53,6 +53,9 @@ func (s *Store) CommitIndex(ctx context.Context, request intelligence.IndexReque
 			run.State = "partial"
 		}
 	}
+	if request.TerminalState == "cancelled" {
+		run.State = "cancelled"
+	}
 	for _, source := range request.Files {
 		run.Bytes += int64(len(source.Content))
 	}
@@ -98,7 +101,7 @@ func (s *Store) CommitIndex(ctx context.Context, request intelligence.IndexReque
 func (s *Store) IntelligenceStatus(ctx context.Context, projectID string) (intelligence.Status, error) {
 	status := intelligence.Status{ProjectID: projectID, State: "never_indexed", Languages: []string{}, ParserIDs: []string{}}
 	var completed string
-	err := s.db.QueryRowContext(ctx, `SELECT id, revision, state, files, failures, bytes, parser_id, completed_at FROM code_intel_runs WHERE project_id = ? ORDER BY completed_at DESC, id DESC LIMIT 1`, projectID).Scan(&status.LatestRunID, &status.LatestRevision, &status.State, &status.Files, &status.Failures, &status.StorageBytes, new(string), &completed)
+	err := s.db.QueryRowContext(ctx, `SELECT id, revision, state, files, failures, bytes, parser_id, completed_at FROM code_intel_runs WHERE project_id = ? ORDER BY completed_at DESC, id DESC LIMIT 1`, projectID).Scan(&status.LatestRunID, &status.LatestRevision, &status.State, &status.Files, &status.Failures, new(int64), new(string), &completed)
 	if errors.Is(err, sql.ErrNoRows) {
 		var exists int
 		if queryErr := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects WHERE id = ?`, projectID).Scan(&exists); queryErr != nil {
@@ -113,6 +116,9 @@ func (s *Store) IntelligenceStatus(ctx context.Context, projectID string) (intel
 		return status, err
 	}
 	status.FreshAt, _ = time.Parse(timestampFormat, completed)
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM code_intel_blobs WHERE project_id=?`, projectID).Scan(&status.StorageBytes); err != nil {
+		return status, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT f.language, r.parser_id FROM code_intel_files f JOIN code_intel_runs r ON r.id=f.run_id WHERE r.project_id=? AND r.id=? ORDER BY f.language, r.parser_id`, projectID, status.LatestRunID)
 	if err != nil {
 		return status, err
@@ -210,7 +216,12 @@ func (s *Store) RebuildIntelligence(ctx context.Context, projectID, actorID, rea
 	if _, err := tx.ExecContext(ctx, `DELETE FROM code_intel_blobs WHERE project_id=?`, projectID); err != nil {
 		return err
 	}
-	details, err := json.Marshal(map[string]any{"derived_index_removed": true, "reason": reason})
+	cacheResult, err := tx.ExecContext(ctx, `DELETE FROM cache_entries WHERE project_id=? AND kind='source-parse'`, projectID)
+	if err != nil {
+		return err
+	}
+	cacheEntries, _ := cacheResult.RowsAffected()
+	details, err := json.Marshal(map[string]any{"derived_index_removed": true, "derived_cache_entries_removed": cacheEntries, "reason": reason})
 	if err != nil {
 		return err
 	}
@@ -218,6 +229,45 @@ func (s *Store) RebuildIntelligence(ctx context.Context, projectID, actorID, rea
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) PruneIntelligence(ctx context.Context, projectID string, before, now time.Time) (intelligence.RetentionResult, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return intelligence.RetentionResult{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM code_intel_files WHERE run_id IN (
+		SELECT id FROM code_intel_runs WHERE project_id=? AND completed_at<? AND id<>(SELECT id FROM code_intel_runs WHERE project_id=? ORDER BY completed_at DESC,id DESC LIMIT 1)
+	)`, projectID, before.Format(timestampFormat), projectID); err != nil {
+		return intelligence.RetentionResult{}, err
+	}
+	runs, err := tx.ExecContext(ctx, `DELETE FROM code_intel_runs WHERE project_id=? AND completed_at<? AND id<>(SELECT id FROM code_intel_runs WHERE project_id=? ORDER BY completed_at DESC,id DESC LIMIT 1)`, projectID, before.Format(timestampFormat), projectID)
+	if err != nil {
+		return intelligence.RetentionResult{}, err
+	}
+	blobs, err := tx.ExecContext(ctx, `DELETE FROM code_intel_blobs WHERE project_id=? AND NOT EXISTS (
+		SELECT 1 FROM code_intel_files f JOIN code_intel_runs r ON r.id=f.run_id
+		WHERE r.project_id=code_intel_blobs.project_id AND r.repository=code_intel_blobs.repository AND r.parser_id=code_intel_blobs.parser_id AND f.blob_sha256=code_intel_blobs.blob_sha256
+	)`, projectID)
+	if err != nil {
+		return intelligence.RetentionResult{}, err
+	}
+	caches, err := tx.ExecContext(ctx, `DELETE FROM cache_entries WHERE project_id=? AND expires_at<?`, projectID, now.Format(timestampFormat))
+	if err != nil {
+		return intelligence.RetentionResult{}, err
+	}
+	runCount, _ := runs.RowsAffected()
+	blobCount, _ := blobs.RowsAffected()
+	cacheCount, _ := caches.RowsAffected()
+	result := intelligence.RetentionResult{RunsRemoved: int(runCount), BlobsRemoved: int(blobCount), CachesRemoved: int(cacheCount)}
+	if runCount+blobCount+cacheCount != 0 {
+		details, _ := json.Marshal(result)
+		if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: "workflow-controller", ActorRole: "system", Action: "intelligence.retention", TargetType: "project", TargetID: projectID, Details: details}); err != nil {
+			return intelligence.RetentionResult{}, err
+		}
+	}
+	return result, tx.Commit()
 }
 
 func (s *Store) SaveContextManifest(ctx context.Context, manifest intelligence.ContextManifest) (intelligence.ContextManifest, error) {
@@ -286,6 +336,11 @@ func (s *Store) ListContextManifests(ctx context.Context, projectID string, limi
 }
 
 func (s *Store) SaveBaseline(ctx context.Context, value intelligence.Baseline) (intelligence.Baseline, error) {
+	if existing, found, err := s.FindBaseline(ctx, value.ProjectID, value.Revision, value.ConfigSHA256, value.ToolchainID, value.PackSetSHA256); err != nil {
+		return value, err
+	} else if found {
+		return existing, nil
+	}
 	id, err := NewID("baseline")
 	if err != nil {
 		return value, err
@@ -296,6 +351,30 @@ func (s *Store) SaveBaseline(ctx context.Context, value intelligence.Baseline) (
 	_, err = s.db.ExecContext(ctx, `INSERT INTO verification_baselines(id,project_id,revision,config_sha256,toolchain_id,pack_set_sha256,actor_id,reason,observations_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.Revision, value.ConfigSHA256, value.ToolchainID, value.PackSetSHA256, value.ActorID, value.Reason, string(payload), value.CreatedAt.Format(timestampFormat))
 	return value, err
 }
+
+func (s *Store) FindBaseline(ctx context.Context, projectID, revision, configSHA256, toolchainID, packSetSHA256 string) (intelligence.Baseline, bool, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id,project_id,revision,config_sha256,toolchain_id,pack_set_sha256,actor_id,reason,observations_json,created_at
+		FROM verification_baselines WHERE project_id=? AND revision=? AND config_sha256=? AND toolchain_id=? AND pack_set_sha256=?`, projectID, revision, configSHA256, toolchainID, packSetSHA256)
+	value, err := scanBaseline(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return intelligence.Baseline{}, false, nil
+	}
+	return value, err == nil, err
+}
+
+func scanBaseline(row scanner) (intelligence.Baseline, error) {
+	var value intelligence.Baseline
+	var payload, created string
+	if err := row.Scan(&value.ID, &value.ProjectID, &value.Revision, &value.ConfigSHA256, &value.ToolchainID, &value.PackSetSHA256, &value.ActorID, &value.Reason, &payload, &created); err != nil {
+		return value, err
+	}
+	if err := json.Unmarshal([]byte(payload), &value.Observations); err != nil {
+		return value, err
+	}
+	value.CreatedAt, _ = time.Parse(timestampFormat, created)
+	return value, nil
+}
+
 func (s *Store) ListBaselines(ctx context.Context, projectID string, limit int) ([]intelligence.Baseline, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
@@ -307,35 +386,43 @@ func (s *Store) ListBaselines(ctx context.Context, projectID string, limit int) 
 	defer rows.Close()
 	items := []intelligence.Baseline{}
 	for rows.Next() {
-		var value intelligence.Baseline
-		var payload, created string
-		if err := rows.Scan(&value.ID, &value.ProjectID, &value.Revision, &value.ConfigSHA256, &value.ToolchainID, &value.PackSetSHA256, &value.ActorID, &value.Reason, &payload, &created); err != nil {
+		value, err := scanBaseline(rows)
+		if err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal([]byte(payload), &value.Observations); err != nil {
-			return nil, err
-		}
-		value.CreatedAt, _ = time.Parse(timestampFormat, created)
 		items = append(items, value)
 	}
 	return items, rows.Err()
 }
 func (s *Store) SaveDifferential(ctx context.Context, value intelligence.Differential) (intelligence.Differential, error) {
+	var existing intelligence.Differential
+	var payload, created string
+	err := s.db.QueryRowContext(ctx, `SELECT id,baseline_id,candidate_sha,purpose,items_json,created_at FROM verification_differentials WHERE baseline_id=? AND candidate_sha=? AND purpose=?`, value.BaselineID, value.CandidateSHA, value.Purpose).Scan(&existing.ID, &existing.BaselineID, &existing.CandidateSHA, &existing.Purpose, &payload, &created)
+	if err == nil {
+		if err := json.Unmarshal([]byte(payload), &existing.Items); err != nil {
+			return value, err
+		}
+		existing.CreatedAt, _ = time.Parse(timestampFormat, created)
+		return existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return value, err
+	}
 	id, err := NewID("differential")
 	if err != nil {
 		return value, err
 	}
 	value.ID = id
 	value.CreatedAt = s.now()
-	payload, _ := json.Marshal(value.Items)
-	_, err = s.db.ExecContext(ctx, `INSERT INTO verification_differentials(id,baseline_id,candidate_sha,items_json,created_at) VALUES(?,?,?,?,?)`, value.ID, value.BaselineID, value.CandidateSHA, string(payload), value.CreatedAt.Format(timestampFormat))
+	serialized, _ := json.Marshal(value.Items)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO verification_differentials(id,baseline_id,candidate_sha,purpose,items_json,created_at) VALUES(?,?,?,?,?,?)`, value.ID, value.BaselineID, value.CandidateSHA, value.Purpose, string(serialized), value.CreatedAt.Format(timestampFormat))
 	return value, err
 }
 func (s *Store) ListDifferentials(ctx context.Context, projectID string, limit int) ([]intelligence.Differential, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT d.id,d.baseline_id,d.candidate_sha,d.items_json,d.created_at FROM verification_differentials d JOIN verification_baselines b ON b.id=d.baseline_id WHERE b.project_id=? ORDER BY d.created_at DESC,d.id DESC LIMIT ?`, projectID, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT d.id,d.baseline_id,d.candidate_sha,d.purpose,d.items_json,d.created_at FROM verification_differentials d JOIN verification_baselines b ON b.id=d.baseline_id WHERE b.project_id=? ORDER BY d.created_at DESC,d.id DESC LIMIT ?`, projectID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +431,7 @@ func (s *Store) ListDifferentials(ctx context.Context, projectID string, limit i
 	for rows.Next() {
 		var value intelligence.Differential
 		var payload, created string
-		if err := rows.Scan(&value.ID, &value.BaselineID, &value.CandidateSHA, &payload, &created); err != nil {
+		if err := rows.Scan(&value.ID, &value.BaselineID, &value.CandidateSHA, &value.Purpose, &payload, &created); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(payload), &value.Items); err != nil {
@@ -356,6 +443,11 @@ func (s *Store) ListDifferentials(ctx context.Context, projectID string, limit i
 	return items, rows.Err()
 }
 func (s *Store) SaveTestImpact(ctx context.Context, value intelligence.TestImpact) (intelligence.TestImpact, error) {
+	if existing, found, err := s.FindTestImpact(ctx, value.ProjectID, value.Revision); err != nil {
+		return value, err
+	} else if found {
+		return existing, nil
+	}
 	id, err := NewID("impact")
 	if err != nil {
 		return value, err
@@ -366,6 +458,28 @@ func (s *Store) SaveTestImpact(ctx context.Context, value intelligence.TestImpac
 	selections, _ := json.Marshal(value.Selections)
 	_, err = s.db.ExecContext(ctx, `INSERT INTO test_impact_records(id,project_id,revision,changed_symbols_json,selections_json,full_suite_required,policy_explanation,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.Revision, string(changed), string(selections), boolInt(value.FullSuiteRequired), value.PolicyExplanation, value.CreatedAt.Format(timestampFormat))
 	return value, err
+}
+
+func (s *Store) FindTestImpact(ctx context.Context, projectID, revision string) (intelligence.TestImpact, bool, error) {
+	var value intelligence.TestImpact
+	var changed, selections, created string
+	var full int
+	err := s.db.QueryRowContext(ctx, `SELECT id,project_id,revision,changed_symbols_json,selections_json,full_suite_required,policy_explanation,created_at FROM test_impact_records WHERE project_id=? AND revision=?`, projectID, revision).Scan(&value.ID, &value.ProjectID, &value.Revision, &changed, &selections, &full, &value.PolicyExplanation, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return intelligence.TestImpact{}, false, nil
+	}
+	if err != nil {
+		return value, false, err
+	}
+	if err := json.Unmarshal([]byte(changed), &value.ChangedSymbols); err != nil {
+		return value, false, err
+	}
+	if err := json.Unmarshal([]byte(selections), &value.Selections); err != nil {
+		return value, false, err
+	}
+	value.FullSuiteRequired = full != 0
+	value.CreatedAt, _ = time.Parse(timestampFormat, created)
+	return value, true, nil
 }
 func (s *Store) ListTestImpacts(ctx context.Context, projectID string, limit int) ([]intelligence.TestImpact, error) {
 	if limit <= 0 || limit > 500 {
@@ -403,12 +517,36 @@ func (s *Store) PutCacheEntry(ctx context.Context, value intelligence.CacheEntry
 		value.CreatedAt = now
 	}
 	value.LastHitAt = now
-	result, err := s.db.ExecContext(ctx, `INSERT INTO cache_entries(project_id,cache_key,trust_domain,kind,input_sha256,object_sha256,bytes,verified,created_at,last_hit_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,cache_key) DO UPDATE SET last_hit_at=excluded.last_hit_at WHERE cache_entries.object_sha256=excluded.object_sha256 AND cache_entries.input_sha256=excluded.input_sha256`, value.ProjectID, value.Key, value.TrustDomain, value.Kind, value.InputSHA256, value.ObjectSHA256, value.Bytes, boolInt(value.Verified), value.CreatedAt.Format(timestampFormat), value.LastHitAt.Format(timestampFormat), value.ExpiresAt.Format(timestampFormat))
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return value, err
+	}
+	defer tx.Rollback()
+	var usage, existing int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM cache_entries WHERE project_id=? AND cache_key<>?`, value.ProjectID, value.Key).Scan(&usage); err != nil {
+		return value, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM cache_entries WHERE project_id=? AND cache_key=?`, value.ProjectID, value.Key).Scan(&existing); err != nil {
+		return value, err
+	}
+	if usage+value.Bytes > value.QuotaBytes {
+		return intelligence.CacheEntry{}, storage.ErrBudgetExceeded
+	}
+	value.LastResult = "miss"
+	value.ResultReason = "verified object registered"
+	result, err := tx.ExecContext(ctx, `INSERT INTO cache_entries(project_id,cache_key,trust_domain,kind,input_sha256,object_sha256,bytes,verified,created_at,last_hit_at,expires_at,quota_bytes,last_result,result_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,cache_key) DO UPDATE SET last_hit_at=excluded.last_hit_at,expires_at=excluded.expires_at,quota_bytes=excluded.quota_bytes,last_result='hit',result_reason='complete input and object identity matched' WHERE cache_entries.object_sha256=excluded.object_sha256 AND cache_entries.input_sha256=excluded.input_sha256`, value.ProjectID, value.Key, value.TrustDomain, value.Kind, value.InputSHA256, value.ObjectSHA256, value.Bytes, boolInt(value.Verified), value.CreatedAt.Format(timestampFormat), value.LastHitAt.Format(timestampFormat), value.ExpiresAt.Format(timestampFormat), value.QuotaBytes, value.LastResult, value.ResultReason)
 	if err != nil {
 		return value, err
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
 		return intelligence.CacheEntry{}, storage.ErrConflict
+	}
+	if existing != 0 {
+		value.LastResult = "hit"
+		value.ResultReason = "complete input and object identity matched"
+	}
+	if err := tx.Commit(); err != nil {
+		return intelligence.CacheEntry{}, err
 	}
 	return value, nil
 }
@@ -416,7 +554,7 @@ func (s *Store) ListCacheEntries(ctx context.Context, projectID string, limit in
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT cache_key,project_id,trust_domain,kind,input_sha256,object_sha256,bytes,verified,created_at,last_hit_at,expires_at FROM cache_entries WHERE project_id=? ORDER BY last_hit_at DESC LIMIT ?`, projectID, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT cache_key,project_id,trust_domain,kind,input_sha256,object_sha256,bytes,verified,created_at,last_hit_at,expires_at,quota_bytes,last_result,result_reason FROM cache_entries WHERE project_id=? ORDER BY last_hit_at DESC LIMIT ?`, projectID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +564,7 @@ func (s *Store) ListCacheEntries(ctx context.Context, projectID string, limit in
 		var value intelligence.CacheEntry
 		var verified int
 		var created, hit, expires string
-		if err := rows.Scan(&value.Key, &value.ProjectID, &value.TrustDomain, &value.Kind, &value.InputSHA256, &value.ObjectSHA256, &value.Bytes, &verified, &created, &hit, &expires); err != nil {
+		if err := rows.Scan(&value.Key, &value.ProjectID, &value.TrustDomain, &value.Kind, &value.InputSHA256, &value.ObjectSHA256, &value.Bytes, &verified, &created, &hit, &expires, &value.QuotaBytes, &value.LastResult, &value.ResultReason); err != nil {
 			return nil, err
 		}
 		value.Verified = verified != 0

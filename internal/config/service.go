@@ -332,6 +332,10 @@ func (service *RegistryService) validateEntriesInContext(ctx context.Context, sc
 			}
 		}
 	}
+	var inputBudget, outputReserve int
+	if json.Unmarshal(prospective["intelligence.context_input_tokens"], &inputBudget) == nil && json.Unmarshal(prospective["intelligence.context_output_reserve_tokens"], &outputReserve) == nil && outputReserve >= inputBudget {
+		report.Issues = append(report.Issues, ValidationIssue{Key: "intelligence.context_output_reserve_tokens", Code: "cross_field_validation", Message: "Context output reserve must be lower than the total context input budget.", Severity: "error"})
+	}
 	report.Valid = len(report.Issues) == 0
 	return report, nil
 }

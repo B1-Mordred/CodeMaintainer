@@ -112,7 +112,7 @@ func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || status.Files != 1 || status.ProjectID != "owner-repo" {
+	if response.StatusCode != http.StatusOK || status.Files != 1 || status.ProjectID != "owner-repo" || !status.IndexingEnabled || status.RetentionDays != 30 || status.CacheQuotaBytes != 512<<20 {
 		t.Fatalf("status %d %#v", response.StatusCode, status)
 	}
 	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/query", "application/json", strings.NewReader(`{"term":"Target","limit":10}`))
@@ -201,7 +201,7 @@ func TestConfigurationRegistryAPIUsesTypedDraftsETagsAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || descriptors.SchemaVersion != 1 || len(descriptors.Items) != 13 {
+	if response.StatusCode != http.StatusOK || descriptors.SchemaVersion != 1 || len(descriptors.Items) != 19 {
 		t.Fatalf("descriptors returned %d: %#v", response.StatusCode, descriptors)
 	}
 	response, err = http.Get(server.URL + "/api/v1/config/prerequisites")
