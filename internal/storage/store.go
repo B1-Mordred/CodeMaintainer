@@ -127,6 +127,12 @@ type ConfigStore interface {
 	GetConfigRevision(context.Context, string) (config.Revision, error)
 	CreateConfigRevision(context.Context, config.Revision) (config.Revision, error)
 	ListConfigRevisions(context.Context, int) ([]config.Revision, error)
+	GetConfigScope(context.Context, config.ScopeRef) (config.ScopeState, error)
+	ApplyConfigScope(context.Context, config.ApplyScopeRequest) (config.RegistryRevision, config.ScopeState, error)
+	GetConfigRegistryRevision(context.Context, string) (config.RegistryRevision, error)
+	ListConfigRegistryRevisions(context.Context, config.ScopeRef, int) ([]config.RegistryRevision, error)
+	SaveJobConfigSnapshot(context.Context, config.JobSnapshot) (config.JobSnapshot, error)
+	GetJobConfigSnapshot(context.Context, string) (config.JobSnapshot, error)
 }
 
 type JobLease struct {

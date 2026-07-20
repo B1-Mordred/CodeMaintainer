@@ -221,12 +221,20 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 15 {
-		t.Fatalf("applied migration count = %d, want 15", migrations)
+	if migrations != 16 {
+		t.Fatalf("applied migration count = %d, want 16", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
 		t.Fatalf("job_leases table missing: %v", err)
+	}
+	var registryValue string
+	if err := store.db.QueryRowContext(ctx, `SELECT value_json FROM config_scope_values
+		WHERE setting_key = 'workflow.max_review_cycles' AND scope_kind = 'system' AND scope_id = ''`).Scan(&registryValue); err != nil {
+		t.Fatalf("active Increment 1 configuration was not imported into the registry: %v", err)
+	}
+	if registryValue != "2" {
+		t.Fatalf("migrated review-cycle value = %q, want 2", registryValue)
 	}
 }
 

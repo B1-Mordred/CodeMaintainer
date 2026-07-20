@@ -2,11 +2,11 @@
   "schema_version": 1,
   "contract": "LOCAL_CODE_MAINTAINER_INCREMENT_2_GOAL.md",
   "base_contract": "project.md",
-  "updated_at": "2026-07-20T21:05:00Z",
+  "updated_at": "2026-07-20T21:09:00Z",
   "allowed_statuses": ["missing", "in_progress", "implemented", "operator_only"],
   "requirements": [
     {"id":"I2-05.1","title":"Configuration registry","milestone":1,"status":"in_progress","implementation":["internal/config/registry.go","internal/config/builtin_registry.go"],"tests":["internal/config/registry_test.go"],"ui":[],"docs":["execplan/increment-2.md"]},
-    {"id":"I2-05.2","title":"Scopes, precedence, provenance, and immutable job snapshots","milestone":1,"status":"in_progress","implementation":["internal/config/registry.go"],"tests":["internal/config/registry_test.go"],"ui":[],"docs":["execplan/increment-2.md"]},
+    {"id":"I2-05.2","title":"Scopes, precedence, provenance, and immutable job snapshots","milestone":1,"status":"in_progress","implementation":["internal/config/registry.go","internal/config/persistence.go","internal/storage/sqlite/config_registry.go","internal/storage/sqlite/migrations/016_config_registry.sql"],"tests":["internal/config/registry_test.go","internal/storage/sqlite/config_registry_test.go","internal/storage/sqlite/store_test.go"],"ui":[],"docs":["execplan/increment-2.md"]},
     {"id":"I2-05.3","title":"Schema-driven web configuration workbench","milestone":1,"status":"missing","implementation":[],"tests":[],"ui":[],"docs":[]},
     {"id":"I2-05.4","title":"Configuration API, CLI, permissions, concurrency, import and export","milestone":1,"status":"missing","implementation":[],"tests":[],"ui":[],"docs":[]},
     {"id":"I2-05.5","title":"Configuration policy enforcement and fail-closed behavior","milestone":1,"status":"missing","implementation":[],"tests":[],"ui":[],"docs":[]},
