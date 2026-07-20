@@ -69,3 +69,16 @@ func TestWorkerPacketAndArtifactPublicationAreBoundedAndImmutable(t *testing.T) 
 		t.Fatal("oversized artifact was accepted")
 	}
 }
+
+func TestDependencyWorkerUsesOnlyRecognizedRegularMarkers(t *testing.T) {
+	root := t.TempDir()
+	if err := runDependencies(root); err != nil {
+		t.Fatalf("repository without dependency markers failed: %v", err)
+	}
+	if err := os.Symlink("missing", filepath.Join(root, "go.mod")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runDependencies(root); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("symbolic dependency marker returned %v", err)
+	}
+}

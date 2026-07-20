@@ -65,6 +65,46 @@ func TestStorePublishesContentAddressedImmutableArtifacts(t *testing.T) {
 	}
 }
 
+func TestStoreBindsIdempotencyKeyToExactArtifact(t *testing.T) {
+	ctx := context.Background()
+	metadata, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer metadata.Close()
+	job, err := metadata.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_idempotent", ProjectID: "project", Repository: "owner/repo", Task: "verify", ActorID: "operator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(filepath.Join(t.TempDir(), "artifacts"), metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := PutRequest{
+		JobID: job.ID, ProjectID: job.ProjectID, Kind: "task_packet", MediaType: "application/json",
+		Producer: "controller", IdempotencyKey: "phase_7_packet", Metadata: []byte(`{"phase":7}`),
+		Reader: strings.NewReader(`{"task":"safe"}`),
+	}
+	first, err := store.Put(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Reader = strings.NewReader(`{"task":"safe"}`)
+	repeated, err := store.Put(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repeated.ID != first.ID {
+		t.Fatalf("idempotent artifact changed identity: %s != %s", repeated.ID, first.ID)
+	}
+	request.Reader = strings.NewReader(`{"task":"different"}`)
+	if _, err := store.Put(ctx, request); !errors.Is(err, storage.ErrIdempotencyKey) {
+		t.Fatalf("changed idempotent artifact returned %v", err)
+	}
+}
+
 func TestStoreRejectsOversizeAndDetectsTampering(t *testing.T) {
 	ctx := context.Background()
 	metadata, err := storesqlite.Open(ctx, ":memory:")

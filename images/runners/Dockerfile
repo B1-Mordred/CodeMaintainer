@@ -95,3 +95,6 @@ USER 65532:65532
 
 FROM runner-full AS implementation-agent
 ENTRYPOINT ["/usr/local/bin/maintainer-worker", "implementation"]
+
+FROM runner-full AS dependencies-worker
+ENTRYPOINT ["/usr/local/bin/maintainer-worker", "dependencies"]

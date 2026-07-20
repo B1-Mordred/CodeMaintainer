@@ -3,11 +3,18 @@ variable "VERSION" {
 }
 
 group "default" {
-  targets = ["controller", "maintainctl", "runnerd", "fake-model-server", "inference"]
+  targets = ["controller", "maintainctl", "runnerd", "fake-model-server", "git-bridge", "inference"]
 }
 
 group "runners" {
-  targets = ["runner-base", "runner-python", "runner-node", "runner-c", "runner-cpp", "runner-rust", "runner-go", "runner-full", "implementation-agent", "qc-agent"]
+  targets = ["runner-base", "runner-python", "runner-node", "runner-c", "runner-cpp", "runner-rust", "runner-go", "runner-full", "implementation-agent", "qc-agent", "dependencies-worker"]
+}
+
+target "dependencies-worker" {
+  context = "."
+  dockerfile = "images/runners/Dockerfile"
+  target = "dependencies-worker"
+  tags = ["local/code-maintainer-dependencies-worker:0.1.0-dev"]
 }
 
 target "control-plane" {
@@ -40,6 +47,12 @@ target "fake-model-server" {
   inherits = ["control-plane"]
   target   = "fake-model-server"
   tags     = ["local/code-maintainer-fake-model-server:${VERSION}"]
+}
+
+target "git-bridge" {
+  inherits = ["control-plane"]
+  target   = "git-bridge"
+  tags     = ["local/code-maintainer-git-bridge:${VERSION}"]
 }
 
 target "inference" {

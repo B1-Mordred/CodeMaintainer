@@ -33,8 +33,8 @@ func TestAllRequiredStatesAreUniqueAndValid(t *testing.T) {
 func TestHappyPathAndRepairPathTransitions(t *testing.T) {
 	paths := [][]State{
 		{
-			StateQueued, StateSyncing, StatePreparingDependencies,
-			StateCreatingWorktree, StateLockingAcceptanceCriteria,
+			StateQueued, StateSyncing, StateCreatingWorktree,
+			StatePreparingDependencies, StateLockingAcceptanceCriteria,
 			StateLoadingImplementationModel, StateReproducing,
 			StateImplementing, StateVerifyingTargeted, StateVerifyingFull,
 			StateLoadingQCModel, StateQCReview, StateAwaitingOperator,

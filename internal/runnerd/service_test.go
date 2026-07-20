@@ -61,6 +61,22 @@ func TestServiceResolvesPolicyBeforeStartingExecutorAndBoundsLogs(t *testing.T) 
 	if !exists || spec.Image == "" || spec.Network != NetworkInferenceOnly || !spec.Mounts[0].ReadOnly {
 		t.Fatalf("executor received unsafe specification: %#v", spec)
 	}
+	duplicate := runnerRequest(t, server.URL+"/v1/runs", http.MethodPost,
+		`{"job_id":"job_123","project_id":"owner-repo","kind":"qc","input_artifact_ids":["artifact_1"]}`)
+	if duplicate.StatusCode != http.StatusCreated {
+		duplicate.Body.Close()
+		t.Fatalf("idempotent start returned %d", duplicate.StatusCode)
+	}
+	var repeated struct {
+		RunID runners.RunID `json:"run_id"`
+	}
+	if err := json.NewDecoder(duplicate.Body).Decode(&repeated); err != nil {
+		t.Fatal(err)
+	}
+	duplicate.Body.Close()
+	if repeated.RunID != started.RunID {
+		t.Fatalf("idempotent start returned %s, want %s", repeated.RunID, started.RunID)
+	}
 
 	response = runnerRequest(t, server.URL+"/v1/runs/"+string(started.RunID)+"/logs?limit=4", http.MethodGet, "")
 	var chunk runners.LogChunk

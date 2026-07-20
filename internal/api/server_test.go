@@ -14,6 +14,7 @@ import (
 
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
 )
@@ -36,6 +37,13 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		Diff: json.RawMessage(`[]`), ValidationResult: json.RawMessage(`{"valid":true}`),
 	})
 	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertProject(context.Background(), projects.UpsertRequest{
+		ID: "owner-repo", Provider: "local", Repository: "owner/repo",
+		DefaultBranch: "main", LocalRemoteName: "fixture.git",
+	}, "test-admin"); err != nil {
 		store.Close()
 		t.Fatal(err)
 	}
@@ -128,6 +136,46 @@ func TestCreateInspectCancelRetryJob(t *testing.T) {
 	}
 }
 
+func TestProjectsAreSchemaValidatedBeforeJobsCanReferenceThem(t *testing.T) {
+	server, _ := testServer(t)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/projects", strings.NewReader(
+		`{"id":"second","provider":"local","repository":"fixture/second","default_branch":"main","local_remote_name":"second.git"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("project create returned %d", response.StatusCode)
+	}
+	response, err = http.Get(server.URL + "/api/v1/projects")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Items []projects.Project `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if len(listed.Items) != 2 {
+		t.Fatalf("project list = %#v", listed.Items)
+	}
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(
+		`{"project_id":"missing","repository":"fixture/missing","task":"x"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unregistered project job returned %d", response.StatusCode)
+	}
+}
+
 func TestJobArtifactsAreListedAndDownloadedWithIntegrityMetadata(t *testing.T) {
 	server, store, artifactStore := testServerWithArtifacts(t)
 	ctx := context.Background()
@@ -196,7 +244,7 @@ func TestRequestBoundaryRejectsUnknownFieldsAndBadRepository(t *testing.T) {
 
 func TestEventStreamReplaysDurableInitialTransition(t *testing.T) {
 	server, _ := testServer(t)
-	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(`{"project_id":"p","repository":"owner/repo","task":"x"}`))
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/jobs", strings.NewReader(`{"project_id":"owner-repo","repository":"owner/repo","task":"x"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

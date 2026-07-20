@@ -15,6 +15,7 @@ import (
 
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/projects"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	"github.com/local-code-maintainer/appliance/internal/ui"
 )
@@ -53,6 +54,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
+	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
+	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
@@ -61,6 +64,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts/{artifactID}", s.downloadJobArtifact)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-publication", s.approvePublication)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
 	mux.HandleFunc("POST /api/v1/config/validate", s.validateConfig)
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)
@@ -115,6 +119,28 @@ func (s *Server) workflowStates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": jobs.AllStates()})
 }
 
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListProjects(r.Context(), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
+	var request projects.UpsertRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	project, err := s.store.UpsertProject(r.Context(), request, actorID(r))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, project)
+}
+
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	limit := queryInt(r, "limit", 50)
 	offset := queryInt(r, "offset", 0)
@@ -136,6 +162,11 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 	request.Task = strings.TrimSpace(request.Task)
 	if request.ProjectID == "" || !validRepository(request.Repository) || request.Task == "" {
 		writeError(w, http.StatusBadRequest, "invalid_job", "project_id, owner/repository, and task are required")
+		return
+	}
+	project, err := s.store.GetProject(r.Context(), request.ProjectID)
+	if err != nil || !project.Enabled || project.Repository != request.Repository {
+		writeError(w, http.StatusUnprocessableEntity, "project_not_registered", "job project must be enabled and match its registered repository")
 		return
 	}
 	details, _ := json.Marshal(map[string]string{"source": "api"})
@@ -181,7 +212,24 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job": job, "transitions": transitions})
+	findings, err := s.store.ListFindings(r.Context(), job.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	approvals, err := s.store.ListApprovals(r.Context(), job.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	phases, err := s.store.ListPhaseRecords(r.Context(), job.ID, 500)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"job": job, "transitions": transitions, "findings": findings, "approvals": approvals, "phases": phases,
+	})
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +238,30 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	s.transitionAction(w, r, jobs.StateQueued, "operator retried job")
+}
+
+func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Rationale       string `json:"rationale"`
+		Reauthenticated bool   `json:"reauthenticated"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	current, err := s.store.GetJob(r.Context(), r.PathValue("jobID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	job, approval, err := s.store.ApprovePublication(r.Context(), current.ID, storage.PublicationApprovalRequest{
+		ActorID: actorID(r), ActorRole: actorRole(r), Rationale: request.Rationale,
+		Reauthenticated: request.Reauthenticated, ExpectedVersion: current.Version,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": job, "approval": approval})
 }
 
 func (s *Server) transitionAction(w http.ResponseWriter, r *http.Request, to jobs.State, reason string) {
@@ -490,6 +562,14 @@ func actorID(r *http.Request) string {
 		return value
 	}
 	return "local-operator"
+}
+
+func actorRole(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("X-Maintainer-Role"))
+	if value == "viewer" || value == "operator" || value == "reviewer" || value == "administrator" {
+		return value
+	}
+	return "operator"
 }
 
 func queryInt(r *http.Request, key string, fallback int) int {

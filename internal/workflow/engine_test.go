@@ -2,6 +2,9 @@ package workflow
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -14,23 +17,23 @@ import (
 func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 	paths := [][]jobs.State{
 		{
-			jobs.StateQueued, jobs.StateSyncing, jobs.StatePreparingDependencies,
-			jobs.StateCreatingWorktree, jobs.StateLockingAcceptanceCriteria,
+			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
+			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
-			jobs.StateQueued, jobs.StateSyncing, jobs.StatePreparingDependencies,
-			jobs.StateCreatingWorktree, jobs.StateLockingAcceptanceCriteria,
+			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
+			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
 			jobs.StateRepairing, jobs.StateFinalVerification,
 		},
 		{
-			jobs.StateQueued, jobs.StateSyncing, jobs.StatePreparingDependencies,
-			jobs.StateCreatingWorktree, jobs.StateLockingAcceptanceCriteria,
+			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
+			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
@@ -129,5 +132,49 @@ func TestRepairOutcomeCannotBypassTransitionPolicy(t *testing.T) {
 	}
 	if next, err := nextState(jobs.StateQCReview, Outcome{NeedsRepair: true}); err != nil || next != jobs.StateAwaitingRepair {
 		t.Fatalf("QC repair outcome = %s, %v", next, err)
+	}
+}
+
+type metadataExecutor struct{}
+
+func (metadataExecutor) Execute(_ context.Context, _ jobs.Job) (Outcome, error) {
+	base := "0123456789abcdef0123456789abcdef01234567"
+	criteria := json.RawMessage(`[{"id":"AC-1","statement":"fixture passes","verification_method":"full_tests"}]`)
+	digest := sha256.Sum256(criteria)
+	hash := hex.EncodeToString(digest[:])
+	return Outcome{Details: json.RawMessage(`{"adapter":"fixture"}`), Metadata: storage.JobMetadataPatch{
+		BaseSHA: &base, AcceptanceCriteria: &criteria, AcceptanceCriteriaHash: &hash,
+	}}, nil
+}
+
+func TestStepAtomicallyPersistsMetadataPhaseRecordAndTransition(t *testing.T) {
+	ctx := context.Background()
+	store, err := storesqlite.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_phase", ProjectID: "project", Repository: "owner/repo", Task: "task", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	advanced, err := New(store, metadataExecutor{}).Step(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if advanced.State != jobs.StateSyncing || advanced.BaseSHA == "" || advanced.AcceptanceCriteriaHash == "" {
+		t.Fatalf("phase metadata was not persisted: %#v", advanced)
+	}
+	records, err := store.ListPhaseRecords(ctx, job.ID, 10)
+	if err != nil || len(records) != 1 || records[0].PhaseState != jobs.StateQueued || records[0].PhaseVersion != 1 {
+		t.Fatalf("phase records = %#v, %v", records, err)
+	}
+	if _, err := store.CompletePhase(ctx, storage.PhaseCompletion{
+		JobID: job.ID, PhaseState: jobs.StateQueued, ExpectedVersion: 1, To: jobs.StateSyncing,
+		Outcome: json.RawMessage(`{}`),
+	}); !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("repeated phase completion returned %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/local-code-maintainer/appliance/internal/projects"
 )
 
 var (
@@ -40,6 +41,71 @@ type JobStore interface {
 	ListTransitions(context.Context, string, int64, int) ([]jobs.Transition, error)
 }
 
+type JobMetadataPatch struct {
+	BaseSHA                *string
+	ResultSHA              *string
+	AcceptanceCriteria     *json.RawMessage
+	AcceptanceCriteriaHash *string
+	ReviewCycle            *int
+}
+
+type PhaseCompletion struct {
+	JobID           string
+	PhaseState      jobs.State
+	ExpectedVersion int64
+	To              jobs.State
+	ActorID         string
+	Reason          string
+	Details         json.RawMessage
+	Outcome         json.RawMessage
+	Metadata        JobMetadataPatch
+}
+
+type PhaseRecord struct {
+	JobID        string          `json:"job_id"`
+	PhaseState   jobs.State      `json:"phase_state"`
+	PhaseVersion int64           `json:"phase_version"`
+	Outcome      json.RawMessage `json:"outcome"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+type WorkflowStore interface {
+	JobStore
+	CompletePhase(context.Context, PhaseCompletion) (jobs.Job, error)
+	ListPhaseRecords(context.Context, string, int) ([]PhaseRecord, error)
+}
+
+type ProjectStore interface {
+	UpsertProject(context.Context, projects.UpsertRequest, string) (projects.Project, error)
+	GetProject(context.Context, string) (projects.Project, error)
+	ListProjects(context.Context, int) ([]projects.Project, error)
+}
+
+type Approval struct {
+	ID              string    `json:"id"`
+	JobID           string    `json:"job_id"`
+	Kind            string    `json:"kind"`
+	SubjectSHA      string    `json:"subject_sha"`
+	ActorID         string    `json:"actor_id"`
+	ActorRole       string    `json:"actor_role"`
+	Rationale       string    `json:"rationale"`
+	Reauthenticated bool      `json:"reauthenticated"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type PublicationApprovalRequest struct {
+	ActorID         string
+	ActorRole       string
+	Rationale       string
+	Reauthenticated bool
+	ExpectedVersion int64
+}
+
+type ApprovalStore interface {
+	ApprovePublication(context.Context, string, PublicationApprovalRequest) (jobs.Job, Approval, error)
+	ListApprovals(context.Context, string) ([]Approval, error)
+}
+
 type AuditStore interface {
 	AppendAudit(context.Context, audit.AppendRequest) (audit.Event, error)
 	ListAudit(context.Context, int64, int) ([]audit.Event, error)
@@ -67,17 +133,18 @@ type LeaseStore interface {
 }
 
 type ArtifactRecord struct {
-	ID           string          `json:"id"`
-	JobID        string          `json:"job_id"`
-	ProjectID    string          `json:"project_id"`
-	ObjectSHA256 string          `json:"sha256"`
-	Bytes        int64           `json:"bytes"`
-	RelativePath string          `json:"-"`
-	Kind         string          `json:"kind"`
-	MediaType    string          `json:"media_type"`
-	Producer     string          `json:"producer"`
-	Metadata     json.RawMessage `json:"metadata"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID             string          `json:"id"`
+	JobID          string          `json:"job_id"`
+	ProjectID      string          `json:"project_id"`
+	ObjectSHA256   string          `json:"sha256"`
+	Bytes          int64           `json:"bytes"`
+	RelativePath   string          `json:"-"`
+	Kind           string          `json:"kind"`
+	MediaType      string          `json:"media_type"`
+	Producer       string          `json:"producer"`
+	IdempotencyKey string          `json:"-"`
+	Metadata       json.RawMessage `json:"metadata"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 type ArtifactStore interface {
@@ -93,11 +160,13 @@ type FindingStore interface {
 }
 
 type Store interface {
-	JobStore
+	WorkflowStore
 	AuditStore
 	ConfigStore
 	LeaseStore
 	ArtifactStore
 	FindingStore
+	ProjectStore
+	ApprovalStore
 	Close() error
 }

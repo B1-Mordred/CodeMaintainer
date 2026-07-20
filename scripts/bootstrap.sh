@@ -29,7 +29,7 @@ if ! compose version >/dev/null 2>&1; then
 fi
 
 mkdir -p \
-  .data/models .data/mirrors .data/worktrees .data/artifacts \
+  .data/models .data/mirrors .data/remotes .data/worktrees .data/artifacts \
   .data/database .data/memory .data/caches .data/config \
   .data/secrets .data/backups .data/run .cache/go/build .cache/go/mod .cache/npm
 chmod 700 .data .data/database .data/secrets .data/backups
@@ -47,6 +47,15 @@ if [[ ! -e "$model_token" ]]; then
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$model_token"
 fi
 chmod 600 "$model_token"
+
+git_bridge_token=.data/secrets/git-bridge.token
+if [[ ! -e "$git_bridge_token" ]]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$git_bridge_token"
+fi
+chmod 600 "$git_bridge_token"
+
+./scripts/seed-mock-remote.sh
 
 compose -f compose.yaml -f compose.dev.yaml config --quiet
 printf 'Bootstrap preflight passed. Start the mock profile with: ./maintainctl up\n'

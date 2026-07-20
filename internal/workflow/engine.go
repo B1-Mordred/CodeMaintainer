@@ -11,8 +11,9 @@ import (
 )
 
 type Outcome struct {
-	NeedsRepair bool            `json:"needs_repair"`
-	Details     json.RawMessage `json:"details"`
+	NeedsRepair bool                     `json:"needs_repair"`
+	Details     json.RawMessage          `json:"details"`
+	Metadata    storage.JobMetadataPatch `json:"-"`
 }
 
 type PhaseExecutor interface {
@@ -20,11 +21,11 @@ type PhaseExecutor interface {
 }
 
 type Engine struct {
-	store    storage.JobStore
+	store    storage.WorkflowStore
 	executor PhaseExecutor
 }
 
-func New(store storage.JobStore, executor PhaseExecutor) *Engine {
+func New(store storage.WorkflowStore, executor PhaseExecutor) *Engine {
 	return &Engine{store: store, executor: executor}
 }
 
@@ -54,9 +55,14 @@ func (e *Engine) Step(ctx context.Context, jobID string) (jobs.Job, error) {
 	if err != nil {
 		return job, err
 	}
-	return e.store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{
+	recorded, marshalErr := json.Marshal(outcome)
+	if marshalErr != nil {
+		return job, marshalErr
+	}
+	return e.store.CompletePhase(ctx, storage.PhaseCompletion{
+		JobID: job.ID, PhaseState: job.State, ExpectedVersion: job.Version,
 		To: next, ActorID: "workflow-engine", Reason: "phase completed",
-		ExpectedVersion: job.Version, Details: outcome.Details,
+		Details: outcome.Details, Outcome: recorded, Metadata: outcome.Metadata,
 	})
 }
 
@@ -88,9 +94,9 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 	}
 	next := map[jobs.State]jobs.State{
 		jobs.StateQueued:                     jobs.StateSyncing,
-		jobs.StateSyncing:                    jobs.StatePreparingDependencies,
-		jobs.StatePreparingDependencies:      jobs.StateCreatingWorktree,
-		jobs.StateCreatingWorktree:           jobs.StateLockingAcceptanceCriteria,
+		jobs.StateSyncing:                    jobs.StateCreatingWorktree,
+		jobs.StateCreatingWorktree:           jobs.StatePreparingDependencies,
+		jobs.StatePreparingDependencies:      jobs.StateLockingAcceptanceCriteria,
 		jobs.StateLockingAcceptanceCriteria:  jobs.StateLoadingImplementationModel,
 		jobs.StateLoadingImplementationModel: jobs.StateReproducing,
 		jobs.StateReproducing:                jobs.StateImplementing,

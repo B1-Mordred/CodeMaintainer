@@ -40,8 +40,11 @@ func NewFakeExecutor() *FakeExecutor {
 func (f *FakeExecutor) Start(_ context.Context, spec WorkerSpec) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, exists := f.runs[spec.RunID]; exists {
-		return errors.New("duplicate run identifier")
+	if existing, exists := f.specs[spec.RunID]; exists {
+		if !sameWorkerIdentity(existing, spec) {
+			return errors.New("run identifier is already bound to a different worker request")
+		}
+		return nil
 	}
 	f.specs[spec.RunID] = spec
 	f.runs[spec.RunID] = runners.Status{
@@ -50,6 +53,11 @@ func (f *FakeExecutor) Start(_ context.Context, spec WorkerSpec) error {
 	f.logs[spec.RunID] = "deterministic runnerd fake executor\n"
 	f.outputs[spec.RunID] = []runners.Artifact{}
 	return nil
+}
+
+func sameWorkerIdentity(left, right WorkerSpec) bool {
+	return left.RunID == right.RunID && left.JobID == right.JobID && left.ProjectID == right.ProjectID &&
+		left.Kind == right.Kind && left.Image == right.Image && left.User == right.User
 }
 
 func (f *FakeExecutor) Inspect(_ context.Context, runID runners.RunID) (runners.Status, error) {

@@ -33,14 +33,15 @@ type Store struct {
 }
 
 type PutRequest struct {
-	JobID     string
-	ProjectID string
-	Kind      string
-	MediaType string
-	Producer  string
-	Metadata  json.RawMessage
-	Reader    io.Reader
-	MaxBytes  int64
+	JobID          string
+	ProjectID      string
+	Kind           string
+	MediaType      string
+	Producer       string
+	IdempotencyKey string
+	Metadata       json.RawMessage
+	Reader         io.Reader
+	MaxBytes       int64
 }
 
 func New(root string, metadata storage.ArtifactStore) (*Store, error) {
@@ -63,6 +64,9 @@ func (s *Store) Put(ctx context.Context, request PutRequest) (storage.ArtifactRe
 	if !safeName.MatchString(request.JobID) || !safeName.MatchString(request.ProjectID) ||
 		!safeName.MatchString(request.Kind) || !safeName.MatchString(request.Producer) || request.Reader == nil ||
 		!json.Valid(request.Metadata) || len(request.Metadata) > maxMetadataBytes {
+		return storage.ArtifactRecord{}, storage.ErrInvalid
+	}
+	if request.IdempotencyKey != "" && !safeName.MatchString(request.IdempotencyKey) {
 		return storage.ArtifactRecord{}, storage.ErrInvalid
 	}
 	if _, _, err := mime.ParseMediaType(request.MediaType); err != nil {
@@ -127,6 +131,7 @@ func (s *Store) Put(ctx context.Context, request PutRequest) (storage.ArtifactRe
 		ID: artifactID, JobID: request.JobID, ProjectID: request.ProjectID,
 		ObjectSHA256: digest, Bytes: written, RelativePath: filepath.ToSlash(relativePath),
 		Kind: request.Kind, MediaType: request.MediaType, Producer: request.Producer, Metadata: request.Metadata,
+		IdempotencyKey: request.IdempotencyKey,
 	}
 	return s.metadata.IndexArtifact(ctx, record)
 }

@@ -11,6 +11,40 @@ x-runtime-security: &runtime-security
   restart: unless-stopped
 
 services:
+  git-bridge:
+    <<: *runtime-security
+    image: local/code-maintainer-git-bridge:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: git-bridge
+      args:
+        VERSION: 0.1.0-dev
+    user: "${MAINTAINER_UID:-1000}:${MAINTAINER_GID:-1000}"
+    environment:
+      GIT_BRIDGE_DATA_ROOT: /var/lib/maintainer
+      GIT_BRIDGE_TOKEN_FILE: /run/secrets/git-bridge.token
+    volumes:
+      - type: bind
+        source: ./.data/mirrors
+        target: /var/lib/maintainer/mirrors
+      - type: bind
+        source: ./.data/worktrees
+        target: /var/lib/maintainer/worktrees
+      - type: bind
+        source: ./.data/remotes
+        target: /var/lib/maintainer/remotes
+      - type: bind
+        source: ./.data/secrets/git-bridge.token
+        target: /run/secrets/git-bridge.token
+        read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    networks:
+      - control
+    mem_limit: 512m
+    cpus: 1.0
+
   model-supervisor:
     <<: *runtime-security
     image: local/code-maintainer-fake-model-server:0.1.0-dev
@@ -84,6 +118,8 @@ services:
       MAINTAINER_DATABASE: /var/lib/maintainer/database/controller.db
       MAINTAINER_LISTEN: 0.0.0.0:8080
       MAINTAINER_PROFILE: mock
+      MAINTAINER_GIT_BRIDGE_URL: http://git-bridge:8083
+      MAINTAINER_GIT_BRIDGE_TOKEN_FILE: /var/lib/maintainer/secrets/git-bridge.token
     volumes:
       - type: bind
         source: ./.data
@@ -95,6 +131,9 @@ services:
     networks:
       - frontend
       - control
+    depends_on:
+      git-bridge:
+        condition: service_started
     healthcheck:
       test: ["CMD", "/maintainctl", "doctor"]
       interval: 10s

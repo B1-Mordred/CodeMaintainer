@@ -56,9 +56,9 @@ var allStates = []State{
 
 var transitions = map[State]map[State]struct{}{
 	StateQueued:                     set(StateSyncing, StateCancelled, StateFailed),
-	StateSyncing:                    set(StatePreparingDependencies, StateCancelled, StateFailed),
-	StatePreparingDependencies:      set(StateCreatingWorktree, StateCancelled, StateFailed),
-	StateCreatingWorktree:           set(StateLockingAcceptanceCriteria, StateCancelled, StateFailed),
+	StateSyncing:                    set(StateCreatingWorktree, StateCancelled, StateFailed),
+	StateCreatingWorktree:           set(StatePreparingDependencies, StateCancelled, StateFailed),
+	StatePreparingDependencies:      set(StateLockingAcceptanceCriteria, StateCancelled, StateFailed),
 	StateLockingAcceptanceCriteria:  set(StateLoadingImplementationModel, StateCancelled, StateFailed),
 	StateLoadingImplementationModel: set(StateReproducing, StateCancelled, StateFailed),
 	StateReproducing:                set(StateImplementing, StateCancelled, StateFailed),

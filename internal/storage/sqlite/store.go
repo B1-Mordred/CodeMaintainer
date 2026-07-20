@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -32,6 +33,15 @@ var migration003 string
 
 //go:embed migrations/004_qc_findings.sql
 var migration004 string
+
+//go:embed migrations/005_workflow_phases.sql
+var migration005 string
+
+//go:embed migrations/006_projects.sql
+var migration006 string
+
+//go:embed migrations/007_approvals.sql
+var migration007 string
 
 const timestampFormat = time.RFC3339Nano
 
@@ -89,7 +99,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {
@@ -687,11 +697,24 @@ func (s *Store) IndexArtifact(ctx context.Context, record storage.ArtifactRecord
 		return storage.ArtifactRecord{}, storage.ErrConflict
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO job_artifacts(
-		id, job_id, project_id, object_sha256, kind, media_type, producer, metadata, created_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.ID, record.JobID, record.ProjectID,
+		id, job_id, project_id, object_sha256, kind, media_type, producer, metadata, idempotency_key, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.ID, record.JobID, record.ProjectID,
 		record.ObjectSHA256, record.Kind, record.MediaType, record.Producer,
-		string(record.Metadata), record.CreatedAt.Format(timestampFormat)); err != nil {
-		return storage.ArtifactRecord{}, fmt.Errorf("index job artifact: %w", err)
+		string(record.Metadata), record.IdempotencyKey, record.CreatedAt.Format(timestampFormat)); err != nil {
+		if record.IdempotencyKey == "" || !strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return storage.ArtifactRecord{}, fmt.Errorf("index job artifact: %w", err)
+		}
+		existing, lookupErr := scanArtifact(tx.QueryRowContext(ctx,
+			artifactSelect+" WHERE a.job_id = ? AND a.idempotency_key = ?", record.JobID, record.IdempotencyKey))
+		if lookupErr != nil {
+			return storage.ArtifactRecord{}, lookupErr
+		}
+		if existing.ProjectID != record.ProjectID || existing.ObjectSHA256 != record.ObjectSHA256 ||
+			existing.Kind != record.Kind || existing.MediaType != record.MediaType || existing.Producer != record.Producer ||
+			!bytes.Equal(existing.Metadata, record.Metadata) {
+			return storage.ArtifactRecord{}, storage.ErrIdempotencyKey
+		}
+		return existing, nil
 	}
 	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{
 		ActorID: record.Producer, ActorRole: "service", Action: "artifact.index",
@@ -715,7 +738,7 @@ func firstTwo(value string) string {
 }
 
 const artifactSelect = `SELECT a.id, a.job_id, a.project_id, a.object_sha256, o.bytes,
-	o.relative_path, a.kind, a.media_type, a.producer, a.metadata, a.created_at
+	o.relative_path, a.kind, a.media_type, a.producer, a.metadata, a.idempotency_key, a.created_at
 	FROM job_artifacts AS a JOIN artifact_objects AS o ON o.sha256 = a.object_sha256`
 
 func (s *Store) GetArtifact(ctx context.Context, jobID, artifactID string) (storage.ArtifactRecord, error) {
@@ -747,7 +770,7 @@ func scanArtifact(row scanner) (storage.ArtifactRecord, error) {
 	var metadata, created string
 	if err := row.Scan(&record.ID, &record.JobID, &record.ProjectID, &record.ObjectSHA256,
 		&record.Bytes, &record.RelativePath, &record.Kind, &record.MediaType,
-		&record.Producer, &metadata, &created); err != nil {
+		&record.Producer, &metadata, &record.IdempotencyKey, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.ArtifactRecord{}, storage.ErrNotFound
 		}

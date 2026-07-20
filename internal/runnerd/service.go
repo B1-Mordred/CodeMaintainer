@@ -1,7 +1,7 @@
 package runnerd
 
 import (
-	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -73,7 +73,7 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
 	}
-	runID, err := newRunID()
+	runID, err := runIDFor(request)
 	if err != nil {
 		s.internalError(w, err)
 		return
@@ -166,12 +166,13 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	return nil
 }
 
-func newRunID() (runners.RunID, error) {
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
-		return "", fmt.Errorf("generate run identifier: %w", err)
+func runIDFor(request runners.JobRequest) (runners.RunID, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("encode bounded run identity: %w", err)
 	}
-	return runners.RunID("run_" + hex.EncodeToString(value)), nil
+	digest := sha256.Sum256(payload)
+	return runners.RunID("run_" + hex.EncodeToString(digest[:16])), nil
 }
 
 func parseBoundedInteger(value string, minimum, maximum, fallback int64) (int64, error) {

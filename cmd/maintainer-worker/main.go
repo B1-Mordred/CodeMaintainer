@@ -32,11 +32,20 @@ const (
 var workerID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 type verificationPacket struct {
-	SchemaVersion         int                   `json:"schema_version"`
-	Language              verification.Language `json:"language"`
-	Classes               []verification.Class  `json:"classes"`
-	CommandTimeoutSeconds int64                 `json:"command_timeout_seconds"`
-	MaxLogBytes           int64                 `json:"max_log_bytes"`
+	SchemaVersion         int                      `json:"schema_version"`
+	Language              verification.Language    `json:"language"`
+	Classes               []verification.Class     `json:"classes"`
+	BaseSHA               string                   `json:"base_sha,omitempty"`
+	Policy                verificationPacketPolicy `json:"policy,omitempty"`
+	CommandTimeoutSeconds int64                    `json:"command_timeout_seconds"`
+	MaxLogBytes           int64                    `json:"max_log_bytes"`
+}
+
+type verificationPacketPolicy struct {
+	ProtectedPaths  []string `json:"protected_paths,omitempty"`
+	MaxChangedFiles int      `json:"max_changed_files,omitempty"`
+	MaxPatchBytes   int64    `json:"max_patch_bytes,omitempty"`
+	MaxFileBytes    int64    `json:"max_file_bytes,omitempty"`
 }
 
 func main() {
@@ -47,6 +56,9 @@ func main() {
 }
 
 func run(arguments []string) error {
+	if len(arguments) == 1 && arguments[0] == "dependencies" {
+		return runDependencies("/workspace")
+	}
 	if len(arguments) == 1 && arguments[0] == "verification" {
 		return runVerification("/inputs/00", "/workspace", "/artifacts")
 	}
@@ -67,6 +79,81 @@ func run(arguments []string) error {
 		}
 	}
 	return errors.New("worker mode is not allow-listed")
+}
+
+func runDependencies(root string) error {
+	type dependencyCommand struct {
+		marker string
+		name   string
+		args   []string
+	}
+	commands := []dependencyCommand{
+		{marker: "go.mod", name: "go", args: []string{"mod", "download"}},
+		{marker: "package-lock.json", name: "npm", args: []string{"ci", "--ignore-scripts", "--cache", "/cache/npm"}},
+		{marker: "Cargo.lock", name: "cargo", args: []string{"fetch", "--locked"}},
+		{marker: "requirements.lock", name: "python3", args: []string{"-m", "pip", "download", "--require-hashes", "-r", "requirements.lock", "-d", "/cache/pip"}},
+	}
+	selected := make([]dependencyCommand, 0, len(commands))
+	for _, candidate := range commands {
+		info, err := os.Lstat(filepath.Join(root, candidate.marker))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("dependency marker %s is not a regular file", candidate.marker)
+		}
+		selected = append(selected, candidate)
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	if len(selected) > 2 {
+		return errors.New("repository declares too many dependency ecosystems for the default profile")
+	}
+	for _, selectedCommand := range selected {
+		command := exec.Command(selectedCommand.name, selectedCommand.args...)
+		command.Dir = root
+		command.Env = append(os.Environ(),
+			"HOME=/tmp", "GOMODCACHE=/cache/go-mod", "GOCACHE=/cache/go-build",
+			"CARGO_HOME=/cache/cargo", "PIP_CACHE_DIR=/cache/pip", "npm_config_cache=/cache/npm",
+		)
+		var output cappedOutput
+		output.maximum = 8 << 20
+		command.Stdout = &output
+		command.Stderr = &output
+		if err := command.Run(); err != nil {
+			return fmt.Errorf("fixed dependency acquisition for %s failed: %w: %s", selectedCommand.marker, err, output.String())
+		}
+	}
+	return nil
+}
+
+type cappedOutput struct {
+	buffer  bytes.Buffer
+	maximum int
+	cut     bool
+}
+
+func (w *cappedOutput) Write(payload []byte) (int, error) {
+	original := len(payload)
+	remaining := w.maximum - w.buffer.Len()
+	if remaining > 0 {
+		if len(payload) > remaining {
+			payload = payload[:remaining]
+			w.cut = true
+		}
+		_, _ = w.buffer.Write(payload)
+	} else {
+		w.cut = true
+	}
+	return original, nil
+}
+
+func (w *cappedOutput) String() string {
+	if w.cut {
+		return w.buffer.String() + "\n[output truncated]"
+	}
+	return w.buffer.String()
 }
 
 func runAgent(mode, packetPath, worktree, artifactRoot string) error {
@@ -122,6 +209,26 @@ func runVerification(packetPath, worktree, artifactRoot string) error {
 	}
 	results := make([]verification.ExecutionResult, 0, len(commands))
 	passed := true
+	var scan *verification.ScanResult
+	if packet.BaseSHA != "" {
+		scanner, scannerErr := verification.NewScanner()
+		if scannerErr != nil {
+			return scannerErr
+		}
+		value, scanErr := scanner.Scan(context.Background(), worktree, packet.BaseSHA, verification.Policy{
+			ProtectedPaths: packet.Policy.ProtectedPaths, MaxChangedFiles: packet.Policy.MaxChangedFiles,
+			MaxPatchBytes: packet.Policy.MaxPatchBytes, MaxFileBytes: packet.Policy.MaxFileBytes,
+		})
+		if scanErr != nil {
+			return scanErr
+		}
+		scan = &value
+		for _, finding := range value.Findings {
+			if finding.Severity == "blocker" || finding.Severity == "must_fix" {
+				passed = false
+			}
+		}
+	}
 	executor := verification.LocalExecutor{}
 	for _, command := range commands {
 		result := executor.Run(context.Background(), worktree, command,
@@ -134,8 +241,9 @@ func runVerification(packetPath, worktree, artifactRoot string) error {
 	payload, err := json.Marshal(struct {
 		SchemaVersion int                            `json:"schema_version"`
 		Passed        bool                           `json:"passed"`
+		Scan          *verification.ScanResult       `json:"scan,omitempty"`
 		Results       []verification.ExecutionResult `json:"results"`
-	}{SchemaVersion: 1, Passed: passed, Results: results})
+	}{SchemaVersion: 1, Passed: passed, Scan: scan, Results: results})
 	if err != nil {
 		return err
 	}
@@ -171,6 +279,13 @@ func readPacket(path string) (verificationPacket, error) {
 		packet.CommandTimeoutSeconds < 1 || packet.CommandTimeoutSeconds > 3600 ||
 		packet.MaxLogBytes < 1024 || packet.MaxLogBytes > 64<<20 {
 		return verificationPacket{}, errors.New("verification packet exceeds fixed worker bounds")
+	}
+	if packet.BaseSHA != "" && !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(packet.BaseSHA) {
+		return verificationPacket{}, errors.New("verification packet base SHA is invalid")
+	}
+	if len(packet.Policy.ProtectedPaths) > 100 || packet.Policy.MaxChangedFiles < 0 || packet.Policy.MaxChangedFiles > 10000 ||
+		packet.Policy.MaxPatchBytes < 0 || packet.Policy.MaxPatchBytes > 64<<20 || packet.Policy.MaxFileBytes < 0 || packet.Policy.MaxFileBytes > 64<<20 {
+		return verificationPacket{}, errors.New("verification packet policy exceeds fixed bounds")
 	}
 	return packet, nil
 }

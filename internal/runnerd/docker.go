@@ -101,7 +101,30 @@ func (e *DockerExecutor) Start(ctx context.Context, spec WorkerSpec) error {
 	}
 	path := "/containers/create?name=" + url.QueryEscape("maintainer-"+string(spec.RunID))
 	if err := e.client.json(ctx, http.MethodPost, path, request, &created); err != nil {
-		return err
+		if dockerStatus(err) != http.StatusConflict {
+			return err
+		}
+		existing, inspectErr := e.inspect(ctx, spec.RunID)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		labels := existing.Config.Labels
+		if labels["maintainer.job_id"] != spec.JobID || labels["maintainer.project_id"] != spec.ProjectID ||
+			labels["maintainer.kind"] != string(spec.Kind) {
+			return errors.New("existing worker identity does not match the idempotent request")
+		}
+		if existing.State.Status == "created" {
+			if err := e.client.json(ctx, http.MethodPost, "/containers/"+url.PathEscape("maintainer-"+string(spec.RunID))+"/start", nil, nil); err != nil {
+				return err
+			}
+		}
+		existingBaseline, parseErr := parsePositiveInt64(labels["maintainer.disk_baseline_bytes"], true)
+		if parseErr != nil {
+			return errors.New("existing worker disk baseline is invalid")
+		}
+		e.launchMonitor(spec.RunID, spec.JobID, spec.ProjectID, spec.Kind,
+			time.Now().Add(spec.WallTimeout), existingBaseline, spec.MaxDiskBytes)
+		return nil
 	}
 	if !dockerContainerID.MatchString(created.ID) || len(created.Warnings) != 0 {
 		if dockerContainerID.MatchString(created.ID) {

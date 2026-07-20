@@ -39,6 +39,40 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/JobState" } }
         default: { $ref: "#/components/responses/ErrorResponse" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
+  /projects:
+    get:
+      summary: List registered repository projects
+      operationId: listProjects
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Registered projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Project" } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Register or update a validated project
+      operationId: upsertProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpsertProjectRequest" }
+      responses:
+        "201":
+          description: Registered project
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /jobs:
     get:
       summary: List a bounded page of jobs
@@ -90,10 +124,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [job, transitions]
+                required: [job, transitions, findings, approvals, phases]
                 properties:
                   job: { $ref: "#/components/schemas/Job" }
                   transitions: { type: array, items: { $ref: "#/components/schemas/Transition" } }
+                  findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+                  approvals: { type: array, items: { $ref: "#/components/schemas/Approval" } }
+                  phases: { type: array, items: { $ref: "#/components/schemas/PhaseRecord" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/events:
     parameters:
@@ -169,6 +206,37 @@ paths:
         "200":
           description: Requeued failed or cancelled job
           content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/actions/approve-publication:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    post:
+      summary: Approve exact-result draft publication after recent reauthentication
+      operationId: approvePublication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [rationale, reauthenticated]
+              properties:
+                rationale: { type: string, minLength: 1, maxLength: 4000 }
+                reauthenticated: { type: boolean, const: true }
+      responses:
+        "200":
+          description: Exact-SHA approval and publishing job
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job, approval]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+                  approval: { $ref: "#/components/schemas/Approval" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
   /config:
@@ -306,6 +374,25 @@ components:
                   code: { type: string }
                   message: { type: string }
   schemas:
+    UpsertProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [id, provider, repository, default_branch]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        provider: { type: string, enum: [local, github] }
+        repository: { type: string, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", maxLength: 201 }
+        default_branch: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        local_remote_name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.git$" }
+    Project:
+      allOf:
+        - { $ref: "#/components/schemas/UpsertProjectRequest" }
+        - type: object
+          required: [enabled, created_at, updated_at]
+          properties:
+            enabled: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
     JobState:
       type: string
       enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
@@ -361,6 +448,46 @@ components:
         media_type: { type: string }
         producer: { type: string }
         metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    Finding:
+      type: object
+      required: [job_id, id, severity, category, claim, location, required_resolution, verification_method, status, first_seen_cycle, last_seen_cycle, version, created_at, updated_at]
+      properties:
+        job_id: { type: string }
+        id: { type: string }
+        severity: { type: string, enum: [blocker, must_fix, should_fix, note] }
+        category: { type: string }
+        claim: { type: string }
+        location: { type: object, additionalProperties: true }
+        required_resolution: { type: string }
+        verification_method: { type: string }
+        status: { type: string, enum: [open, fixed, verified, disputed, accepted, rejected, human_waived, closed] }
+        first_seen_cycle: { type: integer, minimum: 0 }
+        last_seen_cycle: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Approval:
+      type: object
+      required: [id, job_id, kind, subject_sha, actor_id, actor_role, rationale, reauthenticated, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        kind: { type: string }
+        subject_sha: { type: string, pattern: "^[a-f0-9]{40}$" }
+        actor_id: { type: string }
+        actor_role: { type: string, enum: [reviewer, administrator] }
+        rationale: { type: string }
+        reauthenticated: { type: boolean }
+        created_at: { type: string, format: date-time }
+    PhaseRecord:
+      type: object
+      required: [job_id, phase_state, phase_version, outcome, created_at]
+      properties:
+        job_id: { type: string }
+        phase_state: { $ref: "#/components/schemas/JobState" }
+        phase_version: { type: integer, minimum: 1 }
+        outcome: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
     SystemStatus:
       type: object

@@ -38,6 +38,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered repository projects */
+        get: operations["listProjects"];
+        put?: never;
+        /** Register or update a validated project */
+        post: operations["upsertProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs": {
         parameters: {
             query?: never;
@@ -173,6 +191,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/actions/approve-publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve exact-result draft publication after recent reauthentication */
+        post: operations["approvePublication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config": {
         parameters: {
             query?: never;
@@ -265,6 +302,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        UpsertProjectRequest: {
+            id: string;
+            /** @enum {string} */
+            provider: "local" | "github";
+            repository: string;
+            default_branch: string;
+            local_remote_name?: string;
+        };
+        Project: components["schemas"]["UpsertProjectRequest"] & {
+            enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         /** @enum {string} */
         JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         CreateJobRequest: {
@@ -312,6 +364,51 @@ export interface components {
             media_type: string;
             producer: string;
             metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        Finding: {
+            job_id: string;
+            id: string;
+            /** @enum {string} */
+            severity: "blocker" | "must_fix" | "should_fix" | "note";
+            category: string;
+            claim: string;
+            location: {
+                [key: string]: unknown;
+            };
+            required_resolution: string;
+            verification_method: string;
+            /** @enum {string} */
+            status: "open" | "fixed" | "verified" | "disputed" | "accepted" | "rejected" | "human_waived" | "closed";
+            first_seen_cycle: number;
+            last_seen_cycle: number;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        Approval: {
+            id: string;
+            job_id: string;
+            kind: string;
+            subject_sha: string;
+            actor_id: string;
+            /** @enum {string} */
+            actor_role: "reviewer" | "administrator";
+            rationale: string;
+            reauthenticated: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PhaseRecord: {
+            job_id: string;
+            phase_state: components["schemas"]["JobState"];
+            phase_version: number;
+            outcome: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
@@ -451,6 +548,58 @@ export interface operations {
             default: components["responses"]["ErrorResponse"];
         };
     };
+    listProjects: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registered projects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Project"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    upsertProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Registered project */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
     listJobs: {
         parameters: {
             query?: {
@@ -526,6 +675,9 @@ export interface operations {
                     "application/json": {
                         job: components["schemas"]["Job"];
                         transitions: components["schemas"]["Transition"][];
+                        findings: components["schemas"]["Finding"][];
+                        approvals: components["schemas"]["Approval"][];
+                        phases: components["schemas"]["PhaseRecord"][];
                     };
                 };
             };
@@ -656,6 +808,42 @@ export interface operations {
                     "application/json": components["schemas"]["Job"];
                 };
             };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    approvePublication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    rationale: string;
+                    /** @constant */
+                    reauthenticated: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Exact-SHA approval and publishing job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        job: components["schemas"]["Job"];
+                        approval: components["schemas"]["Approval"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
             409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
         };

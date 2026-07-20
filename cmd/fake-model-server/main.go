@@ -125,17 +125,20 @@ func fakeImplementation(packet agents.TaskPacket) ([]byte, error) {
 		},
 	}
 	for _, file := range packet.RelevantFiles {
-		updated := strings.Replace(file.Content, "return a - b", "return a + b", 1)
-		if packet.Mode == "repair" {
-			updated = strings.Replace(updated, "return a + b + 1", "return a + b", 1)
+		updated := file.Content
+		if packet.Mode == "implementation" {
+			updated = strings.Replace(updated, "return a - b", "return a + b", 1)
+		} else if strings.HasSuffix(file.Path, "_test.go") && !strings.Contains(updated, "TestAddNegative") &&
+			strings.Contains(updated, `import "testing"`) {
+			updated += "\nfunc TestAddNegative(t *testing.T) {\n\tif Add(-2, -3) != -5 {\n\t\tt.Fatal(Add(-2, -3))\n\t}\n}\n"
 		}
 		if updated != file.Content {
 			result.Edits = append(result.Edits, agents.Edit{Path: file.Path, Content: updated, ExpectedSHA256: agents.HashContent([]byte(file.Content))})
 			break
 		}
 	}
-	if len(result.Edits) == 0 && packet.Mode == "implementation" {
-		return nil, fmt.Errorf("fake fixture did not contain the seeded defect")
+	if len(result.Edits) == 0 {
+		return nil, fmt.Errorf("fake fixture did not contain the seeded %s target", packet.Mode)
 	}
 	return json.Marshal(result)
 }
@@ -147,8 +150,11 @@ func fakeQC(packet agents.TaskPacket) agents.QCReport {
 	}
 	if packet.ReviewCycle == 0 {
 		path := "unknown"
-		if len(packet.RelevantFiles) != 0 {
-			path = packet.RelevantFiles[0].Path
+		for _, file := range packet.RelevantFiles {
+			if strings.HasSuffix(file.Path, "_test.go") {
+				path = file.Path
+				break
+			}
 		}
 		report.Verdict = "blocking_findings"
 		report.Findings = []agents.Finding{{

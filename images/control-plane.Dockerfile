@@ -29,6 +29,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
       -ldflags="-s -w" -o /out/fake-model-server ./cmd/fake-model-server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+      -ldflags="-s -w" -o /out/git-bridge ./cmd/git-bridge
 
 FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS controller
 COPY --from=build --chown=65532:65532 /out/controller /controller
@@ -52,3 +56,15 @@ COPY --from=build --chown=65532:65532 /out/fake-model-server /fake-model-server
 USER 65532:65532
 EXPOSE 8082
 ENTRYPOINT ["/fake-model-server"]
+
+FROM debian:12.13-slim@sha256:2749ca60ffb3c42de053229d7967d292d7dad1067936b38995da0bbfb96c4c23 AS git-bridge
+ARG DEBIAN_SNAPSHOT=20260505T000000Z
+RUN printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "${DEBIAN_SNAPSHOT}" > /etc/apt/sources.list \
+    && rm -f /etc/apt/sources.list.d/* \
+    && apt-get -o Acquire::Check-Valid-Until=false update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build --chown=65532:65532 /out/git-bridge /git-bridge
+USER 65532:65532
+EXPOSE 8083
+ENTRYPOINT ["/git-bridge"]

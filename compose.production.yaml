@@ -1,4 +1,20 @@
 services:
+  git-bridge:
+    volumes: !override
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/mirrors
+        target: /var/lib/maintainer/mirrors
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/worktrees
+        target: /var/lib/maintainer/worktrees
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/remotes
+        target: /var/lib/maintainer/remotes
+      - type: bind
+        source: ${MAINTAINER_DATA_ROOT:?set MAINTAINER_DATA_ROOT to an absolute host path}/secrets/git-bridge.token
+        target: /run/secrets/git-bridge.token
+        read_only: true
+
   model-supervisor:
     image: local/code-maintainer-inference:0.1.0-dev
     build:
