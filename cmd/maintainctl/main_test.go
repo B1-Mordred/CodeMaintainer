@@ -169,3 +169,25 @@ func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPackInstallUsesVersionRevisionAndAuditedReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/capability-packs/php83-intranet/actions/install" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["target_version"] != "1.0.0" || body["expected_revision"] != float64(0) || body["reason"] != "reviewed trusted catalog" {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"installation":{"pack_id":"php83-intranet","pack_version":"1.0.0"},"event":{"action":"install"}}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.pack([]string{"install", "--version", "1.0.0", "--revision", "0", "--reason", "reviewed trusted catalog", "php83-intranet"}); err != nil {
+		t.Fatal(err)
+	}
+}

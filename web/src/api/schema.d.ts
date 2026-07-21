@@ -323,6 +323,238 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/capability-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse controller-trusted checksummed capability-pack versions */
+        get: operations["listCapabilityPacks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capability-packs/installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List durable pack installations and pins */
+        get: operations["listCapabilityInstallations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capability-packs/{packID}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        /** Inspect effective declarative content and trust status */
+        get: operations["getCapabilityManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capability-packs/{packID}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+            };
+            cookie?: never;
+        };
+        /** List append-only pack lifecycle events */
+        get: operations["listCapabilityEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capability-packs/{packID}/actions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview pack trust, prerequisites, and workflow changes without mutation */
+        post: operations["previewCapabilityTransition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capability-packs/{packID}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+                action: "install" | "enable" | "disable" | "upgrade" | "rollback" | "pin" | "unpin";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a reauthenticated optimistic pack lifecycle transition */
+        post: operations["transitionCapabilityPack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/capability-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List exact project pack assignments and configuration */
+        get: operations["listProjectCapabilityAssignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/repo-doctor/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List evidence-backed onboarding scans and configuration drift */
+        get: operations["listRepoDoctorScans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/repo-doctor/actions/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze a bounded trusted repository snapshot without modifying it */
+        post: operations["runRepoDoctor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/repo-doctor/scans/{scanID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+            };
+            cookie?: never;
+        };
+        /** Inspect findings, evidence, proposals, and drift from one scan */
+        get: operations["getRepoDoctorScan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview a pending proposal and its workflow diff without mutation */
+        post: operations["dryRunRepoDoctorProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+                proposalID: string;
+                action: "accept" | "reject";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Explicitly accept or reject an optimistic evidence-backed proposal */
+        post: operations["reviewRepoDoctorProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory": {
         parameters: {
             query?: never;
@@ -2046,6 +2278,169 @@ export interface components {
             default_branch: string;
             local_remote_name?: string;
         };
+        CapabilityCompatibility: {
+            controller_constraint: string;
+            platforms: string[];
+        };
+        CapabilityPrerequisite: {
+            id: string;
+            required: boolean;
+            help: string;
+        };
+        CapabilityDetectionRule: {
+            id: string;
+            any_paths: string[];
+            all_paths?: string[];
+            confidence: number;
+            explanation: string;
+        };
+        CapabilityWorkflowChange: {
+            stage: string;
+            operation_id: string;
+            required: boolean;
+            description: string;
+        };
+        CapabilityUIField: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            kind: "boolean" | "enum" | "number" | "string";
+            default: unknown;
+            allowed?: string[];
+            minimum?: number;
+            maximum?: number;
+            help: string;
+            advanced?: boolean;
+        };
+        RehearsalDefinition: {
+            id: string;
+            kind: string;
+            operation_id: string;
+            artifact_kinds: string[];
+            comparison_class: string;
+            approval_policy: string;
+        };
+        CapabilityManifest: {
+            /** @constant */
+            schema_version: 1;
+            id: string;
+            name: string;
+            version: string;
+            checksum_sha256: string;
+            description: string;
+            languages: string[];
+            compatibility: components["schemas"]["CapabilityCompatibility"];
+            prerequisites: components["schemas"]["CapabilityPrerequisite"][];
+            detection_rules: components["schemas"]["CapabilityDetectionRule"][];
+            runner_profile_ids: string[];
+            operation_classes: string[];
+            parser_ids: string[];
+            policy_fragments: string[];
+            context_selectors: string[];
+            risk_rules: string[];
+            documentation_rules: string[];
+            workflow_changes: components["schemas"]["CapabilityWorkflowChange"][];
+            ui_schema: components["schemas"]["CapabilityUIField"][];
+            rehearsals: components["schemas"]["RehearsalDefinition"][];
+        };
+        CapabilityTrustReport: {
+            pack_id: string;
+            version: string;
+            expected_checksum_sha256: string;
+            computed_checksum_sha256: string;
+            checksum_valid: boolean;
+            authority_safe: boolean;
+            compatible: boolean;
+            issues: string[];
+        };
+        CapabilityInstallation: {
+            pack_id: string;
+            pack_version: string;
+            checksum_sha256: string;
+            /** @enum {string} */
+            state: "enabled" | "disabled";
+            pinned: boolean;
+            revision: number;
+            previous_version?: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CapabilityLifecycleEvent: {
+            id: string;
+            pack_id: string;
+            from_version?: string;
+            to_version?: string;
+            /** @enum {string} */
+            action: "install" | "enable" | "disable" | "upgrade" | "rollback" | "pin" | "unpin";
+            actor_id: string;
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CapabilityAssignment: {
+            project_id: string;
+            pack_id: string;
+            pack_version: string;
+            enabled: boolean;
+            config: unknown;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CapabilityTransitionRequest: {
+            target_version: string;
+            expected_revision: number;
+            reason: string;
+        };
+        RepoDoctorEvidence: {
+            path: string;
+            observation: string;
+            sha256: string;
+        };
+        RepoDoctorFinding: {
+            category: string;
+            value: string;
+            confidence: number;
+            evidence: components["schemas"]["RepoDoctorEvidence"][];
+        };
+        RepoDoctorProposal: {
+            id: string;
+            scan_id: string;
+            project_id: string;
+            /** @enum {string} */
+            kind: "capability_pack" | "command_allowlist" | "protected_path" | "project_profile";
+            key: string;
+            value: unknown;
+            confidence: number;
+            evidence: components["schemas"]["RepoDoctorEvidence"][];
+            /** @enum {string} */
+            state: "pending" | "accepted" | "rejected";
+            version: number;
+            reason?: string;
+            reviewed_by?: string;
+            /** Format: date-time */
+            reviewed_at?: string;
+        };
+        RepoDoctorScan: {
+            id: string;
+            project_id: string;
+            repository: string;
+            revision: string;
+            /** @constant */
+            state: "complete";
+            findings: components["schemas"]["RepoDoctorFinding"][];
+            proposals: components["schemas"]["RepoDoctorProposal"][];
+            drift: string[];
+            files_observed: number;
+            excluded_files: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RepoDoctorProposalRequest: {
+            expected_version: number;
+            reason: string;
+            config?: unknown;
+        };
         Project: components["schemas"]["UpsertProjectRequest"] & {
             enabled: boolean;
             /** Format: date-time */
@@ -3632,6 +4027,341 @@ export interface operations {
             };
             401: components["responses"]["ErrorResponse"];
             502: components["responses"]["ErrorResponse"];
+        };
+    };
+    listCapabilityPacks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trusted declarative catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        schema_version: 1;
+                        items: components["schemas"]["CapabilityManifest"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    listCapabilityInstallations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installed packs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CapabilityInstallation"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    getCapabilityManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exact trusted manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifest: components["schemas"]["CapabilityManifest"];
+                        trust: components["schemas"]["CapabilityTrustReport"];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listCapabilityEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pack history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CapabilityLifecycleEvent"][];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+        };
+    };
+    previewCapabilityTransition: {
+        parameters: {
+            query: {
+                action: "install" | "upgrade" | "rollback";
+            };
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                packID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilityTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Read-only transition preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    transitionCapabilityPack: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                packID: string;
+                action: "install" | "enable" | "disable" | "upgrade" | "rollback" | "pin" | "unpin";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilityTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Applied transition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        installation: components["schemas"]["CapabilityInstallation"];
+                        event: components["schemas"]["CapabilityLifecycleEvent"];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    listProjectCapabilityAssignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project assignments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CapabilityAssignment"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listRepoDoctorScans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Repository scans */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RepoDoctorScan"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    runRepoDoctor: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed scan with disabled proposals */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoDoctorScan"];
+                };
+            };
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
+        };
+    };
+    getRepoDoctorScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Onboarding scan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoDoctorScan"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    dryRunRepoDoctorProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoDoctorProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Proposal preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    reviewRepoDoctorProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                scanID: string;
+                proposalID: string;
+                action: "accept" | "reject";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoDoctorProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Reviewed proposal and optional exact pack assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        proposal: components["schemas"]["RepoDoctorProposal"];
+                        assignment?: components["schemas"]["CapabilityAssignment"];
+                    };
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
         };
     };
     listProjectMemory: {

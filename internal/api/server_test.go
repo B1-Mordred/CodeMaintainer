@@ -20,6 +20,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
@@ -88,7 +89,12 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		store.Close()
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry), WithIntelligence(intelligenceService)))
+	capabilityService, err := capabilities.NewService(store, nil)
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry), WithIntelligence(intelligenceService), WithCapabilities(capabilityService)))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { store.Close() })
 	return server, store, artifactStore
@@ -258,6 +264,41 @@ func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("reasoned rebuild = %d", response.StatusCode)
+	}
+}
+
+func TestCapabilityAPIUsesTrustedCatalogAndRepoDoctorSource(t *testing.T) {
+	server, _ := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/capability-packs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Items []capabilities.Manifest `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(catalog.Items) != 3 {
+		t.Fatalf("catalog status=%d items=%d", response.StatusCode, len(catalog.Items))
+	}
+	requestBody := `{"target_version":"1.0.0","expected_revision":0,"reason":"reviewed trusted catalog entry"}`
+	response, err = http.Post(server.URL+"/api/v1/capability-packs/php83-intranet/actions/install", "application/json", strings.NewReader(requestBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("install status=%d", response.StatusCode)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/repo-doctor/actions/scan", "application/json", strings.NewReader(`{"files":[{"path":"evil.php","content":"browser-controlled"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("browser-supplied scan source was accepted: %d", response.StatusCode)
 	}
 }
 

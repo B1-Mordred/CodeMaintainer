@@ -10,6 +10,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/audit"
 	"github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
+	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
@@ -200,6 +201,7 @@ type Store interface {
 	ApprovalStore
 	GitHubEventStore
 	intelligence.Store
+	capabilities.Store
 	Close() error
 }
 

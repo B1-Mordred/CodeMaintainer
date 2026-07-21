@@ -19,6 +19,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	"github.com/local-code-maintainer/appliance/internal/backup"
+	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/githubsync"
@@ -144,7 +145,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithIntelligence(intelligenceService), api.WithVersion(version)}
+	capabilityService, err := capabilities.NewService(store, nil)
+	if err != nil {
+		return err
+	}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithIntelligence(intelligenceService), api.WithCapabilities(capabilityService), api.WithVersion(version)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err

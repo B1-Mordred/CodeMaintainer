@@ -33,6 +33,7 @@ Run the full local gate with `./scripts/acceptance.sh`; run `./scripts/agent-ima
 - [GitHub App](docs/github-app.md)
 - [Models](docs/models.md)
 - [Memory](docs/memory.md)
+- [Repository onboarding and capability packs](docs/capability-packs.md)
 - [Operations and updates](docs/operations.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Security](docs/security.md)

@@ -9,6 +9,7 @@ import { api, getCSRFToken } from "./api/client";
 import type { components } from "./api/schema";
 import { ConfigurationPage } from "./ConfigurationPage";
 import { IntelligencePage } from "./IntelligencePage";
+import { CapabilityPage } from "./CapabilityPage";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -26,12 +27,13 @@ type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 
-type PageID = "first-run" | "overview" | "projects" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
   { id: "overview", label: "Overview", icon: <Gauge aria-hidden="true" />, group: "operate" },
   { id: "projects", label: "Projects", icon: <FolderGit2 aria-hidden="true" />, group: "operate" },
+  { id: "onboarding", label: "Onboarding & packs", icon: <Boxes aria-hidden="true" />, group: "operate" },
   { id: "jobs", label: "Jobs", icon: <TerminalSquare aria-hidden="true" />, group: "operate" },
   { id: "quality", label: "QC / QA", icon: <ClipboardCheck aria-hidden="true" />, group: "operate" },
   { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
@@ -129,6 +131,7 @@ export function OperatorConsole({
       {page === "first-run" && <FirstRunPage status={initialStatus} jobs={initialJobs} navigate={navigate} />}
       {page === "overview" && <OverviewPage status={initialStatus} jobs={initialJobs} loading={initialLoading} reload={reloadOverview} />}
       {page === "projects" && <ProjectsPage expert={expert} />}
+      {page === "onboarding" && <CapabilityPage />}
       {page === "jobs" && <JobsPage initialJobs={initialJobs} expert={expert} />}
       {page === "quality" && <QualityPage jobs={initialJobs} />}
       {page === "intelligence" && <IntelligencePage />}

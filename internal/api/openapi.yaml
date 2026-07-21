@@ -347,6 +347,170 @@ paths:
         "200": { description: Repository diagnostics without credentials, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "502": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs:
+    get:
+      summary: Browse controller-trusted checksummed capability-pack versions
+      operationId: listCapabilityPacks
+      responses:
+        "200":
+          description: Trusted declarative catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  items: { type: array, items: { $ref: "#/components/schemas/CapabilityManifest" } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs/installations:
+    get:
+      summary: List durable pack installations and pins
+      operationId: listCapabilityInstallations
+      responses:
+        "200":
+          description: Installed packs
+          content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/CapabilityInstallation" } } } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs/{packID}/versions/{version}:
+    parameters:
+      - { name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }
+      - { name: version, in: path, required: true, schema: { type: string, pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" } }
+    get:
+      summary: Inspect effective declarative content and trust status
+      operationId: getCapabilityManifest
+      responses:
+        "200":
+          description: Exact trusted manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [manifest, trust]
+                properties:
+                  manifest: { $ref: "#/components/schemas/CapabilityManifest" }
+                  trust: { $ref: "#/components/schemas/CapabilityTrustReport" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs/{packID}/events:
+    parameters: [{ name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }]
+    get:
+      summary: List append-only pack lifecycle events
+      operationId: listCapabilityEvents
+      responses:
+        "200":
+          description: Pack history
+          content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/CapabilityLifecycleEvent" } } } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs/{packID}/actions/preview:
+    parameters: [{ name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }]
+    post:
+      summary: Preview pack trust, prerequisites, and workflow changes without mutation
+      operationId: previewCapabilityTransition
+      parameters:
+        - { name: action, in: query, required: true, schema: { type: string, enum: [install, upgrade, rollback] } }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CapabilityTransitionRequest" } } } }
+      responses:
+        "200": { description: Read-only transition preview, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /capability-packs/{packID}/actions/{action}:
+    parameters:
+      - { name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }
+      - { name: action, in: path, required: true, schema: { type: string, enum: [install, enable, disable, upgrade, rollback, pin, unpin] } }
+    post:
+      summary: Apply a reauthenticated optimistic pack lifecycle transition
+      operationId: transitionCapabilityPack
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CapabilityTransitionRequest" } } } }
+      responses:
+        "200":
+          description: Applied transition
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [installation, event]
+                properties:
+                  installation: { $ref: "#/components/schemas/CapabilityInstallation" }
+                  event: { $ref: "#/components/schemas/CapabilityLifecycleEvent" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/capability-packs:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List exact project pack assignments and configuration
+      operationId: listProjectCapabilityAssignments
+      responses:
+        "200":
+          description: Project assignments
+          content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/CapabilityAssignment" } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/repo-doctor/scans:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List evidence-backed onboarding scans and configuration drift
+      operationId: listRepoDoctorScans
+      responses:
+        "200":
+          description: Repository scans
+          content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/RepoDoctorScan" } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/repo-doctor/actions/scan:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Analyze a bounded trusted repository snapshot without modifying it
+      operationId: runRepoDoctor
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201": { description: Completed scan with disabled proposals, content: { application/json: { schema: { $ref: "#/components/schemas/RepoDoctorScan" } } } }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/repo-doctor/scans/{scanID}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: scanID, in: path, required: true, schema: { type: string, pattern: "^scan_[a-f0-9]{32}$" } }
+    get:
+      summary: Inspect findings, evidence, proposals, and drift from one scan
+      operationId: getRepoDoctorScan
+      responses:
+        "200": { description: Onboarding scan, content: { application/json: { schema: { $ref: "#/components/schemas/RepoDoctorScan" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/dry-run:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: scanID, in: path, required: true, schema: { type: string, pattern: "^scan_[a-f0-9]{32}$" } }
+      - { name: proposalID, in: path, required: true, schema: { type: string, pattern: "^proposal_[a-f0-9]{32}$" } }
+    post:
+      summary: Preview a pending proposal and its workflow diff without mutation
+      operationId: dryRunRepoDoctorProposal
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RepoDoctorProposalRequest" } } } }
+      responses:
+        "200": { description: Proposal preview, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: scanID, in: path, required: true, schema: { type: string, pattern: "^scan_[a-f0-9]{32}$" } }
+      - { name: proposalID, in: path, required: true, schema: { type: string, pattern: "^proposal_[a-f0-9]{32}$" } }
+      - { name: action, in: path, required: true, schema: { type: string, enum: [accept, reject] } }
+    post:
+      summary: Explicitly accept or reject an optimistic evidence-backed proposal
+      operationId: reviewRepoDoctorProposal
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RepoDoctorProposalRequest" } } } }
+      responses:
+        "200":
+          description: Reviewed proposal and optional exact pack assignment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposal]
+                properties:
+                  proposal: { $ref: "#/components/schemas/RepoDoctorProposal" }
+                  assignment: { $ref: "#/components/schemas/CapabilityAssignment" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -1951,6 +2115,208 @@ components:
         repository: { type: string, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", maxLength: 201 }
         default_branch: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
         local_remote_name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.git$" }
+    CapabilityCompatibility:
+      type: object
+      additionalProperties: false
+      required: [controller_constraint, platforms]
+      properties:
+        controller_constraint: { type: string }
+        platforms: { type: array, items: { type: string } }
+    CapabilityPrerequisite:
+      type: object
+      additionalProperties: false
+      required: [id, required, help]
+      properties:
+        id: { type: string }
+        required: { type: boolean }
+        help: { type: string }
+    CapabilityDetectionRule:
+      type: object
+      additionalProperties: false
+      required: [id, any_paths, confidence, explanation]
+      properties:
+        id: { type: string }
+        any_paths: { type: array, items: { type: string } }
+        all_paths: { type: array, items: { type: string } }
+        confidence: { type: integer, minimum: 1, maximum: 100 }
+        explanation: { type: string }
+    CapabilityWorkflowChange:
+      type: object
+      additionalProperties: false
+      required: [stage, operation_id, required, description]
+      properties:
+        stage: { type: string }
+        operation_id: { type: string }
+        required: { type: boolean }
+        description: { type: string }
+    CapabilityUIField:
+      type: object
+      additionalProperties: false
+      required: [key, label, kind, default, help]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        kind: { type: string, enum: [boolean, enum, number, string] }
+        default: {}
+        allowed: { type: array, items: { type: string } }
+        minimum: { type: number }
+        maximum: { type: number }
+        help: { type: string }
+        advanced: { type: boolean }
+    RehearsalDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, kind, operation_id, artifact_kinds, comparison_class, approval_policy]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        operation_id: { type: string }
+        artifact_kinds: { type: array, items: { type: string } }
+        comparison_class: { type: string }
+        approval_policy: { type: string }
+    CapabilityManifest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, id, name, version, checksum_sha256, description, languages, compatibility, prerequisites, detection_rules, runner_profile_ids, operation_classes, parser_ids, policy_fragments, context_selectors, risk_rules, documentation_rules, workflow_changes, ui_schema, rehearsals]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        checksum_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        description: { type: string }
+        languages: { type: array, items: { type: string } }
+        compatibility: { $ref: "#/components/schemas/CapabilityCompatibility" }
+        prerequisites: { type: array, items: { $ref: "#/components/schemas/CapabilityPrerequisite" } }
+        detection_rules: { type: array, items: { $ref: "#/components/schemas/CapabilityDetectionRule" } }
+        runner_profile_ids: { type: array, items: { type: string } }
+        operation_classes: { type: array, items: { type: string } }
+        parser_ids: { type: array, items: { type: string } }
+        policy_fragments: { type: array, items: { type: string } }
+        context_selectors: { type: array, items: { type: string } }
+        risk_rules: { type: array, items: { type: string } }
+        documentation_rules: { type: array, items: { type: string } }
+        workflow_changes: { type: array, items: { $ref: "#/components/schemas/CapabilityWorkflowChange" } }
+        ui_schema: { type: array, items: { $ref: "#/components/schemas/CapabilityUIField" } }
+        rehearsals: { type: array, items: { $ref: "#/components/schemas/RehearsalDefinition" } }
+    CapabilityTrustReport:
+      type: object
+      additionalProperties: false
+      required: [pack_id, version, expected_checksum_sha256, computed_checksum_sha256, checksum_valid, authority_safe, compatible, issues]
+      properties:
+        pack_id: { type: string }
+        version: { type: string }
+        expected_checksum_sha256: { type: string }
+        computed_checksum_sha256: { type: string }
+        checksum_valid: { type: boolean }
+        authority_safe: { type: boolean }
+        compatible: { type: boolean }
+        issues: { type: array, items: { type: string } }
+    CapabilityInstallation:
+      type: object
+      additionalProperties: false
+      required: [pack_id, pack_version, checksum_sha256, state, pinned, revision, updated_at]
+      properties:
+        pack_id: { type: string }
+        pack_version: { type: string }
+        checksum_sha256: { type: string }
+        state: { type: string, enum: [enabled, disabled] }
+        pinned: { type: boolean }
+        revision: { type: integer, minimum: 1 }
+        previous_version: { type: string }
+        updated_at: { type: string, format: date-time }
+    CapabilityLifecycleEvent:
+      type: object
+      additionalProperties: false
+      required: [id, pack_id, action, actor_id, reason, created_at]
+      properties:
+        id: { type: string }
+        pack_id: { type: string }
+        from_version: { type: string }
+        to_version: { type: string }
+        action: { type: string, enum: [install, enable, disable, upgrade, rollback, pin, unpin] }
+        actor_id: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    CapabilityAssignment:
+      type: object
+      additionalProperties: false
+      required: [project_id, pack_id, pack_version, enabled, config, revision, updated_at]
+      properties:
+        project_id: { type: string }
+        pack_id: { type: string }
+        pack_version: { type: string }
+        enabled: { type: boolean }
+        config: {}
+        revision: { type: integer, minimum: 1 }
+        updated_at: { type: string, format: date-time }
+    CapabilityTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [target_version, expected_revision, reason]
+      properties:
+        target_version: { type: string }
+        expected_revision: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    RepoDoctorEvidence:
+      type: object
+      additionalProperties: false
+      required: [path, observation, sha256]
+      properties:
+        path: { type: string }
+        observation: { type: string }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    RepoDoctorFinding:
+      type: object
+      additionalProperties: false
+      required: [category, value, confidence, evidence]
+      properties:
+        category: { type: string }
+        value: { type: string }
+        confidence: { type: integer, minimum: 1, maximum: 100 }
+        evidence: { type: array, items: { $ref: "#/components/schemas/RepoDoctorEvidence" } }
+    RepoDoctorProposal:
+      type: object
+      additionalProperties: false
+      required: [id, scan_id, project_id, kind, key, value, confidence, evidence, state, version]
+      properties:
+        id: { type: string }
+        scan_id: { type: string }
+        project_id: { type: string }
+        kind: { type: string, enum: [capability_pack, command_allowlist, protected_path, project_profile] }
+        key: { type: string }
+        value: {}
+        confidence: { type: integer, minimum: 1, maximum: 100 }
+        evidence: { type: array, items: { $ref: "#/components/schemas/RepoDoctorEvidence" } }
+        state: { type: string, enum: [pending, accepted, rejected] }
+        version: { type: integer, minimum: 1 }
+        reason: { type: string }
+        reviewed_by: { type: string }
+        reviewed_at: { type: string, format: date-time }
+    RepoDoctorScan:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, repository, revision, state, findings, proposals, drift, files_observed, excluded_files, created_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        repository: { type: string }
+        revision: { type: string }
+        state: { type: string, const: complete }
+        findings: { type: array, items: { $ref: "#/components/schemas/RepoDoctorFinding" } }
+        proposals: { type: array, items: { $ref: "#/components/schemas/RepoDoctorProposal" } }
+        drift: { type: array, items: { type: string } }
+        files_observed: { type: integer, minimum: 0 }
+        excluded_files: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+    RepoDoctorProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        config: {}
     Project:
       allOf:
         - { $ref: "#/components/schemas/UpsertProjectRequest" }

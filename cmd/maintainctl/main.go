@@ -114,6 +114,8 @@ func run(arguments []string) error {
 		return api.config(arguments[1:])
 	case "intelligence":
 		return api.intelligence(arguments[1:])
+	case "pack":
+		return api.pack(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
@@ -298,8 +300,101 @@ func (c client) repo(arguments []string) error {
 			return errors.New("usage: maintainctl repo sync <owner/repository>")
 		}
 		return c.printJSON(http.MethodPost, "/api/v1/projects/"+url.PathEscape(strings.ReplaceAll(repository, "/", "-"))+"/actions/sync", map[string]any{})
+	case "doctor":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl repo doctor <owner/repository>")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/projects/"+url.PathEscape(strings.ReplaceAll(repository, "/", "-"))+"/repo-doctor/actions/scan", nil)
+	case "doctor-scans":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl repo doctor-scans <owner/repository>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/projects/"+url.PathEscape(strings.ReplaceAll(repository, "/", "-"))+"/repo-doctor/scans", nil)
 	default:
 		return fmt.Errorf("unknown repo command %q", arguments[0])
+	}
+}
+
+func (c client) pack(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl pack <catalog|installed|show|events|preview|install|enable|disable|upgrade|rollback|pin|unpin|assignments|proposal> ...")
+	}
+	switch arguments[0] {
+	case "catalog":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl pack catalog")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/capability-packs", nil)
+	case "installed":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl pack installed")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/capability-packs/installations", nil)
+	case "show":
+		if len(arguments) != 3 {
+			return errors.New("usage: maintainctl pack show <pack-id> <version>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/capability-packs/"+url.PathEscape(arguments[1])+"/versions/"+url.PathEscape(arguments[2]), nil)
+	case "events":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl pack events <pack-id>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/capability-packs/"+url.PathEscape(arguments[1])+"/events", nil)
+	case "assignments":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl pack assignments <project-id>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/projects/"+url.PathEscape(arguments[1])+"/capability-packs", nil)
+	case "preview", "install", "enable", "disable", "upgrade", "rollback", "pin", "unpin":
+		action := arguments[0]
+		flags := flag.NewFlagSet("pack "+action, flag.ContinueOnError)
+		version := flags.String("version", "", "trusted target version")
+		previewAction := flags.String("action", "install", "preview action: install, upgrade, or rollback")
+		revision := flags.Int64("revision", 0, "current installation revision")
+		reason := flags.String("reason", "", "audited reason")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 1 || strings.TrimSpace(*reason) == "" {
+			return fmt.Errorf("usage: maintainctl pack %s <pack-id> --version <version> --revision <n> --reason <text>", action)
+		}
+		body := map[string]any{"target_version": *version, "expected_revision": *revision, "reason": *reason}
+		packID := url.PathEscape(flags.Arg(0))
+		if action == "preview" {
+			return c.printJSON(http.MethodPost, "/api/v1/capability-packs/"+packID+"/actions/preview?action="+url.QueryEscape(*previewAction), body)
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/capability-packs/"+packID+"/actions/"+action, body)
+	case "proposal":
+		if len(arguments) < 5 {
+			return errors.New("usage: maintainctl pack proposal <dry-run|accept|reject> <project-id> <scan-id> <proposal-id> [flags]")
+		}
+		action := arguments[1]
+		if action != "dry-run" && action != "accept" && action != "reject" {
+			return errors.New("proposal action must be dry-run, accept, or reject")
+		}
+		flags := flag.NewFlagSet("pack proposal "+action, flag.ContinueOnError)
+		revision := flags.Int64("version", 0, "proposal version")
+		reason := flags.String("reason", "preview proposal", "review reason")
+		configPath := flags.String("config", "", "optional JSON configuration file")
+		if err := flags.Parse(arguments[5:]); err != nil {
+			return err
+		}
+		body := map[string]any{"expected_version": *revision, "reason": *reason}
+		if *configPath != "" {
+			raw, err := readJSONDocument(*configPath)
+			if err != nil {
+				return err
+			}
+			var config any
+			if err := json.Unmarshal(raw, &config); err != nil {
+				return err
+			}
+			body["config"] = config
+		}
+		path := "/api/v1/projects/" + url.PathEscape(arguments[2]) + "/repo-doctor/scans/" + url.PathEscape(arguments[3]) + "/proposals/" + url.PathEscape(arguments[4]) + "/actions/" + action
+		return c.printJSON(http.MethodPost, path, body)
+	default:
+		return fmt.Errorf("pack action %q is not implemented", arguments[0])
 	}
 }
 
@@ -832,6 +927,7 @@ Commands:
   down (repository wrapper)
   repo add <owner/repository> [--provider local|github] [--default-branch branch]
   repo sync <owner/repository>
+  repo doctor|doctor-scans <owner/repository>
   run <owner/repository> --task <text> | --issue <number>
   status [job-id]
   inspect <job-id>
@@ -873,6 +969,11 @@ Commands:
   intelligence verify-cache <project-id> [--kind kind]
   intelligence simulate-cache <project-id> --kind kind --trust-domain domain --estimated-bytes bytes
   intelligence warm-cache <project-id>
+	pack catalog|installed
+	pack show|events <pack-id> [version]
+	pack preview|install|enable|disable|upgrade|rollback|pin|unpin <pack-id> --version <version> --revision <n> --reason <text>
+	pack assignments <project-id>
+	pack proposal <dry-run|accept|reject> <project-id> <scan-id> <proposal-id> --version <n> --reason <text> [--config file]
   intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>

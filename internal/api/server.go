@@ -21,6 +21,7 @@ import (
 	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
 	"github.com/local-code-maintainer/appliance/internal/automation"
 	"github.com/local-code-maintainer/appliance/internal/backup"
+	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
@@ -53,6 +54,7 @@ type Server struct {
 	backups        BackupService
 	configRegistry *appconfig.RegistryService
 	intelligence   *intelligence.Service
+	capabilities   *capabilities.Service
 }
 
 type ArtifactReader interface {
@@ -122,6 +124,10 @@ func WithIntelligence(service *intelligence.Service) Option {
 	return func(server *Server) { server.intelligence = service }
 }
 
+func WithCapabilities(service *capabilities.Service) Option {
+	return func(server *Server) { server.capabilities = service }
+}
+
 func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -157,6 +163,18 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}", s.disableProject)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/actions/sync", s.syncProject)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/diagnostics", s.projectDiagnostics)
+	mux.HandleFunc("GET /api/v1/capability-packs", s.capabilityCatalog)
+	mux.HandleFunc("GET /api/v1/capability-packs/installations", s.capabilityInstallations)
+	mux.HandleFunc("GET /api/v1/capability-packs/{packID}/versions/{version}", s.capabilityManifest)
+	mux.HandleFunc("GET /api/v1/capability-packs/{packID}/events", s.capabilityEvents)
+	mux.HandleFunc("POST /api/v1/capability-packs/{packID}/actions/preview", s.previewCapabilityTransition)
+	mux.HandleFunc("POST /api/v1/capability-packs/{packID}/actions/{action}", s.transitionCapability)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/capability-packs", s.projectCapabilityAssignments)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/repo-doctor/scans", s.listRepoDoctorScans)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/actions/scan", s.runRepoDoctor)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}", s.getRepoDoctorScan)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/dry-run", s.dryRunRepoDoctorProposal)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/{action}", s.reviewRepoDoctorProposal)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/intelligence/status", s.intelligenceStatus)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/query", s.queryIntelligence)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/actions/refresh", s.refreshIntelligence)
