@@ -555,6 +555,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/forges/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List normalized forge profiles without credential material */
+        get: operations["listForgeProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/forge-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Read one provider-neutral forge profile */
+        get: operations["getForgeProfile"];
+        /** Save an optimistic forge profile with exact endpoint admission */
+        put: operations["saveForgeProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/forge-profile/actions/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe credentials, webhook health, and explicit provider capabilities */
+        post: operations["probeForgeProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/forge-profile/actions/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize a bounded page of normalized forge objects idempotently */
+        post: operations["syncForgeProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/forge-sync-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List durable cursor and idempotency outcomes for forge sync */
+        get: operations["listForgeSyncRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/forge-objects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** Browse normalized forge objects with retained provider metadata */
+        get: operations["listForgeObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory": {
         parameters: {
             query?: never;
@@ -2273,7 +2386,7 @@ export interface components {
         UpsertProjectRequest: {
             id: string;
             /** @enum {string} */
-            provider: "local" | "github";
+            provider: "local" | "github" | "gitlab";
             repository: string;
             default_branch: string;
             local_remote_name?: string;
@@ -2391,6 +2504,96 @@ export interface components {
             target_version: string;
             expected_revision: number;
             reason: string;
+        };
+        ForgeProfileSettings: {
+            /** @enum {string} */
+            provider: "local" | "github" | "gitlab";
+            endpoint: string;
+            endpoint_allowlist: string[];
+            repository: string;
+            /** @description Opaque Git bridge secret reference; never secret material. */
+            credential_reference?: string;
+            credential_status: string;
+            webhook_status: string;
+            /** @enum {string} */
+            sync_direction: "pull" | "bidirectional_draft";
+            polling_minutes: number;
+            branch_convention: string;
+            change_request_convention: string;
+            label_mapping: {
+                [key: string]: string;
+            };
+            ci_artifact_policy: string;
+            release_policy: string;
+            submodules_enabled: boolean;
+            enabled: boolean;
+        };
+        ForgeProfileRequest: components["schemas"]["ForgeProfileSettings"] & {
+            expected_revision: number;
+            reason: string;
+        };
+        ForgeProfile: components["schemas"]["ForgeProfileSettings"] & {
+            project_id: string;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ForgeCapability: {
+            feature: string;
+            /** @enum {string} */
+            status: "supported" | "unsupported" | "operator_only";
+            reason?: string;
+        };
+        ForgeProbe: {
+            project_id: string;
+            /** @enum {string} */
+            provider: "local" | "github" | "gitlab";
+            ready: boolean;
+            credential_status: string;
+            webhook_status: string;
+            capabilities: components["schemas"]["ForgeCapability"][];
+            problems: string[];
+            /** Format: date-time */
+            checked_at: string;
+        };
+        /** @enum {string} */
+        ForgeObjectKind: "repository" | "issue" | "change_request" | "discussion" | "pipeline" | "job" | "artifact" | "branch" | "tag" | "release" | "submodule";
+        ForgeObject: {
+            project_id: string;
+            /** @enum {string} */
+            provider: "local" | "github" | "gitlab";
+            kind: components["schemas"]["ForgeObjectKind"];
+            external_id: string;
+            title?: string;
+            state?: string;
+            ref?: string;
+            sha?: string;
+            url?: string;
+            parent_id?: string;
+            provider_metadata: unknown;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        ForgeSyncRequest: {
+            cursor?: string;
+            idempotency_key: string;
+        };
+        ForgeSyncRun: {
+            id: string;
+            project_id: string;
+            /** @enum {string} */
+            provider: "local" | "github" | "gitlab";
+            input_cursor?: string;
+            output_cursor?: string;
+            idempotency_key: string;
+            /** @enum {string} */
+            state: "complete" | "partial";
+            objects: number;
+            partial: boolean;
+            unsupported: string[];
+            replay: boolean;
+            /** Format: date-time */
+            created_at: string;
         };
         RepoDoctorEvidence: {
             path: string;
@@ -4362,6 +4565,191 @@ export interface operations {
                 };
             };
             409: components["responses"]["ErrorResponse"];
+        };
+    };
+    listForgeProfiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Forge profiles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        schema_version: 1;
+                        items: components["schemas"]["ForgeProfile"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    getForgeProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Forge profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgeProfile"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    saveForgeProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgeProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved forge profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgeProfile"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    probeForgeProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential-safe probe */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgeProbe"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            502: components["responses"]["ErrorResponse"];
+        };
+    };
+    syncForgeProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgeSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable forge sync run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForgeSyncRun"];
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    listForgeSyncRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sync history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ForgeSyncRun"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listForgeObjects: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["ForgeObjectKind"];
+            };
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Normalized objects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ForgeObject"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
         };
     };
     listProjectMemory: {

@@ -13,6 +13,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	"github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
+	"github.com/local-code-maintainer/appliance/internal/forges"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -202,6 +203,7 @@ type Store interface {
 	GitHubEventStore
 	intelligence.Store
 	capabilities.Store
+	forges.Store
 	Close() error
 }
 

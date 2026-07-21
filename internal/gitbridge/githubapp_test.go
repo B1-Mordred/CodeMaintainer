@@ -220,7 +220,7 @@ func TestGitHubProviderRegistrationIsExplicitlyEnabledAndCredentialFree(t *testi
 		t.Fatal(err)
 	}
 	remote, authenticated, err := manager.remote(registration)
-	if err != nil || !authenticated || remote != "https://github.com/owner/repo.git" || strings.Contains(remote, "fixture-installation-token") {
+	if err != nil || authenticated != "github" || remote != "https://github.com/owner/repo.git" || strings.Contains(remote, "fixture-installation-token") {
 		t.Fatalf("remote = %q, authenticated=%v, err=%v", remote, authenticated, err)
 	}
 }

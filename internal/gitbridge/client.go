@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/local-code-maintainer/appliance/internal/forges"
 )
 
 const maxResponseBytes = int64(3 << 20)
@@ -98,6 +100,23 @@ func (c *Client) RepositoryDiagnostics(ctx context.Context, projectID string) (R
 	}
 	var result RepositoryDiagnostics
 	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/diagnostics", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) ProbeForge(ctx context.Context, projectID string) (forges.Probe, error) {
+	if !safeID.MatchString(projectID) {
+		return forges.Probe{}, ErrInvalid
+	}
+	var result forges.Probe
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(projectID)+"/forge/probe", struct{}{}, &result)
+	return result, err
+}
+func (c *Client) SyncForge(ctx context.Context, request forges.SyncRequest) (forges.SyncPage, error) {
+	if !safeID.MatchString(request.ProjectID) || !safeID.MatchString(request.IdempotencyKey) {
+		return forges.SyncPage{}, ErrInvalid
+	}
+	var result forges.SyncPage
+	err := c.call(ctx, "/v1/projects/"+url.PathEscape(request.ProjectID)+"/forge/sync", request, &result)
 	return result, err
 }
 

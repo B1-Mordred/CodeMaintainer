@@ -116,9 +116,75 @@ func run(arguments []string) error {
 		return api.intelligence(arguments[1:])
 	case "pack":
 		return api.pack(arguments[1:])
+	case "forge":
+		return api.forge(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) forge(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl forge <profiles|get|save|probe|sync|runs|objects> ...")
+	}
+	switch arguments[0] {
+	case "profiles":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl forge profiles")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/forges/profiles", nil)
+	case "get", "probe", "runs", "objects":
+		if len(arguments) < 2 {
+			return fmt.Errorf("usage: maintainctl forge %s <project-id>", arguments[0])
+		}
+		base := "/api/v1/projects/" + url.PathEscape(arguments[1])
+		switch arguments[0] {
+		case "get":
+			return c.printJSON(http.MethodGet, base+"/forge-profile", nil)
+		case "probe":
+			return c.printJSON(http.MethodPost, base+"/forge-profile/actions/probe", nil)
+		case "runs":
+			return c.printJSON(http.MethodGet, base+"/forge-sync-runs", nil)
+		default:
+			kind := ""
+			if len(arguments) == 4 && arguments[2] == "--kind" {
+				kind = "?kind=" + url.QueryEscape(arguments[3])
+			} else if len(arguments) != 2 {
+				return errors.New("usage: maintainctl forge objects <project-id> [--kind kind]")
+			}
+			return c.printJSON(http.MethodGet, base+"/forge-objects"+kind, nil)
+		}
+	case "save":
+		if len(arguments) != 3 {
+			return errors.New("usage: maintainctl forge save <project-id> <profile-json-file|->")
+		}
+		raw, err := readJSONDocument(arguments[2])
+		if err != nil {
+			return err
+		}
+		var body any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPut, "/api/v1/projects/"+url.PathEscape(arguments[1])+"/forge-profile", body)
+	case "sync":
+		if len(arguments) < 2 {
+			return errors.New("usage: maintainctl forge sync <project-id> --key <idempotency-key> [--cursor cursor]")
+		}
+		projectID := arguments[1]
+		flags := flag.NewFlagSet("forge sync", flag.ContinueOnError)
+		key := flags.String("key", "", "safe idempotency key")
+		cursor := flags.String("cursor", "", "last durable provider cursor")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*key) == "" {
+			return errors.New("usage: maintainctl forge sync <project-id> --key <idempotency-key> [--cursor cursor]")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/projects/"+url.PathEscape(projectID)+"/forge-profile/actions/sync", map[string]any{"cursor": *cursor, "idempotency_key": *key})
+	default:
+		return fmt.Errorf("forge action %q is not implemented", arguments[0])
 	}
 }
 
@@ -281,13 +347,13 @@ func (c client) repo(arguments []string) error {
 	switch arguments[0] {
 	case "add":
 		flags := flag.NewFlagSet("repo add", flag.ContinueOnError)
-		provider := flags.String("provider", "local", "repository provider: local or github")
+		provider := flags.String("provider", "local", "repository provider: local, github, or gitlab")
 		branch := flags.String("default-branch", "main", "exact default branch")
 		if err := flags.Parse(arguments[2:]); err != nil {
 			return err
 		}
-		if flags.NArg() != 0 || (*provider != "local" && *provider != "github") {
-			return errors.New("usage: maintainctl repo add <owner/repository> [--provider local|github] [--default-branch branch]")
+		if flags.NArg() != 0 || (*provider != "local" && *provider != "github" && *provider != "gitlab") {
+			return errors.New("usage: maintainctl repo add <owner/repository> [--provider local|github|gitlab] [--default-branch branch]")
 		}
 		id := strings.ReplaceAll(repository, "/", "-")
 		body := map[string]any{"id": id, "provider": *provider, "repository": repository, "default_branch": *branch}
@@ -925,7 +991,7 @@ Commands:
   doctor
   up (repository wrapper)
   down (repository wrapper)
-  repo add <owner/repository> [--provider local|github] [--default-branch branch]
+  repo add <owner/repository> [--provider local|github|gitlab] [--default-branch branch]
   repo sync <owner/repository>
   repo doctor|doctor-scans <owner/repository>
   run <owner/repository> --task <text> | --issue <number>
@@ -974,6 +1040,7 @@ Commands:
 	pack preview|install|enable|disable|upgrade|rollback|pin|unpin <pack-id> --version <version> --revision <n> --reason <text>
 	pack assignments <project-id>
 	pack proposal <dry-run|accept|reject> <project-id> <scan-id> <proposal-id> --version <n> --reason <text> [--config file]
+  forge profiles|get|save|probe|sync|runs|objects
   intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>

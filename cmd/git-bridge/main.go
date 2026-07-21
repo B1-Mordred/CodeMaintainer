@@ -42,6 +42,9 @@ func run(logger *slog.Logger) error {
 	if err := configureGitHub(manager); err != nil {
 		return err
 	}
+	if err := configureGitLab(manager); err != nil {
+		return err
+	}
 	var webhook *gitbridge.WebhookValidator
 	if webhookPath := strings.TrimSpace(os.Getenv("GIT_BRIDGE_WEBHOOK_SECRET_FILE")); webhookPath != "" {
 		secret, readErr := os.ReadFile(webhookPath)
@@ -77,6 +80,29 @@ func run(logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+func configureGitLab(manager *gitbridge.Manager) error {
+	tokenPath := strings.TrimSpace(os.Getenv("GITLAB_TOKEN_FILE"))
+	apiURL := strings.TrimSpace(os.Getenv("GITLAB_API_URL"))
+	gitURL := strings.TrimSpace(os.Getenv("GITLAB_GIT_URL"))
+	if tokenPath == "" && apiURL == "" && gitURL == "" {
+		return nil
+	}
+	if tokenPath == "" {
+		return errors.New("GitLab activation requires a token file")
+	}
+	if apiURL == "" {
+		apiURL = "https://gitlab.com"
+	}
+	if gitURL == "" {
+		gitURL = apiURL
+	}
+	configuration, err := gitbridge.NewGitLabConfiguration(apiURL, gitURL, gitbridge.FileGitLabToken{Path: tokenPath}, nil)
+	if err != nil {
+		return err
+	}
+	return manager.EnableGitLab(configuration)
 }
 
 func configureGitHub(manager *gitbridge.Manager) error {

@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/local-code-maintainer/appliance/internal/forges"
 	"github.com/local-code-maintainer/appliance/internal/repositories"
 )
 
@@ -29,6 +31,20 @@ type Manager struct {
 	worktrees     *repositories.WorktreeManager
 	projects      map[string]Registration
 	github        *GitHubConfiguration
+	gitlab        *GitLabConfiguration
+}
+
+func (m *Manager) EnableGitLab(configuration *GitLabConfiguration) error {
+	if configuration == nil {
+		return ErrInvalid
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.gitlab != nil || len(m.projects) != 0 {
+		return ErrConflict
+	}
+	m.gitlab = configuration
+	return nil
 }
 
 func (m *Manager) EnableGitHub(configuration *GitHubConfiguration) error {
@@ -84,7 +100,7 @@ func (m *Manager) Register(_ context.Context, registration Registration) error {
 		if err != nil || !info.IsDir() {
 			return ErrNotFound
 		}
-	} else if registration.Provider != "github" || registration.LocalRemoteName != "" || m.github == nil {
+	} else if registration.LocalRemoteName != "" || (registration.Provider == "github" && m.github == nil) || (registration.Provider == "gitlab" && m.gitlab == nil) || (registration.Provider != "github" && registration.Provider != "gitlab") {
 		return ErrInvalid
 	}
 	m.mu.Lock()
@@ -101,7 +117,7 @@ func (m *Manager) Sync(ctx context.Context, projectID string) (SyncResult, error
 	if err != nil {
 		return SyncResult{}, err
 	}
-	remote, authenticated, err := m.remote(registration)
+	remote, authentication, err := m.remote(registration)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -113,7 +129,7 @@ func (m *Manager) Sync(ctx context.Context, projectID string) (SyncResult, error
 		}
 		defer os.RemoveAll(temporary)
 		clonePath := filepath.Join(temporary, "mirror.git")
-		if _, cloneErr := m.gitRemote(ctx, authenticated, "clone", "--mirror", "--no-local", remote, clonePath); cloneErr != nil {
+		if _, cloneErr := m.gitRemote(ctx, authentication, "clone", "--mirror", "--no-local", remote, clonePath); cloneErr != nil {
 			return SyncResult{}, cloneErr
 		}
 		if renameErr := os.Rename(clonePath, mirror); renameErr != nil {
@@ -124,7 +140,7 @@ func (m *Manager) Sync(ctx context.Context, projectID string) (SyncResult, error
 	} else if err != nil {
 		return SyncResult{}, err
 	} else {
-		if _, err := m.gitRemote(ctx, authenticated, "--git-dir="+mirror, "fetch", "--prune", remote,
+		if _, err := m.gitRemote(ctx, authentication, "--git-dir="+mirror, "fetch", "--prune", remote,
 			"+refs/heads/*:refs/heads/*"); err != nil {
 			return SyncResult{}, err
 		}
@@ -272,13 +288,13 @@ func (m *Manager) Publish(ctx context.Context, request PublishRequest) (Publicat
 	if err != nil || !safeID.MatchString(request.JobID) || !commit.MatchString(request.BaseSHA) || !commit.MatchString(request.ResultSHA) {
 		return Publication{}, ErrInvalid
 	}
-	remote, authenticated, err := m.remote(registration)
+	remote, authentication, err := m.remote(registration)
 	if err != nil {
 		return Publication{}, err
 	}
 	var upstream string
-	if authenticated {
-		upstream, err = m.gitRemote(ctx, true, "ls-remote", "--heads", remote, "refs/heads/"+registration.DefaultBranch)
+	if authentication != "" {
+		upstream, err = m.gitRemote(ctx, authentication, "ls-remote", "--heads", remote, "refs/heads/"+registration.DefaultBranch)
 		upstream = firstRemoteSHA(upstream)
 	} else {
 		upstream, err = m.git(ctx, "--git-dir="+remote, "rev-parse", "--verify", "refs/heads/"+registration.DefaultBranch+"^{commit}")
@@ -295,8 +311,8 @@ func (m *Manager) Publish(ctx context.Context, request PublishRequest) (Publicat
 	branch := "maintainer/" + request.JobID
 	var existing string
 	var existingErr error
-	if authenticated {
-		existing, existingErr = m.gitRemote(ctx, true, "ls-remote", "--heads", remote, "refs/heads/"+branch)
+	if authentication != "" {
+		existing, existingErr = m.gitRemote(ctx, authentication, "ls-remote", "--heads", remote, "refs/heads/"+branch)
 		if existingErr == nil && strings.TrimSpace(existing) == "" {
 			existingErr = ErrNotFound
 		}
@@ -309,11 +325,11 @@ func (m *Manager) Publish(ctx context.Context, request PublishRequest) (Publicat
 		if existing != request.ResultSHA {
 			return Publication{}, ErrConflict
 		}
-	} else if _, err := m.gitRemote(ctx, authenticated, "-C", path, "-c", "core.hooksPath=/dev/null", "push", "--porcelain", remote,
+	} else if _, err := m.gitRemote(ctx, authentication, "-C", path, "-c", "core.hooksPath=/dev/null", "push", "--porcelain", remote,
 		"HEAD:refs/heads/"+branch); err != nil {
 		return Publication{}, err
 	}
-	if authenticated {
+	if authentication == "github" {
 		api, err := m.github.api(registration.Repository)
 		if err != nil {
 			return Publication{}, err
@@ -330,6 +346,17 @@ func (m *Manager) Publish(ctx context.Context, request PublishRequest) (Publicat
 			Provider: "github", Branch: branch, ResultSHA: request.ResultSHA, Draft: true,
 			ExternalID: pull.NodeID, URL: pull.HTMLURL, Number: pull.Number,
 		}, nil
+	}
+	if authentication == "gitlab" {
+		api, err := m.gitlab.api(registration.Repository)
+		if err != nil {
+			return Publication{}, err
+		}
+		merge, err := api.CreateDraftMergeRequest(ctx, DraftPullRequestRequest{IdempotencyKey: request.JobID + "_publication", Branch: branch, Base: registration.DefaultBranch, Title: "maintainer: verified repair for " + request.JobID, Body: "Automated maintenance result " + request.ResultSHA + " was approved for draft publication. Review all controller evidence before merging."})
+		if err != nil {
+			return Publication{}, err
+		}
+		return Publication{Provider: "gitlab", Branch: branch, ResultSHA: request.ResultSHA, Draft: true, ExternalID: strconv.FormatInt(merge.ID, 10), URL: merge.WebURL, Number: merge.IID}, nil
 	}
 	return Publication{
 		Provider: "local", Branch: branch, ResultSHA: request.ResultSHA, Draft: true,
@@ -377,6 +404,13 @@ func (m *Manager) RepositoryDiagnostics(ctx context.Context, projectID string) (
 			CanRead: true, CanPublish: true, Ready: true, Problems: []string{},
 		}, nil
 	}
+	if registration.Provider == "gitlab" && m.gitlab != nil {
+		api, err := m.gitlab.api(registration.Repository)
+		if err != nil {
+			return RepositoryDiagnostics{}, err
+		}
+		return api.Diagnostics(ctx)
+	}
 	if m.github == nil {
 		return RepositoryDiagnostics{}, ErrInvalid
 	}
@@ -385,6 +419,149 @@ func (m *Manager) RepositoryDiagnostics(ctx context.Context, projectID string) (
 		return RepositoryDiagnostics{}, err
 	}
 	return api.Diagnostics(ctx)
+}
+
+func (m *Manager) ProbeForge(ctx context.Context, projectID string) (forges.Probe, error) {
+	registration, err := m.registration(projectID)
+	if err != nil {
+		return forges.Probe{}, err
+	}
+	diagnostics, err := m.RepositoryDiagnostics(ctx, projectID)
+	if err != nil {
+		return forges.Probe{}, err
+	}
+
+	credentialStatus := "not_required"
+	webhookStatus := "not_supported"
+	switch registration.Provider {
+	case "github":
+		credentialStatus = "configured"
+		webhookStatus = "configured_or_polling"
+	case "gitlab":
+		credentialStatus = "configured"
+		webhookStatus = "operator_configuration_required"
+	}
+
+	return forges.Probe{
+		ProjectID:        projectID,
+		Provider:         registration.Provider,
+		Ready:            diagnostics.Ready,
+		CredentialStatus: credentialStatus,
+		WebhookStatus:    webhookStatus,
+		Capabilities:     forgeCapabilities(registration.Provider),
+		Problems:         diagnostics.Problems,
+		CheckedAt:        time.Now().UTC(),
+	}, nil
+}
+
+func forgeCapabilities(provider string) []forges.Capability {
+	features := []string{
+		"repository", "issue", "change_request", "discussion", "pipeline", "job",
+		"artifact", "webhook", "branch", "tag", "release", "submodule",
+	}
+	items := make([]forges.Capability, 0, len(features))
+	for _, feature := range features {
+		status := forges.Supported
+		reason := ""
+		if provider == "local" && feature != "repository" && feature != "branch" && feature != "tag" && feature != "submodule" {
+			status = forges.Unsupported
+			reason = "local bare Git has no " + feature + " API"
+		}
+		if (provider == "github" || provider == "gitlab") &&
+			(feature == "discussion" || feature == "pipeline" || feature == "job" || feature == "artifact" || feature == "release") {
+			status = forges.OperatorOnly
+			reason = "available through the configured forge API; collection requires the corresponding permission and edition"
+		}
+		items = append(items, forges.Capability{Feature: feature, Status: status, Reason: reason})
+	}
+	return items
+}
+
+func (m *Manager) SyncForge(ctx context.Context, request forges.SyncRequest) (forges.SyncPage, error) {
+	registration, err := m.registration(request.ProjectID)
+	if err != nil {
+		return forges.SyncPage{}, err
+	}
+	synced, err := m.Sync(ctx, request.ProjectID)
+	if err != nil {
+		return forges.SyncPage{}, err
+	}
+	page := forges.SyncPage{
+		ProjectID:          request.ProjectID,
+		Provider:           registration.Provider,
+		Cursor:             request.Cursor,
+		NextCursor:         synced.BaseSHA,
+		Objects:            []forges.Object{},
+		Capabilities:       forgeCapabilities(registration.Provider),
+		RateLimitRemaining: 1,
+	}
+	for _, capability := range page.Capabilities {
+		if capability.Status != forges.Supported {
+			page.Unsupported = append(page.Unsupported, capability.Feature+": "+capability.Reason)
+		}
+	}
+	if request.Cursor == synced.BaseSHA {
+		return page, nil
+	}
+
+	metadata, _ := json.Marshal(map[string]any{
+		"default_branch": registration.DefaultBranch,
+		"repository":     registration.Repository,
+	})
+	page.Objects = append(page.Objects, forges.Object{
+		ProjectID:        request.ProjectID,
+		Provider:         registration.Provider,
+		Kind:             "repository",
+		ExternalID:       registration.Repository,
+		Title:            registration.Repository,
+		Ref:              registration.DefaultBranch,
+		SHA:              synced.BaseSHA,
+		ProviderMetadata: metadata,
+	})
+
+	mirror := filepath.Join(m.mirrorsRoot, request.ProjectID+".git")
+	refs, err := m.git(ctx, "--git-dir="+mirror, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/heads", "refs/tags")
+	if err != nil {
+		return forges.SyncPage{}, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(refs), "\n") {
+		parts := strings.Split(line, "\x00")
+		if len(parts) != 2 || !commit.MatchString(parts[1]) {
+			continue
+		}
+		kind := "branch"
+		name := strings.TrimPrefix(parts[0], "refs/heads/")
+		if strings.HasPrefix(parts[0], "refs/tags/") {
+			kind = "tag"
+			name = strings.TrimPrefix(parts[0], "refs/tags/")
+		}
+		raw, _ := json.Marshal(map[string]string{"refname": parts[0]})
+		page.Objects = append(page.Objects, forges.Object{
+			ProjectID: request.ProjectID, Provider: registration.Provider, Kind: kind,
+			ExternalID: name, Ref: name, SHA: parts[1], ProviderMetadata: raw,
+		})
+		if request.Limit > 0 && len(page.Objects) >= request.Limit {
+			page.Partial = true
+			break
+		}
+	}
+
+	content, readErr := m.git(ctx, "--git-dir="+mirror, "show", synced.BaseSHA+":.gitmodules")
+	if readErr == nil {
+		for index, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "path = ") {
+				continue
+			}
+			path := strings.TrimSpace(strings.TrimPrefix(line, "path = "))
+			raw, _ := json.Marshal(map[string]string{"path": path})
+			page.Objects = append(page.Objects, forges.Object{
+				ProjectID: request.ProjectID, Provider: registration.Provider, Kind: "submodule",
+				ExternalID: strconv.Itoa(index) + ":" + path, Ref: path, ProviderMetadata: raw,
+			})
+		}
+	}
+	return page, nil
 }
 
 func (m *Manager) Issue(ctx context.Context, projectID string, number int) (GitHubIssue, error) {
@@ -411,16 +588,20 @@ func (m *Manager) PullRequest(ctx context.Context, projectID string, number int)
 	return api.PullRequest(ctx, number)
 }
 
-func (m *Manager) remote(registration Registration) (string, bool, error) {
+func (m *Manager) remote(registration Registration) (string, string, error) {
 	if registration.Provider == "local" {
 		remote, err := m.localRemote(registration.LocalRemoteName)
-		return remote, false, err
+		return remote, "", err
 	}
 	if registration.Provider == "github" && m.github != nil {
 		remote, err := m.github.remote(registration.Repository)
-		return remote, true, err
+		return remote, "github", err
 	}
-	return "", false, ErrInvalid
+	if registration.Provider == "gitlab" && m.gitlab != nil {
+		remote, err := m.gitlab.remote(registration.Repository)
+		return remote, "gitlab", err
+	}
+	return "", "", ErrInvalid
 }
 
 func (m *Manager) registration(projectID string) (Registration, error) {
@@ -459,11 +640,21 @@ func (m *Manager) gitWithIdentity(ctx context.Context, path string, args ...stri
 	}, append([]string{"-C", path}, args...)...)
 }
 
-func (m *Manager) gitRemote(ctx context.Context, authenticated bool, args ...string) (string, error) {
-	if !authenticated {
+func (m *Manager) gitRemote(ctx context.Context, provider string, args ...string) (string, error) {
+	if provider == "" {
 		return m.git(ctx, args...)
 	}
-	token, err := m.github.token(ctx)
+	var token, username string
+	var err error
+	if provider == "github" {
+		token, err = m.github.token(ctx)
+		username = "x-access-token"
+	} else if provider == "gitlab" {
+		token, err = m.gitlab.token(ctx)
+		username = "oauth2"
+	} else {
+		return "", ErrInvalid
+	}
 	if err != nil {
 		return "", err
 	}
@@ -473,7 +664,7 @@ func (m *Manager) gitRemote(ctx context.Context, authenticated bool, args ...str
 	}
 	name := askpass.Name()
 	defer os.Remove(name)
-	if _, err := askpass.WriteString("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token;; *) printf '%s\\n' \"$GITHUB_TOKEN\";; esac\n"); err != nil {
+	if _, err := askpass.WriteString("#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' \"$FORGE_USERNAME\";; *) printf '%s\\n' \"$FORGE_TOKEN\";; esac\n"); err != nil {
 		askpass.Close()
 		return "", err
 	}
@@ -484,7 +675,7 @@ func (m *Manager) gitRemote(ctx context.Context, authenticated bool, args ...str
 	if err := askpass.Close(); err != nil {
 		return "", err
 	}
-	return m.runGit(ctx, []string{"GIT_ASKPASS=" + name, "GIT_ASKPASS_REQUIRE=force", "GITHUB_TOKEN=" + token}, args...)
+	return m.runGit(ctx, []string{"GIT_ASKPASS=" + name, "GIT_ASKPASS_REQUIRE=force", "FORGE_USERNAME=" + username, "FORGE_TOKEN=" + token}, args...)
 }
 
 func firstRemoteSHA(output string) string {

@@ -33,7 +33,7 @@ type UpsertRequest struct {
 
 func (r UpsertRequest) Validate() error {
 	if !identifier.MatchString(r.ID) || !repository.MatchString(r.Repository) ||
-		!identifier.MatchString(r.DefaultBranch) || (r.Provider != "local" && r.Provider != "github") {
+		!identifier.MatchString(r.DefaultBranch) || (r.Provider != "local" && r.Provider != "github" && r.Provider != "gitlab") {
 		return errors.New("project identity, repository, branch, or provider is invalid")
 	}
 	if r.Provider == "local" {
@@ -41,7 +41,7 @@ func (r UpsertRequest) Validate() error {
 			return errors.New("local projects require a safe .git remote name")
 		}
 	} else if r.LocalRemoteName != "" {
-		return errors.New("GitHub projects cannot select a local remote")
+		return errors.New("hosted forge projects cannot select a local remote")
 	}
 	return nil
 }

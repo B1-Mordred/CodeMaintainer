@@ -24,6 +24,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
 	"github.com/local-code-maintainer/appliance/internal/findings"
+	"github.com/local-code-maintainer/appliance/internal/forges"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
@@ -55,6 +56,7 @@ type Server struct {
 	configRegistry *appconfig.RegistryService
 	intelligence   *intelligence.Service
 	capabilities   *capabilities.Service
+	forges         *forges.Service
 }
 
 type ArtifactReader interface {
@@ -128,6 +130,10 @@ func WithCapabilities(service *capabilities.Service) Option {
 	return func(server *Server) { server.capabilities = service }
 }
 
+func WithForges(service *forges.Service) Option {
+	return func(server *Server) { server.forges = service }
+}
+
 func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -175,6 +181,13 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}", s.getRepoDoctorScan)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/dry-run", s.dryRunRepoDoctorProposal)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}/proposals/{proposalID}/actions/{action}", s.reviewRepoDoctorProposal)
+	mux.HandleFunc("GET /api/v1/forges/profiles", s.listForgeProfiles)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/forge-profile", s.getForgeProfile)
+	mux.HandleFunc("PUT /api/v1/projects/{projectID}/forge-profile", s.saveForgeProfile)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/forge-profile/actions/probe", s.probeForgeProfile)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/forge-profile/actions/sync", s.syncForgeProfile)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/forge-sync-runs", s.listForgeSyncRuns)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/forge-objects", s.listForgeObjects)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/intelligence/status", s.intelligenceStatus)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/query", s.queryIntelligence)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/actions/refresh", s.refreshIntelligence)

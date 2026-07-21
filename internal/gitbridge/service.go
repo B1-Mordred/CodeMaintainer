@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/local-code-maintainer/appliance/internal/forges"
 )
 
 const maxRequestBytes = int64(1 << 20)
@@ -35,6 +37,11 @@ type GitHubMetadataBackend interface {
 
 type SnapshotBackend interface {
 	Snapshot(context.Context, string, string) (RepositorySnapshot, error)
+}
+
+type ForgeBackend interface {
+	ProbeForge(context.Context, string) (forges.Probe, error)
+	SyncForge(context.Context, forges.SyncRequest) (forges.SyncPage, error)
 }
 
 func NewService(backend Backend, token []byte, logger *slog.Logger) (http.Handler, error) {
@@ -171,6 +178,40 @@ func NewServiceWithWebhook(backend Backend, token []byte, webhook *WebhookValida
 			return
 		}
 		result, err := provider.RepositoryDiagnostics(r.Context(), r.PathValue("projectID"))
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/projects/{projectID}/forge/probe", func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := backend.(ForgeBackend)
+		if !ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "forge normalization is disabled"})
+			return
+		}
+		result, err := provider.ProbeForge(r.Context(), r.PathValue("projectID"))
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/projects/{projectID}/forge/sync", func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := backend.(ForgeBackend)
+		if !ok {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "forge normalization is disabled"})
+			return
+		}
+		var request forges.SyncRequest
+		if !decode(w, r, &request) {
+			return
+		}
+		if request.ProjectID != r.PathValue("projectID") {
+			writeBackendError(w, ErrInvalid)
+			return
+		}
+		result, err := provider.SyncForge(r.Context(), request)
 		if err != nil {
 			writeBackendError(w, err)
 			return

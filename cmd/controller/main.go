@@ -21,6 +21,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/backup"
 	"github.com/local-code-maintainer/appliance/internal/capabilities"
 	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	"github.com/local-code-maintainer/appliance/internal/forges"
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/githubsync"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
@@ -158,7 +159,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	serverOptions = append(serverOptions, api.WithGitHubWebhookValidator(gitWebhookClient), api.WithGitOperator(gitWebhookClient))
+	forgeService, err := forges.NewService(store, gitWebhookClient)
+	if err != nil {
+		return err
+	}
+	serverOptions = append(serverOptions, api.WithGitHubWebhookValidator(gitWebhookClient), api.WithGitOperator(gitWebhookClient), api.WithForges(forgeService))
 	githubReconciler, err := githubsync.New(store, artifactStore, gitWebhookClient, 5*time.Minute, logger.With("component", "github-poll"))
 	if err != nil {
 		return err

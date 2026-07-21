@@ -511,6 +511,76 @@ paths:
                   proposal: { $ref: "#/components/schemas/RepoDoctorProposal" }
                   assignment: { $ref: "#/components/schemas/CapabilityAssignment" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
+  /forges/profiles:
+    get:
+      summary: List normalized forge profiles without credential material
+      operationId: listForgeProfiles
+      responses:
+        "200":
+          description: Forge profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  items: { type: array, items: { $ref: "#/components/schemas/ForgeProfile" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/forge-profile:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: Read one provider-neutral forge profile
+      operationId: getForgeProfile
+      responses:
+        "200": { description: Forge profile, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeProfile" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+    put:
+      summary: Save an optimistic forge profile with exact endpoint admission
+      operationId: saveForgeProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeProfileRequest" } } } }
+      responses:
+        "200": { description: Saved forge profile, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeProfile" } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/forge-profile/actions/probe:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Probe credentials, webhook health, and explicit provider capabilities
+      operationId: probeForgeProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Credential-safe probe, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeProbe" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/forge-profile/actions/sync:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Synchronize a bounded page of normalized forge objects idempotently
+      operationId: syncForgeProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeSyncRequest" } } } }
+      responses:
+        "200": { description: Durable forge sync run, content: { application/json: { schema: { $ref: "#/components/schemas/ForgeSyncRun" } } } }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/forge-sync-runs:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List durable cursor and idempotency outcomes for forge sync
+      operationId: listForgeSyncRuns
+      responses:
+        "200": { description: Sync history, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ForgeSyncRun" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/forge-objects:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: Browse normalized forge objects with retained provider metadata
+      operationId: listForgeObjects
+      parameters: [{ name: kind, in: query, schema: { $ref: "#/components/schemas/ForgeObjectKind" } }]
+      responses:
+        "200": { description: Normalized objects, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ForgeObject" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -2111,7 +2181,7 @@ components:
       required: [id, provider, repository, default_branch]
       properties:
         id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
-        provider: { type: string, enum: [local, github] }
+        provider: { type: string, enum: [local, github, gitlab] }
         repository: { type: string, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", maxLength: 201 }
         default_branch: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
         local_remote_name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.git$" }
@@ -2258,6 +2328,108 @@ components:
         target_version: { type: string }
         expected_revision: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 1, maxLength: 1000 }
+    ForgeProfileSettings:
+      type: object
+      required: [provider, endpoint, endpoint_allowlist, repository, credential_status, webhook_status, sync_direction, polling_minutes, branch_convention, change_request_convention, label_mapping, ci_artifact_policy, release_policy, submodules_enabled, enabled]
+      properties:
+        provider: { type: string, enum: [local, github, gitlab] }
+        endpoint: { type: string, maxLength: 2048 }
+        endpoint_allowlist: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 2048 } }
+        repository: { type: string, pattern: "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", maxLength: 201 }
+        credential_reference: { type: string, maxLength: 256, description: Opaque Git bridge secret reference; never secret material. }
+        credential_status: { type: string, maxLength: 128 }
+        webhook_status: { type: string, maxLength: 128 }
+        sync_direction: { type: string, enum: [pull, bidirectional_draft] }
+        polling_minutes: { type: integer, minimum: 1, maximum: 10080 }
+        branch_convention: { type: string, maxLength: 256 }
+        change_request_convention: { type: string, maxLength: 256 }
+        label_mapping: { type: object, maxProperties: 100, additionalProperties: { type: string, maxLength: 128 } }
+        ci_artifact_policy: { type: string, maxLength: 256 }
+        release_policy: { type: string, maxLength: 256 }
+        submodules_enabled: { type: boolean }
+        enabled: { type: boolean }
+    ForgeProfileRequest:
+      allOf:
+        - { $ref: "#/components/schemas/ForgeProfileSettings" }
+        - type: object
+          required: [expected_revision, reason]
+          properties:
+            expected_revision: { type: integer, minimum: 0 }
+            reason: { type: string, minLength: 1, maxLength: 1000 }
+    ForgeProfile:
+      allOf:
+        - { $ref: "#/components/schemas/ForgeProfileSettings" }
+        - type: object
+          required: [project_id, revision, updated_at]
+          properties:
+            project_id: { type: string }
+            revision: { type: integer, minimum: 1 }
+            updated_at: { type: string, format: date-time }
+    ForgeCapability:
+      type: object
+      additionalProperties: false
+      required: [feature, status]
+      properties:
+        feature: { type: string }
+        status: { type: string, enum: [supported, unsupported, operator_only] }
+        reason: { type: string }
+    ForgeProbe:
+      type: object
+      additionalProperties: false
+      required: [project_id, provider, ready, credential_status, webhook_status, capabilities, problems, checked_at]
+      properties:
+        project_id: { type: string }
+        provider: { type: string, enum: [local, github, gitlab] }
+        ready: { type: boolean }
+        credential_status: { type: string }
+        webhook_status: { type: string }
+        capabilities: { type: array, items: { $ref: "#/components/schemas/ForgeCapability" } }
+        problems: { type: array, items: { type: string } }
+        checked_at: { type: string, format: date-time }
+    ForgeObjectKind:
+      type: string
+      enum: [repository, issue, change_request, discussion, pipeline, job, artifact, branch, tag, release, submodule]
+    ForgeObject:
+      type: object
+      additionalProperties: false
+      required: [project_id, provider, kind, external_id, provider_metadata]
+      properties:
+        project_id: { type: string }
+        provider: { type: string, enum: [local, github, gitlab] }
+        kind: { $ref: "#/components/schemas/ForgeObjectKind" }
+        external_id: { type: string }
+        title: { type: string }
+        state: { type: string }
+        ref: { type: string }
+        sha: { type: string }
+        url: { type: string }
+        parent_id: { type: string }
+        provider_metadata: {}
+        updated_at: { type: string, format: date-time }
+    ForgeSyncRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        cursor: { type: string, maxLength: 4096 }
+        idempotency_key: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+    ForgeSyncRun:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, provider, idempotency_key, state, objects, partial, unsupported, replay, created_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        provider: { type: string, enum: [local, github, gitlab] }
+        input_cursor: { type: string }
+        output_cursor: { type: string }
+        idempotency_key: { type: string }
+        state: { type: string, enum: [complete, partial] }
+        objects: { type: integer, minimum: 0, maximum: 500 }
+        partial: { type: boolean }
+        unsupported: { type: array, items: { type: string } }
+        replay: { type: boolean }
+        created_at: { type: string, format: date-time }
     RepoDoctorEvidence:
       type: object
       additionalProperties: false
