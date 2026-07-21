@@ -1072,6 +1072,38 @@ paths:
       responses:
         "200": { description: Verification baselines, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/VerificationBaseline" } } } } } } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/baseline-supersessions:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List attributed policy-gated baseline update history
+      operationId: listBaselineSupersessions
+      responses:
+        "200": { description: Baseline supersessions, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/BaselineSupersession" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/baselines/{baselineID}/actions/supersede:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: baselineID, in: path, required: true, schema: { type: string, pattern: "^baseline_[a-f0-9]{32}$" } }
+    post:
+      summary: Approve an intentional candidate-derived baseline update with audit
+      operationId: supersedeBaseline
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [differential_id, reason]
+              properties:
+                differential_id: { type: string, pattern: "^differential_[a-f0-9]{32}$" }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { description: Immutable supersession record and replacement baseline, content: { application/json: { schema: { $ref: "#/components/schemas/BaselineSupersession" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/differentials:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     get:
@@ -1080,6 +1112,40 @@ paths:
       responses:
         "200": { description: Differential comparisons, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/VerificationDifferential" } } } } } } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/differential-corrections:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List append-only attributed differential-classification corrections
+      operationId: listDifferentialCorrections
+      responses:
+        "200": { description: Correction history, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/DifferentialCorrection" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/differentials/{differentialID}/actions/correct:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: differentialID, in: path, required: true, schema: { type: string, pattern: "^differential_[a-f0-9]{32}$" } }
+    post:
+      summary: Append an audited classification correction without mutating original evidence
+      operationId: correctDifferential
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [observation_kind, observation_key, after_classification, reason]
+              properties:
+                observation_kind: { type: string, minLength: 1, maxLength: 128 }
+                observation_key: { type: string, minLength: 1, maxLength: 512 }
+                after_classification: { type: string, enum: [pre_existing, resolved, newly_introduced, changed, indeterminate] }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "201": { description: Immutable correction record, content: { application/json: { schema: { $ref: "#/components/schemas/DifferentialCorrection" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/test-impacts:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     get:
@@ -1087,6 +1153,40 @@ paths:
       operationId: listProjectTestImpacts
       responses:
         "200": { description: Test impact records, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/TestImpact" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/test-impact-overrides:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    get:
+      summary: List targeted-test override history that cannot waive the full-suite gate
+      operationId: listTestImpactOverrides
+      responses:
+        "200": { description: Impact override history, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/TestImpactOverride" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/test-impacts/{impactID}/actions/override:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: impactID, in: path, required: true, schema: { type: string, pattern: "^impact_[a-f0-9]{32}$" } }
+    post:
+      summary: Append an audited targeted-test override without changing full-suite policy
+      operationId: overrideTestImpact
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [test_id, selected, reason]
+              properties:
+                test_id: { type: string, minLength: 1, maxLength: 512 }
+                selected: { type: boolean }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "201": { description: Immutable targeted-test override, content: { application/json: { schema: { $ref: "#/components/schemas/TestImpactOverride" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/caches:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
@@ -2906,6 +3006,34 @@ components:
         purpose: { type: string }
         items: { type: array, items: { $ref: "#/components/schemas/DifferentialObservation" } }
         created_at: { type: string, format: date-time }
+    BaselineSupersession:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, baseline_id, differential_id, replacement, actor_id, reason, created_at]
+      properties:
+        id: { type: string, pattern: "^baselinesupersession_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        baseline_id: { type: string, pattern: "^baseline_[a-f0-9]{32}$" }
+        differential_id: { type: string, pattern: "^differential_[a-f0-9]{32}$" }
+        replacement: { $ref: "#/components/schemas/VerificationBaseline" }
+        actor_id: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    DifferentialCorrection:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, differential_id, observation_kind, observation_key, before_classification, after_classification, actor_id, reason, created_at]
+      properties:
+        id: { type: string, pattern: "^correction_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        differential_id: { type: string, pattern: "^differential_[a-f0-9]{32}$" }
+        observation_kind: { type: string }
+        observation_key: { type: string }
+        before_classification: { type: string, enum: [pre_existing, resolved, newly_introduced, changed, indeterminate] }
+        after_classification: { type: string, enum: [pre_existing, resolved, newly_introduced, changed, indeterminate] }
+        actor_id: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
     ImpactSelection:
       type: object
       additionalProperties: false
@@ -2928,4 +3056,18 @@ components:
         selections: { type: array, items: { $ref: "#/components/schemas/ImpactSelection" } }
         full_suite_required: { type: boolean }
         policy_explanation: { type: string }
+        created_at: { type: string, format: date-time }
+    TestImpactOverride:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, impact_id, test_id, selected, actor_id, reason, created_at]
+      properties:
+        id: { type: string, pattern: "^impactoverride_[a-f0-9]{32}$" }
+        project_id: { type: string }
+        impact_id: { type: string, pattern: "^impact_[a-f0-9]{32}$" }
+        test_id: { type: string }
+        selected: { type: boolean }
+        actor_id: { type: string }
+        reason: { type: string }
+        expires_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }

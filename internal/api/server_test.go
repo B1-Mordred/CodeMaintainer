@@ -183,6 +183,58 @@ func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T
 	if response.StatusCode != http.StatusOK || !simulation.WouldFit || simulation.QuotaBytes != 512<<20 {
 		t.Fatalf("cache simulation %d %#v", response.StatusCode, simulation)
 	}
+	baseline, err := service.CaptureBaseline(context.Background(), intelligence.Baseline{ProjectID: "owner-repo", Revision: "abc123", ConfigSHA256: strings.Repeat("a", 64), ToolchainID: "go-v1", PackSetSHA256: strings.Repeat("b", 64), ActorID: "workflow-controller", Reason: "clean baseline", Observations: []intelligence.Observation{{Key: "unit", Kind: "test", Status: "failed"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	differential, err := service.CompareAndSave(context.Background(), baseline, strings.Repeat("c", 64), "full", []intelligence.Observation{{Key: "unit", Kind: "test", Status: "passed"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/differentials/"+differential.ID+"/actions/correct", "application/json", strings.NewReader(`{"observation_kind":"test","observation_key":"unit","after_classification":"indeterminate","reason":"artifact evidence is incomplete"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var correction intelligence.DifferentialCorrection
+	if err := json.NewDecoder(response.Body).Decode(&correction); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || correction.BeforeClassification != "changed" {
+		t.Fatalf("differential correction %d %#v", response.StatusCode, correction)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/baselines/"+baseline.ID+"/actions/supersede", "application/json", strings.NewReader(fmt.Sprintf(`{"differential_id":%q,"reason":"approved intentional golden update"}`, differential.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var supersession intelligence.BaselineSupersession
+	if err := json.NewDecoder(response.Body).Decode(&supersession); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || supersession.Replacement.Revision != differential.CandidateSHA {
+		t.Fatalf("baseline supersession %d %#v", response.StatusCode, supersession)
+	}
+	impact, err := intelligence.NewTestImpact("owner-repo", "def456", []string{"Target"}, map[string][]string{"unit:target": {"Target"}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	impact, err = service.RecordTestImpact(context.Background(), impact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/test-impacts/"+impact.ID+"/actions/override", "application/json", strings.NewReader(`{"test_id":"unit:target","selected":false,"reason":"targeted fixture is quarantined"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var override intelligence.TestImpactOverride
+	if err := json.NewDecoder(response.Body).Decode(&override); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || override.Selected || !impact.FullSuiteRequired {
+		t.Fatalf("impact override %d %#v", response.StatusCode, override)
+	}
 	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/actions/refresh", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)

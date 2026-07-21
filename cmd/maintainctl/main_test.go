@@ -147,3 +147,25 @@ func TestIntelligenceCacheSimulationUsesTypedBoundedAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/differentials/differential-one/actions/correct" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["observation_kind"] != "test" || body["observation_key"] != "unit" || body["after_classification"] != "indeterminate" || body["reason"] != "evidence incomplete" {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"correction_one"}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.intelligence([]string{"correct-differential", "project-one", "differential-one", "--kind", "test", "--key", "unit", "--classification", "indeterminate", "--reason", "evidence incomplete"}); err != nil {
+		t.Fatal(err)
+	}
+}

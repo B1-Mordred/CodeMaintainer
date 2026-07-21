@@ -212,6 +212,30 @@ type Differential struct {
 	CreatedAt    time.Time                 `json:"created_at"`
 }
 
+type BaselineSupersession struct {
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	BaselineID     string    `json:"baseline_id"`
+	DifferentialID string    `json:"differential_id"`
+	Replacement    Baseline  `json:"replacement"`
+	ActorID        string    `json:"actor_id"`
+	Reason         string    `json:"reason"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type DifferentialCorrection struct {
+	ID                   string    `json:"id"`
+	ProjectID            string    `json:"project_id"`
+	DifferentialID       string    `json:"differential_id"`
+	ObservationKind      string    `json:"observation_kind"`
+	ObservationKey       string    `json:"observation_key"`
+	BeforeClassification string    `json:"before_classification"`
+	AfterClassification  string    `json:"after_classification"`
+	ActorID              string    `json:"actor_id"`
+	Reason               string    `json:"reason"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
 type ImpactSelection struct {
 	TestID           string   `json:"test_id"`
 	Selected         bool     `json:"selected"`
@@ -229,6 +253,18 @@ type TestImpact struct {
 	FullSuiteRequired bool              `json:"full_suite_required"`
 	PolicyExplanation string            `json:"policy_explanation"`
 	CreatedAt         time.Time         `json:"created_at"`
+}
+
+type TestImpactOverride struct {
+	ID        string     `json:"id"`
+	ProjectID string     `json:"project_id"`
+	ImpactID  string     `json:"impact_id"`
+	TestID    string     `json:"test_id"`
+	Selected  bool       `json:"selected"`
+	ActorID   string     `json:"actor_id"`
+	Reason    string     `json:"reason"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type CacheEntry struct {
@@ -294,13 +330,22 @@ type Store interface {
 	GetContextManifest(context.Context, string, string) (ContextManifest, error)
 	ListContextManifests(context.Context, string, int) ([]ContextManifest, error)
 	SaveBaseline(context.Context, Baseline) (Baseline, error)
+	GetBaseline(context.Context, string, string) (Baseline, error)
 	FindBaseline(context.Context, string, string, string, string, string) (Baseline, bool, error)
 	ListBaselines(context.Context, string, int) ([]Baseline, error)
+	SaveBaselineSupersession(context.Context, BaselineSupersession) (BaselineSupersession, error)
+	ListBaselineSupersessions(context.Context, string, int) ([]BaselineSupersession, error)
 	SaveDifferential(context.Context, Differential) (Differential, error)
+	GetDifferential(context.Context, string, string) (Differential, error)
 	ListDifferentials(context.Context, string, int) ([]Differential, error)
+	SaveDifferentialCorrection(context.Context, DifferentialCorrection) (DifferentialCorrection, error)
+	ListDifferentialCorrections(context.Context, string, int) ([]DifferentialCorrection, error)
 	SaveTestImpact(context.Context, TestImpact) (TestImpact, error)
+	GetTestImpact(context.Context, string, string) (TestImpact, error)
 	FindTestImpact(context.Context, string, string) (TestImpact, bool, error)
 	ListTestImpacts(context.Context, string, int) ([]TestImpact, error)
+	SaveTestImpactOverride(context.Context, TestImpactOverride) (TestImpactOverride, error)
+	ListTestImpactOverrides(context.Context, string, int) ([]TestImpactOverride, error)
 	PutCacheEntry(context.Context, CacheEntry) (CacheEntry, error)
 	ListCacheEntries(context.Context, string, int) ([]CacheEntry, error)
 	CacheUsage(context.Context, string) (int64, int, error)

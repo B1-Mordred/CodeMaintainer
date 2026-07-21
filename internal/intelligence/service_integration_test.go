@@ -114,6 +114,26 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if classes["lint"] != "resolved" || classes["security"] != "newly_introduced" || classes["unit"] != "changed" {
 		t.Fatalf("classes = %#v", classes)
 	}
+	if _, err := service.CorrectDifferential(ctx, intelligence.DifferentialCorrection{ProjectID: "project-one", DifferentialID: differential.ID, ObservationKind: "scan", ObservationKey: "security", AfterClassification: "pre_existing", ActorID: "admin", Reason: "unsafe correction"}, true); err == nil {
+		t.Fatal("newly introduced finding was classified away")
+	}
+	correction, err := service.CorrectDifferential(ctx, intelligence.DifferentialCorrection{ProjectID: "project-one", DifferentialID: differential.ID, ObservationKind: "scan", ObservationKey: "security", AfterClassification: "indeterminate", ActorID: "admin", Reason: "scanner evidence is incomplete"}, true)
+	if err != nil || correction.BeforeClassification != "newly_introduced" {
+		t.Fatalf("differential correction = %#v %v", correction, err)
+	}
+	if corrections, listErr := service.DifferentialCorrections(ctx, "project-one", 10); listErr != nil || len(corrections) != 1 {
+		t.Fatalf("correction history = %#v %v", corrections, listErr)
+	}
+	if _, err := service.SupersedeBaseline(ctx, "project-one", baseline.ID, differential.ID, "admin", "intentional new scanner golden", false); err == nil {
+		t.Fatal("baseline supersession bypassed reauthentication")
+	}
+	supersession, err := service.SupersedeBaseline(ctx, "project-one", baseline.ID, differential.ID, "admin", "intentional new scanner golden", true)
+	if err != nil || supersession.Replacement.Revision != differential.CandidateSHA || len(supersession.Replacement.Observations) != 2 {
+		t.Fatalf("baseline supersession = %#v %v", supersession, err)
+	}
+	if supersessions, listErr := service.BaselineSupersessions(ctx, "project-one", 10); listErr != nil || len(supersessions) != 1 {
+		t.Fatalf("baseline supersession history = %#v %v", supersessions, listErr)
+	}
 
 	impact, err := intelligence.NewTestImpact("project-one", "abc123", []string{"Run"}, map[string][]string{"unit:run": {"Run"}, "unit:other": {"Other"}}, true)
 	if err != nil {
@@ -132,6 +152,13 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	}
 	if foundImpact, found, findErr := service.FindTestImpact(ctx, impact.ProjectID, impact.Revision); findErr != nil || !found || foundImpact.ID != impact.ID {
 		t.Fatalf("impact identity lookup = %#v %t %v", foundImpact, found, findErr)
+	}
+	override, err := service.OverrideTestImpact(ctx, intelligence.TestImpactOverride{ProjectID: "project-one", ImpactID: impact.ID, TestID: "unit:other", Selected: true, ActorID: "admin", Reason: "operator knows this integration boundary"}, true)
+	if err != nil || !override.Selected {
+		t.Fatalf("impact override = %#v %v", override, err)
+	}
+	if overrides, listErr := service.TestImpactOverrides(ctx, "project-one", 10); listErr != nil || len(overrides) != 1 {
+		t.Fatalf("impact override history = %#v %v", overrides, listErr)
 	}
 
 	cacheKey, _ := intelligence.NewCacheKey("project-one", "trusted", "parse", "owner/repo", "abc123", "bounded-parser-v1")

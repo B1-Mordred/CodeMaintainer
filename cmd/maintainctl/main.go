@@ -164,10 +164,65 @@ func (c client) intelligence(arguments []string) error {
 		return c.printJSON(http.MethodPost, base+"/context-manifests/actions/compare", map[string]any{"left_id": arguments[2], "right_id": arguments[3]})
 	case "baselines":
 		return c.printJSON(http.MethodGet, base+"/baselines", nil)
+	case "baseline-updates":
+		return c.printJSON(http.MethodGet, base+"/baseline-supersessions", nil)
+	case "supersede-baseline":
+		if len(arguments) < 3 {
+			return errors.New("usage: maintainctl intelligence supersede-baseline <project-id> <baseline-id> --differential id --reason text; reauthenticate first")
+		}
+		baselineID := arguments[2]
+		flags := flag.NewFlagSet("intelligence supersede-baseline", flag.ContinueOnError)
+		differentialID := flags.String("differential", "", "candidate differential identity")
+		reason := flags.String("reason", "", "audited intentional update reason")
+		if err := flags.Parse(arguments[3:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *differentialID == "" || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl intelligence supersede-baseline <project-id> <baseline-id> --differential id --reason text; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, base+"/baselines/"+url.PathEscape(baselineID)+"/actions/supersede", map[string]any{"differential_id": *differentialID, "reason": *reason})
 	case "differentials":
 		return c.printJSON(http.MethodGet, base+"/differentials", nil)
+	case "corrections":
+		return c.printJSON(http.MethodGet, base+"/differential-corrections", nil)
+	case "correct-differential":
+		if len(arguments) < 3 {
+			return errors.New("usage: maintainctl intelligence correct-differential <project-id> <differential-id> --kind kind --key key --classification class --reason text; reauthenticate first")
+		}
+		differentialID := arguments[2]
+		flags := flag.NewFlagSet("intelligence correct-differential", flag.ContinueOnError)
+		kind := flags.String("kind", "", "observation kind")
+		key := flags.String("key", "", "observation key")
+		classification := flags.String("classification", "", "corrected classification")
+		reason := flags.String("reason", "", "audited correction reason")
+		if err := flags.Parse(arguments[3:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *kind == "" || *key == "" || *classification == "" || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl intelligence correct-differential <project-id> <differential-id> --kind kind --key key --classification class --reason text; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, base+"/differentials/"+url.PathEscape(differentialID)+"/actions/correct", map[string]any{"observation_kind": *kind, "observation_key": *key, "after_classification": *classification, "reason": *reason})
 	case "test-impacts":
 		return c.printJSON(http.MethodGet, base+"/test-impacts", nil)
+	case "impact-overrides":
+		return c.printJSON(http.MethodGet, base+"/test-impact-overrides", nil)
+	case "override-impact":
+		if len(arguments) < 3 {
+			return errors.New("usage: maintainctl intelligence override-impact <project-id> <impact-id> --test id [--selected=false] --reason text [--expires-at RFC3339]; reauthenticate first")
+		}
+		impactID := arguments[2]
+		flags := flag.NewFlagSet("intelligence override-impact", flag.ContinueOnError)
+		testID := flags.String("test", "", "target test identity")
+		selected := flags.Bool("selected", true, "include or omit the targeted test")
+		reason := flags.String("reason", "", "audited override reason")
+		expiresAt := flags.String("expires-at", "", "optional RFC 3339 expiry")
+		if err := flags.Parse(arguments[3:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *testID == "" || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl intelligence override-impact <project-id> <impact-id> --test id [--selected=false] --reason text [--expires-at RFC3339]; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, base+"/test-impacts/"+url.PathEscape(impactID)+"/actions/override", map[string]any{"test_id": *testID, "selected": *selected, "reason": *reason, "expires_at": *expiresAt})
 	case "caches":
 		return c.printJSON(http.MethodGet, base+"/caches", nil)
 	case "verify-cache":
@@ -810,6 +865,10 @@ Commands:
   intelligence status|refresh|rebuild <project-id>
   intelligence query <project-id> <term>
   intelligence contexts|baselines|differentials|test-impacts|caches <project-id>
+  intelligence baseline-updates|corrections|impact-overrides <project-id>
+  intelligence supersede-baseline <project-id> <baseline-id> --differential id --reason text
+  intelligence correct-differential <project-id> <differential-id> --kind kind --key key --classification class --reason text
+  intelligence override-impact <project-id> <impact-id> --test id [--selected=false] --reason text [--expires-at RFC3339]
   intelligence compare-contexts <project-id> <left-manifest-id> <right-manifest-id>
   intelligence verify-cache <project-id> [--kind kind]
   intelligence simulate-cache <project-id> --kind kind --trust-domain domain --estimated-bytes bytes

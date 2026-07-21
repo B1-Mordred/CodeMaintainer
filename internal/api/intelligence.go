@@ -239,6 +239,55 @@ func (s *Server) listProjectBaselines(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) intelligenceReauthenticated(r *http.Request) bool {
+	if s.auth == nil {
+		return true
+	}
+	principal, exists := principalFromRequest(r)
+	return exists && principal.RecentlyReauthenticated(time.Now().UTC())
+}
+
+func (s *Server) listBaselineSupersessions(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	items, err := service.BaselineSupersessions(r.Context(), r.PathValue("projectID"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) supersedeBaseline(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		DifferentialID string `json:"differential_id"`
+		Reason         string `json:"reason"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 1000 || intelligence.ValidateIdentity(request.DifferentialID) != nil {
+		writeError(w, http.StatusBadRequest, "invalid_baseline_update", "a bounded differential identity and audited reason are required")
+		return
+	}
+	result, err := service.SupersedeBaseline(r.Context(), r.PathValue("projectID"), r.PathValue("baselineID"), request.DifferentialID, actorID(r), request.Reason, s.intelligenceReauthenticated(r))
+	if err != nil {
+		if strings.Contains(err.Error(), "reauthentication") {
+			writeError(w, http.StatusForbidden, "recent_reauthentication_required", err.Error())
+			return
+		}
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
 func (s *Server) listProjectDifferentials(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireIntelligence(w); !ok {
 		return
@@ -251,6 +300,45 @@ func (s *Server) listProjectDifferentials(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) listDifferentialCorrections(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	items, err := service.DifferentialCorrections(r.Context(), r.PathValue("projectID"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) correctDifferential(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		ObservationKind     string `json:"observation_kind"`
+		ObservationKey      string `json:"observation_key"`
+		AfterClassification string `json:"after_classification"`
+		Reason              string `json:"reason"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	result, err := service.CorrectDifferential(r.Context(), intelligence.DifferentialCorrection{ProjectID: r.PathValue("projectID"), DifferentialID: r.PathValue("differentialID"), ObservationKind: request.ObservationKind, ObservationKey: request.ObservationKey, AfterClassification: request.AfterClassification, ActorID: actorID(r), Reason: request.Reason}, s.intelligenceReauthenticated(r))
+	if err != nil {
+		if strings.Contains(err.Error(), "reauthentication") {
+			writeError(w, http.StatusForbidden, "recent_reauthentication_required", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_differential_correction", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
 func (s *Server) listProjectTestImpacts(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireIntelligence(w); !ok {
 		return
@@ -261,6 +349,54 @@ func (s *Server) listProjectTestImpacts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) listTestImpactOverrides(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	items, err := service.TestImpactOverrides(r.Context(), r.PathValue("projectID"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) overrideTestImpact(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		TestID    string `json:"test_id"`
+		Selected  bool   `json:"selected"`
+		Reason    string `json:"reason"`
+		ExpiresAt string `json:"expires_at,omitempty"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	var expires *time.Time
+	if request.ExpiresAt != "" {
+		parsed, err := time.Parse(time.RFC3339, request.ExpiresAt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_override_expiry", "override expiry must be RFC 3339")
+			return
+		}
+		expires = &parsed
+	}
+	result, err := service.OverrideTestImpact(r.Context(), intelligence.TestImpactOverride{ProjectID: r.PathValue("projectID"), ImpactID: r.PathValue("impactID"), TestID: request.TestID, Selected: request.Selected, ActorID: actorID(r), Reason: request.Reason, ExpiresAt: expires}, s.intelligenceReauthenticated(r))
+	if err != nil {
+		if strings.Contains(err.Error(), "reauthentication") {
+			writeError(w, http.StatusForbidden, "recent_reauthentication_required", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_test_impact_override", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) listProjectCaches(w http.ResponseWriter, r *http.Request) {

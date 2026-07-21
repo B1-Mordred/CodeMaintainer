@@ -1114,6 +1114,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/baseline-supersessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List attributed policy-gated baseline update history */
+        get: operations["listBaselineSupersessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/baselines/{baselineID}/actions/supersede": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                baselineID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve an intentional candidate-derived baseline update with audit */
+        post: operations["supersedeBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/differentials": {
         parameters: {
             query?: never;
@@ -1133,6 +1172,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/differential-corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List append-only attributed differential-classification corrections */
+        get: operations["listDifferentialCorrections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/differentials/{differentialID}/actions/correct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                differentialID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append an audited classification correction without mutating original evidence */
+        post: operations["correctDifferential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/test-impacts": {
         parameters: {
             query?: never;
@@ -1146,6 +1224,45 @@ export interface paths {
         get: operations["listProjectTestImpacts"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/test-impact-overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        /** List targeted-test override history that cannot waive the full-suite gate */
+        get: operations["listTestImpactOverrides"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/test-impacts/{impactID}/actions/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                impactID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append an audited targeted-test override without changing full-suite policy */
+        post: operations["overrideTestImpact"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2842,6 +2959,32 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        BaselineSupersession: {
+            id: string;
+            project_id: string;
+            baseline_id: string;
+            differential_id: string;
+            replacement: components["schemas"]["VerificationBaseline"];
+            actor_id: string;
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        DifferentialCorrection: {
+            id: string;
+            project_id: string;
+            differential_id: string;
+            observation_kind: string;
+            observation_key: string;
+            /** @enum {string} */
+            before_classification: "pre_existing" | "resolved" | "newly_introduced" | "changed" | "indeterminate";
+            /** @enum {string} */
+            after_classification: "pre_existing" | "resolved" | "newly_introduced" | "changed" | "indeterminate";
+            actor_id: string;
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         ImpactSelection: {
             test_id: string;
             selected: boolean;
@@ -2857,6 +3000,19 @@ export interface components {
             selections: components["schemas"]["ImpactSelection"][];
             full_suite_required: boolean;
             policy_explanation: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TestImpactOverride: {
+            id: string;
+            project_id: string;
+            impact_id: string;
+            test_id: string;
+            selected: boolean;
+            actor_id: string;
+            reason: string;
+            /** Format: date-time */
+            expires_at?: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -4746,6 +4902,66 @@ export interface operations {
             404: components["responses"]["ErrorResponse"];
         };
     };
+    listBaselineSupersessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Baseline supersessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BaselineSupersession"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    supersedeBaseline: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                baselineID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    differential_id: string;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable supersession record and replacement baseline */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineSupersession"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
     listProjectDifferentials: {
         parameters: {
             query?: never;
@@ -4771,6 +4987,69 @@ export interface operations {
             404: components["responses"]["ErrorResponse"];
         };
     };
+    listDifferentialCorrections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Correction history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DifferentialCorrection"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    correctDifferential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                differentialID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    observation_kind: string;
+                    observation_key: string;
+                    /** @enum {string} */
+                    after_classification: "pre_existing" | "resolved" | "newly_introduced" | "changed" | "indeterminate";
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable correction record */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DifferentialCorrection"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
     listProjectTestImpacts: {
         parameters: {
             query?: never;
@@ -4793,6 +5072,69 @@ export interface operations {
                     };
                 };
             };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listTestImpactOverrides: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Impact override history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TestImpactOverride"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    overrideTestImpact: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                impactID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    test_id: string;
+                    selected: boolean;
+                    reason: string;
+                    /** Format: date-time */
+                    expires_at?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable targeted-test override */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestImpactOverride"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
             404: components["responses"]["ErrorResponse"];
         };
     };

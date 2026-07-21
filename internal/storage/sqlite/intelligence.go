@@ -352,6 +352,14 @@ func (s *Store) SaveBaseline(ctx context.Context, value intelligence.Baseline) (
 	return value, err
 }
 
+func (s *Store) GetBaseline(ctx context.Context, projectID, baselineID string) (intelligence.Baseline, error) {
+	value, err := scanBaseline(s.db.QueryRowContext(ctx, `SELECT id,project_id,revision,config_sha256,toolchain_id,pack_set_sha256,actor_id,reason,observations_json,created_at FROM verification_baselines WHERE project_id=? AND id=?`, projectID, baselineID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return value, storage.ErrNotFound
+	}
+	return value, err
+}
+
 func (s *Store) FindBaseline(ctx context.Context, projectID, revision, configSHA256, toolchainID, packSetSHA256 string) (intelligence.Baseline, bool, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id,project_id,revision,config_sha256,toolchain_id,pack_set_sha256,actor_id,reason,observations_json,created_at
 		FROM verification_baselines WHERE project_id=? AND revision=? AND config_sha256=? AND toolchain_id=? AND pack_set_sha256=?`, projectID, revision, configSHA256, toolchainID, packSetSHA256)
@@ -394,6 +402,65 @@ func (s *Store) ListBaselines(ctx context.Context, projectID string, limit int) 
 	}
 	return items, rows.Err()
 }
+
+func (s *Store) SaveBaselineSupersession(ctx context.Context, value intelligence.BaselineSupersession) (intelligence.BaselineSupersession, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return value, err
+	}
+	defer tx.Rollback()
+	value.ID, err = NewID("baselinesupersession")
+	if err != nil {
+		return value, err
+	}
+	value.CreatedAt = s.now()
+	value.Replacement.ID, err = NewID("baseline")
+	if err != nil {
+		return value, err
+	}
+	value.Replacement.CreatedAt = value.CreatedAt
+	payload, _ := json.Marshal(value.Replacement.Observations)
+	_, err = tx.ExecContext(ctx, `INSERT INTO verification_baselines(id,project_id,revision,config_sha256,toolchain_id,pack_set_sha256,actor_id,reason,observations_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, value.Replacement.ID, value.Replacement.ProjectID, value.Replacement.Revision, value.Replacement.ConfigSHA256, value.Replacement.ToolchainID, value.Replacement.PackSetSHA256, value.Replacement.ActorID, value.Replacement.Reason, string(payload), value.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return value, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO baseline_supersessions(id,project_id,baseline_id,differential_id,replacement_baseline_id,actor_id,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.BaselineID, value.DifferentialID, value.Replacement.ID, value.ActorID, value.Reason, value.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return value, err
+	}
+	details, _ := json.Marshal(map[string]any{"baseline_id": value.BaselineID, "differential_id": value.DifferentialID, "replacement_baseline_id": value.Replacement.ID, "reason": value.Reason})
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: value.ActorID, ActorRole: "administrator", Action: "baseline.supersede", TargetType: "project", TargetID: value.ProjectID, Details: details}); err != nil {
+		return value, err
+	}
+	return value, tx.Commit()
+}
+
+func (s *Store) ListBaselineSupersessions(ctx context.Context, projectID string, limit int) ([]intelligence.BaselineSupersession, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id,s.project_id,s.baseline_id,s.differential_id,s.actor_id,s.reason,s.created_at,b.id,b.project_id,b.revision,b.config_sha256,b.toolchain_id,b.pack_set_sha256,b.actor_id,b.reason,b.observations_json,b.created_at FROM baseline_supersessions s JOIN verification_baselines b ON b.id=s.replacement_baseline_id WHERE s.project_id=? ORDER BY s.created_at DESC,s.id DESC LIMIT ?`, projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []intelligence.BaselineSupersession{}
+	for rows.Next() {
+		var value intelligence.BaselineSupersession
+		var supersededAt, observations, replacementAt string
+		if err := rows.Scan(&value.ID, &value.ProjectID, &value.BaselineID, &value.DifferentialID, &value.ActorID, &value.Reason, &supersededAt, &value.Replacement.ID, &value.Replacement.ProjectID, &value.Replacement.Revision, &value.Replacement.ConfigSHA256, &value.Replacement.ToolchainID, &value.Replacement.PackSetSHA256, &value.Replacement.ActorID, &value.Replacement.Reason, &observations, &replacementAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(observations), &value.Replacement.Observations); err != nil {
+			return nil, err
+		}
+		value.CreatedAt, _ = time.Parse(timestampFormat, supersededAt)
+		value.Replacement.CreatedAt, _ = time.Parse(timestampFormat, replacementAt)
+		items = append(items, value)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) SaveDifferential(ctx context.Context, value intelligence.Differential) (intelligence.Differential, error) {
 	var existing intelligence.Differential
 	var payload, created string
@@ -417,6 +484,23 @@ func (s *Store) SaveDifferential(ctx context.Context, value intelligence.Differe
 	serialized, _ := json.Marshal(value.Items)
 	_, err = s.db.ExecContext(ctx, `INSERT INTO verification_differentials(id,baseline_id,candidate_sha,purpose,items_json,created_at) VALUES(?,?,?,?,?,?)`, value.ID, value.BaselineID, value.CandidateSHA, value.Purpose, string(serialized), value.CreatedAt.Format(timestampFormat))
 	return value, err
+}
+
+func (s *Store) GetDifferential(ctx context.Context, projectID, differentialID string) (intelligence.Differential, error) {
+	var value intelligence.Differential
+	var payload, created string
+	err := s.db.QueryRowContext(ctx, `SELECT d.id,d.baseline_id,d.candidate_sha,d.purpose,d.items_json,d.created_at FROM verification_differentials d JOIN verification_baselines b ON b.id=d.baseline_id WHERE b.project_id=? AND d.id=?`, projectID, differentialID).Scan(&value.ID, &value.BaselineID, &value.CandidateSHA, &value.Purpose, &payload, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return value, storage.ErrNotFound
+	}
+	if err != nil {
+		return value, err
+	}
+	if err := json.Unmarshal([]byte(payload), &value.Items); err != nil {
+		return value, err
+	}
+	value.CreatedAt, _ = time.Parse(timestampFormat, created)
+	return value, nil
 }
 func (s *Store) ListDifferentials(ctx context.Context, projectID string, limit int) ([]intelligence.Differential, error) {
 	if limit <= 0 || limit > 500 {
@@ -442,6 +526,48 @@ func (s *Store) ListDifferentials(ctx context.Context, projectID string, limit i
 	}
 	return items, rows.Err()
 }
+
+func (s *Store) SaveDifferentialCorrection(ctx context.Context, value intelligence.DifferentialCorrection) (intelligence.DifferentialCorrection, error) {
+	value.ID, _ = NewID("correction")
+	value.CreatedAt = s.now()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return value, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO differential_corrections(id,project_id,differential_id,observation_kind,observation_key,before_classification,after_classification,actor_id,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.DifferentialID, value.ObservationKind, value.ObservationKey, value.BeforeClassification, value.AfterClassification, value.ActorID, value.Reason, value.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return value, err
+	}
+	details, _ := json.Marshal(value)
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: value.ActorID, ActorRole: "administrator", Action: "differential.correct", TargetType: "differential", TargetID: value.DifferentialID, Details: details}); err != nil {
+		return value, err
+	}
+	return value, tx.Commit()
+}
+
+func (s *Store) ListDifferentialCorrections(ctx context.Context, projectID string, limit int) ([]intelligence.DifferentialCorrection, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,project_id,differential_id,observation_kind,observation_key,before_classification,after_classification,actor_id,reason,created_at FROM differential_corrections WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT ?`, projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []intelligence.DifferentialCorrection{}
+	for rows.Next() {
+		var value intelligence.DifferentialCorrection
+		var created string
+		if err := rows.Scan(&value.ID, &value.ProjectID, &value.DifferentialID, &value.ObservationKind, &value.ObservationKey, &value.BeforeClassification, &value.AfterClassification, &value.ActorID, &value.Reason, &created); err != nil {
+			return nil, err
+		}
+		value.CreatedAt, _ = time.Parse(timestampFormat, created)
+		items = append(items, value)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) SaveTestImpact(ctx context.Context, value intelligence.TestImpact) (intelligence.TestImpact, error) {
 	if existing, found, err := s.FindTestImpact(ctx, value.ProjectID, value.Revision); err != nil {
 		return value, err
@@ -458,6 +584,28 @@ func (s *Store) SaveTestImpact(ctx context.Context, value intelligence.TestImpac
 	selections, _ := json.Marshal(value.Selections)
 	_, err = s.db.ExecContext(ctx, `INSERT INTO test_impact_records(id,project_id,revision,changed_symbols_json,selections_json,full_suite_required,policy_explanation,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.Revision, string(changed), string(selections), boolInt(value.FullSuiteRequired), value.PolicyExplanation, value.CreatedAt.Format(timestampFormat))
 	return value, err
+}
+
+func (s *Store) GetTestImpact(ctx context.Context, projectID, impactID string) (intelligence.TestImpact, error) {
+	var value intelligence.TestImpact
+	var changed, selections, created string
+	var full int
+	err := s.db.QueryRowContext(ctx, `SELECT id,project_id,revision,changed_symbols_json,selections_json,full_suite_required,policy_explanation,created_at FROM test_impact_records WHERE project_id=? AND id=?`, projectID, impactID).Scan(&value.ID, &value.ProjectID, &value.Revision, &changed, &selections, &full, &value.PolicyExplanation, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return value, storage.ErrNotFound
+	}
+	if err != nil {
+		return value, err
+	}
+	if err := json.Unmarshal([]byte(changed), &value.ChangedSymbols); err != nil {
+		return value, err
+	}
+	if err := json.Unmarshal([]byte(selections), &value.Selections); err != nil {
+		return value, err
+	}
+	value.FullSuiteRequired = full != 0
+	value.CreatedAt, _ = time.Parse(timestampFormat, created)
+	return value, nil
 }
 
 func (s *Store) FindTestImpact(ctx context.Context, projectID, revision string) (intelligence.TestImpact, bool, error) {
@@ -505,6 +653,58 @@ func (s *Store) ListTestImpacts(ctx context.Context, projectID string, limit int
 			return nil, err
 		}
 		value.FullSuiteRequired = full != 0
+		value.CreatedAt, _ = time.Parse(timestampFormat, created)
+		items = append(items, value)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) SaveTestImpactOverride(ctx context.Context, value intelligence.TestImpactOverride) (intelligence.TestImpactOverride, error) {
+	value.ID, _ = NewID("impactoverride")
+	value.CreatedAt = s.now()
+	var expires any
+	if value.ExpiresAt != nil {
+		expires = value.ExpiresAt.UTC().Format(timestampFormat)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return value, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO test_impact_overrides(id,project_id,impact_id,test_id,selected,actor_id,reason,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, value.ID, value.ProjectID, value.ImpactID, value.TestID, boolInt(value.Selected), value.ActorID, value.Reason, expires, value.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return value, err
+	}
+	details, _ := json.Marshal(value)
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: value.ActorID, ActorRole: "administrator", Action: "test_impact.override", TargetType: "impact", TargetID: value.ImpactID, Details: details}); err != nil {
+		return value, err
+	}
+	return value, tx.Commit()
+}
+
+func (s *Store) ListTestImpactOverrides(ctx context.Context, projectID string, limit int) ([]intelligence.TestImpactOverride, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,project_id,impact_id,test_id,selected,actor_id,reason,expires_at,created_at FROM test_impact_overrides WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT ?`, projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []intelligence.TestImpactOverride{}
+	for rows.Next() {
+		var value intelligence.TestImpactOverride
+		var selected int
+		var expires sql.NullString
+		var created string
+		if err := rows.Scan(&value.ID, &value.ProjectID, &value.ImpactID, &value.TestID, &selected, &value.ActorID, &value.Reason, &expires, &created); err != nil {
+			return nil, err
+		}
+		value.Selected = selected != 0
+		if expires.Valid {
+			parsed, _ := time.Parse(timestampFormat, expires.String)
+			value.ExpiresAt = &parsed
+		}
 		value.CreatedAt, _ = time.Parse(timestampFormat, created)
 		items = append(items, value)
 	}

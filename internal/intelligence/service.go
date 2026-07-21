@@ -492,12 +492,109 @@ func (service *Service) FindBaseline(ctx context.Context, projectID, revision, c
 	return service.store.FindBaseline(ctx, projectID, revision, configSHA256, toolchainID, packSetSHA256)
 }
 
+func (service *Service) SupersedeBaseline(ctx context.Context, projectID, baselineID, differentialID, actorID, reason string, recentlyReauthenticated bool) (BaselineSupersession, error) {
+	if !recentlyReauthenticated {
+		return BaselineSupersession{}, errors.New("recent reauthentication is required for baseline supersession")
+	}
+	reason = strings.TrimSpace(reason)
+	if ValidateIdentity(projectID) != nil || ValidateIdentity(baselineID) != nil || ValidateIdentity(differentialID) != nil || ValidateIdentity(actorID) != nil || reason == "" || len(reason) > 1000 {
+		return BaselineSupersession{}, errors.New("bounded project, evidence, actor, and reason are required")
+	}
+	baseline, err := service.store.GetBaseline(ctx, projectID, baselineID)
+	if err != nil {
+		return BaselineSupersession{}, err
+	}
+	differential, err := service.store.GetDifferential(ctx, projectID, differentialID)
+	if err != nil {
+		return BaselineSupersession{}, err
+	}
+	if differential.BaselineID != baseline.ID {
+		return BaselineSupersession{}, errors.New("differential does not compare against the selected baseline")
+	}
+	observations := make([]Observation, 0, len(differential.Items))
+	for _, item := range differential.Items {
+		if len(item.Candidate) == 0 {
+			continue
+		}
+		var observation Observation
+		if err := json.Unmarshal(item.Candidate, &observation); err != nil || observation.Kind != item.Kind || observation.Key != item.Key {
+			return BaselineSupersession{}, errors.New("candidate differential contains invalid observation evidence")
+		}
+		observations = append(observations, observation)
+	}
+	if len(observations) == 0 {
+		return BaselineSupersession{}, errors.New("candidate differential has no observations eligible for an explicit baseline update")
+	}
+	replacement := Baseline{ProjectID: projectID, Revision: differential.CandidateSHA, ConfigSHA256: baseline.ConfigSHA256, ToolchainID: baseline.ToolchainID, PackSetSHA256: baseline.PackSetSHA256, ActorID: actorID, Reason: "approved intentional baseline update: " + reason, Observations: observations}
+	return service.store.SaveBaselineSupersession(ctx, BaselineSupersession{ProjectID: projectID, BaselineID: baseline.ID, DifferentialID: differential.ID, Replacement: replacement, ActorID: actorID, Reason: reason})
+}
+
+func (service *Service) BaselineSupersessions(ctx context.Context, projectID string, limit int) ([]BaselineSupersession, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListBaselineSupersessions(ctx, projectID, limit)
+}
+
 func (service *Service) CompareAndSave(ctx context.Context, baseline Baseline, candidateSHA, purpose string, observations []Observation) (Differential, error) {
 	if baseline.ID == "" || len(candidateSHA) != 64 || ValidateIdentity(purpose) != nil || len(observations) == 0 || len(observations) > 10_000 {
 		return Differential{}, errors.New("stored baseline, candidate hash, purpose, and bounded observations are required")
 	}
 	differential := Differential{BaselineID: baseline.ID, CandidateSHA: candidateSHA, Purpose: purpose, Items: CompareObservations(baseline.Observations, observations)}
 	return service.store.SaveDifferential(ctx, differential)
+}
+
+func (service *Service) CorrectDifferential(ctx context.Context, correction DifferentialCorrection, recentlyReauthenticated bool) (DifferentialCorrection, error) {
+	if !recentlyReauthenticated {
+		return DifferentialCorrection{}, errors.New("recent reauthentication is required for differential correction")
+	}
+	correction.Reason = strings.TrimSpace(correction.Reason)
+	if ValidateIdentity(correction.ProjectID) != nil || ValidateIdentity(correction.DifferentialID) != nil || ValidateIdentity(correction.ActorID) != nil || correction.ObservationKind == "" || correction.ObservationKey == "" || len(correction.ObservationKind) > 128 || len(correction.ObservationKey) > 512 || correction.Reason == "" || len(correction.Reason) > 1000 {
+		return DifferentialCorrection{}, errors.New("bounded correction identity, observation, actor, and reason are required")
+	}
+	validClass := map[string]bool{"pre_existing": true, "resolved": true, "newly_introduced": true, "changed": true, "indeterminate": true}
+	if !validClass[correction.AfterClassification] {
+		return DifferentialCorrection{}, errors.New("unsupported corrected classification")
+	}
+	differential, err := service.store.GetDifferential(ctx, correction.ProjectID, correction.DifferentialID)
+	if err != nil {
+		return DifferentialCorrection{}, err
+	}
+	current := ""
+	for _, item := range differential.Items {
+		if item.Kind == correction.ObservationKind && item.Key == correction.ObservationKey {
+			current = item.Classification
+			break
+		}
+	}
+	if current == "" {
+		return DifferentialCorrection{}, errors.New("differential observation was not found")
+	}
+	history, err := service.store.ListDifferentialCorrections(ctx, correction.ProjectID, 500)
+	if err != nil {
+		return DifferentialCorrection{}, err
+	}
+	for _, prior := range history {
+		if prior.DifferentialID == correction.DifferentialID && prior.ObservationKind == correction.ObservationKind && prior.ObservationKey == correction.ObservationKey {
+			current = prior.AfterClassification
+			break
+		}
+	}
+	if current == correction.AfterClassification {
+		return DifferentialCorrection{}, errors.New("corrected classification must change the current effective classification")
+	}
+	if current == "newly_introduced" && (correction.AfterClassification == "pre_existing" || correction.AfterClassification == "resolved") {
+		return DifferentialCorrection{}, errors.New("a newly introduced finding cannot be classified away as pre-existing or resolved")
+	}
+	correction.BeforeClassification = current
+	return service.store.SaveDifferentialCorrection(ctx, correction)
+}
+
+func (service *Service) DifferentialCorrections(ctx context.Context, projectID string, limit int) ([]DifferentialCorrection, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListDifferentialCorrections(ctx, projectID, limit)
 }
 
 func (service *Service) RecordTestImpact(ctx context.Context, impact TestImpact) (TestImpact, error) {
@@ -512,6 +609,34 @@ func (service *Service) FindTestImpact(ctx context.Context, projectID, revision 
 		return TestImpact{}, false, errors.New("project and revision identities are required")
 	}
 	return service.store.FindTestImpact(ctx, projectID, revision)
+}
+
+func (service *Service) OverrideTestImpact(ctx context.Context, value TestImpactOverride, recentlyReauthenticated bool) (TestImpactOverride, error) {
+	if !recentlyReauthenticated {
+		return TestImpactOverride{}, errors.New("recent reauthentication is required for test-impact override")
+	}
+	value.Reason = strings.TrimSpace(value.Reason)
+	if ValidateIdentity(value.ProjectID) != nil || ValidateIdentity(value.ImpactID) != nil || ValidateIdentity(value.ActorID) != nil || value.TestID == "" || len(value.TestID) > 512 || value.Reason == "" || len(value.Reason) > 1000 {
+		return TestImpactOverride{}, errors.New("bounded project, impact, test, actor, and reason are required")
+	}
+	if value.ExpiresAt != nil && (value.ExpiresAt.Before(time.Now().UTC()) || value.ExpiresAt.After(time.Now().UTC().Add(366*24*time.Hour))) {
+		return TestImpactOverride{}, errors.New("impact override expiry must be in the future and within one year")
+	}
+	impact, err := service.store.GetTestImpact(ctx, value.ProjectID, value.ImpactID)
+	if err != nil {
+		return TestImpactOverride{}, err
+	}
+	if !impact.FullSuiteRequired {
+		return TestImpactOverride{}, errors.New("impact record lacks the immutable full-suite safety requirement")
+	}
+	return service.store.SaveTestImpactOverride(ctx, value)
+}
+
+func (service *Service) TestImpactOverrides(ctx context.Context, projectID string, limit int) ([]TestImpactOverride, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListTestImpactOverrides(ctx, projectID, limit)
 }
 
 func (service *Service) RegisterCacheEntry(ctx context.Context, entry CacheEntry) (CacheEntry, error) {
