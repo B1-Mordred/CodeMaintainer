@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/local-code-maintainer/appliance/internal/runners"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef"

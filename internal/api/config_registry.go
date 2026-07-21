@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
 )
 
 func (s *Server) requireConfigRegistry(w http.ResponseWriter) (*appconfig.RegistryService, bool) {

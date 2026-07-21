@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 func (s *Store) FindBlobAnalysis(ctx context.Context, projectID, repository, blobSHA256, parserID string) (intelligence.BlobAnalysis, bool, error) {

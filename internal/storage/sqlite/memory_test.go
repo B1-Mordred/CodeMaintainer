@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 )
 
 func TestDurableMemoryIsProjectScopedQuarantinedAuditedAndTraceable(t *testing.T) {

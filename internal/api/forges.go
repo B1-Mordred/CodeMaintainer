@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/forges"
+	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
 )
 
 func (s *Server) requireForges(w http.ResponseWriter) (*forges.Service, bool) {

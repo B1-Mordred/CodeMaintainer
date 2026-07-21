@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func TestRegistryServiceDraftValidateReviewApplyAndResolve(t *testing.T) {

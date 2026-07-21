@@ -90,7 +90,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.writeRPC(w, request.ID, map[string]any{
 			"protocolVersion": "2025-06-18",
 			"capabilities":    map[string]any{"tools": map[string]bool{"listChanged": false}},
-			"serverInfo":      map[string]string{"name": "local-code-maintainer", "version": "1"},
+			"serverInfo":      map[string]string{"name": "codemaintainer", "version": "1"},
 		}, nil)
 	case "ping":
 		b.writeRPC(w, request.ID, map[string]any{}, nil)

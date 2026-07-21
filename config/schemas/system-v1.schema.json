@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local-code-maintainer.invalid/schemas/system-v1.schema.json",
-  "title": "Local Code Maintainer system configuration",
+  "$id": "https://codemaintainer.invalid/schemas/system-v1.schema.json",
+  "title": "CodeMaintainer system configuration",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "deployment", "workflow", "qc", "protected_paths", "notifications"],

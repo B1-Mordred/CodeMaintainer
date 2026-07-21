@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
-	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/runners"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	"github.com/local-code-maintainer/appliance/internal/verification"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
+	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
 var workflowID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

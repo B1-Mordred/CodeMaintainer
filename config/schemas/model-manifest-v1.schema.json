@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local-code-maintainer.invalid/schemas/model-manifest-v1.schema.json",
+  "$id": "https://codemaintainer.invalid/schemas/model-manifest-v1.schema.json",
   "title": "Allow-listed local model profile",
   "type": "object",
   "additionalProperties": false,

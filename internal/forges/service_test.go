@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/forges"
-	"github.com/local-code-maintainer/appliance/internal/projects"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	"github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
+	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 type fakeForge struct {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func TestWorkerReleasesLeaseWhenProcessorCompletes(t *testing.T) {

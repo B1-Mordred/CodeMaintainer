@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/local-code-maintainer/appliance/internal/capabilities"
-	"github.com/local-code-maintainer/appliance/internal/projects"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
+	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func testService(t *testing.T) (*capabilities.Service, *storesqlite.Store) {

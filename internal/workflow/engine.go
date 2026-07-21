@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 type Outcome struct {

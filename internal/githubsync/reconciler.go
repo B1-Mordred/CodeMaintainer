@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/gitbridge"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/projects"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 const maxPublicationArtifact = int64(1 << 20)

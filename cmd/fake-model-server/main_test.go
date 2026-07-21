@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 )
 
 func TestFakeModelDeterministicallyRejectsFirstQCAndPassesSecond(t *testing.T) {

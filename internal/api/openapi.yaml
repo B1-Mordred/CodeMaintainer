@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Local Code Maintainer Controller API
+  title: CodeMaintainer Controller API
   version: 0.1.0
   description: Trusted workflow control API. No endpoint accepts arbitrary commands, images, mounts, model paths, or container options.
   license:

@@ -1,11 +1,11 @@
 {
-  "name": "local-code-maintainer-ui",
+  "name": "codemaintainer-ui",
   "private": true,
   "version": "0.1.0-dev",
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
-    "check:api": "openapi-typescript ../internal/api/openapi.yaml -o /tmp/local-code-maintainer-schema.d.ts && diff -u src/api/schema.d.ts /tmp/local-code-maintainer-schema.d.ts",
+    "check:api": "openapi-typescript ../internal/api/openapi.yaml -o /tmp/codemaintainer-schema.d.ts && diff -u src/api/schema.d.ts /tmp/codemaintainer-schema.d.ts",
     "dev": "vite --host 127.0.0.1",
     "generate:api": "openapi-typescript ../internal/api/openapi.yaml -o src/api/schema.d.ts",
     "test": "vitest run",

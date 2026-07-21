@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	_ "modernc.org/sqlite"
 )
 

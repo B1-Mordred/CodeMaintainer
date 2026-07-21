@@ -1,8 +1,9 @@
 golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58
-local/code-maintainer-browser-tool:0.1.0-dev
-local/code-maintainer-cli:0.1.0-dev
-local/code-maintainer-controller:0.1.0-dev
-local/code-maintainer-fake-model-server:0.1.0-dev
-local/code-maintainer-git-bridge:0.1.0-dev
-local/code-maintainer-runnerd:0.1.0-dev
+local/codemaintainer-browser-tool:0.1.0-dev
+local/codemaintainer-cli:0.1.0-dev
+local/codemaintainer-code-intelligence:0.1.0-dev
+local/codemaintainer-controller:0.1.0-dev
+local/codemaintainer-fake-model-server:0.1.0-dev
+local/codemaintainer-git-bridge:0.1.0-dev
+local/codemaintainer-runnerd:0.1.0-dev
 node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059

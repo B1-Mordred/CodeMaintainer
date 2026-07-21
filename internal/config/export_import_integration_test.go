@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func TestDeclarativeExportAndForwardCompatibleImportNeverApplyUnknownKeys(t *testing.T) {

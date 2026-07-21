@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 var workflowCommit = regexp.MustCompile(`^[a-f0-9]{40}(?:[a-f0-9]{24})?$`)

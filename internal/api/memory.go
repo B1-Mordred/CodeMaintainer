@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 )
 
 const memoryRetrievalBudget = 4096

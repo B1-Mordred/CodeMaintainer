@@ -1,4 +1,4 @@
-module github.com/local-code-maintainer/appliance
+module github.com/B1-Mordred/CodeMaintainer
 
 go 1.25.12
 

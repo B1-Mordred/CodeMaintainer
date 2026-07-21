@@ -1,6 +1,6 @@
 {
   "version": "0.1.0-dev",
-  "name": "local-code-maintainer-ui",
+  "name": "codemaintainer-ui",
   "dependencies": {
     "@radix-ui/react-dialog": {
       "version": "1.1.20",
@@ -1125,14 +1125,7 @@
               "overridden": false
             },
             "js-yaml": {
-              "version": "4.2.0",
-              "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.2.0.tgz",
-              "overridden": false,
-              "dependencies": {
-                "argparse": {
-                  "version": "2.0.1"
-                }
-              }
+              "version": "4.3.0"
             },
             "minimatch": {
               "version": "5.1.9",
@@ -1635,7 +1628,7 @@
         "js-yaml": {
           "version": "4.3.0",
           "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.0.tgz",
-          "overridden": false,
+          "overridden": true,
           "dependencies": {
             "argparse": {
               "version": "2.0.1",

@@ -23,20 +23,20 @@ build:
 	docker compose run --rm web-tool sh -c 'npm ci && npm run build'
 
 build-runners:
-	docker build -f images/runners/Dockerfile --target runner-base -t local/code-maintainer-runner-base:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-python -t local/code-maintainer-runner-python:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-node -t local/code-maintainer-runner-node:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-c -t local/code-maintainer-runner-c:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-cpp -t local/code-maintainer-runner-cpp:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-rust -t local/code-maintainer-runner-rust:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-go -t local/code-maintainer-runner-go:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target runner-full -t local/code-maintainer-runner-full:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target implementation-agent -t local/code-maintainer-implementation-agent:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target qc-agent -t local/code-maintainer-qc-agent:0.1.0-dev .
-	docker build -f images/runners/Dockerfile --target dependencies-worker -t local/code-maintainer-dependencies-worker:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-base -t local/codemaintainer-runner-base:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-python -t local/codemaintainer-runner-python:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-node -t local/codemaintainer-runner-node:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-c -t local/codemaintainer-runner-c:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-cpp -t local/codemaintainer-runner-cpp:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-rust -t local/codemaintainer-runner-rust:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-go -t local/codemaintainer-runner-go:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target runner-full -t local/codemaintainer-runner-full:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target implementation-agent -t local/codemaintainer-implementation-agent:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target qc-agent -t local/codemaintainer-qc-agent:0.1.0-dev .
+	docker build -f images/runners/Dockerfile --target dependencies-worker -t local/codemaintainer-dependencies-worker:0.1.0-dev .
 
 build-inference:
-	docker build -f images/inference/Dockerfile --target inference-haswell -t local/code-maintainer-inference:0.1.0-dev .
+	docker build -f images/inference/Dockerfile --target inference-haswell -t local/codemaintainer-inference:0.1.0-dev .
 
 compose-check:
 	docker compose -f compose.yaml -f compose.dev.yaml config --quiet

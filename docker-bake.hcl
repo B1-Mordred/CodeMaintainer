@@ -14,7 +14,7 @@ target "dependencies-worker" {
   context = "."
   dockerfile = "images/runners/Dockerfile"
   target = "dependencies-worker"
-  tags = ["local/code-maintainer-dependencies-worker:0.1.0-dev"]
+  tags = ["local/codemaintainer-dependencies-worker:0.1.0-dev"]
 }
 
 target "control-plane" {
@@ -28,38 +28,38 @@ target "control-plane" {
 target "controller" {
   inherits = ["control-plane"]
   target   = "controller"
-  tags     = ["local/code-maintainer-controller:${VERSION}"]
+  tags     = ["local/codemaintainer-controller:${VERSION}"]
 }
 
 target "maintainctl" {
   inherits = ["control-plane"]
   target   = "maintainctl"
-  tags     = ["local/code-maintainer-cli:${VERSION}"]
+  tags     = ["local/codemaintainer-cli:${VERSION}"]
 }
 
 target "runnerd" {
   inherits = ["control-plane"]
   target   = "runnerd"
-  tags     = ["local/code-maintainer-runnerd:${VERSION}"]
+  tags     = ["local/codemaintainer-runnerd:${VERSION}"]
 }
 
 target "fake-model-server" {
   inherits = ["control-plane"]
   target   = "fake-model-server"
-  tags     = ["local/code-maintainer-fake-model-server:${VERSION}"]
+  tags     = ["local/codemaintainer-fake-model-server:${VERSION}"]
 }
 
 target "git-bridge" {
   inherits = ["control-plane"]
   target   = "git-bridge"
-  tags     = ["local/code-maintainer-git-bridge:${VERSION}"]
+  tags     = ["local/codemaintainer-git-bridge:${VERSION}"]
 }
 
 target "inference" {
   context    = "."
   dockerfile = "images/inference/Dockerfile"
   target     = "inference-haswell"
-  tags       = ["local/code-maintainer-inference:${VERSION}"]
+  tags       = ["local/codemaintainer-inference:${VERSION}"]
 }
 
 target "runner" {
@@ -70,59 +70,59 @@ target "runner" {
 target "runner-base" {
   inherits = ["runner"]
   target   = "runner-base"
-  tags     = ["local/code-maintainer-runner-base:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-base:${VERSION}"]
 }
 
 target "runner-python" {
   inherits = ["runner"]
   target   = "runner-python"
-  tags     = ["local/code-maintainer-runner-python:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-python:${VERSION}"]
 }
 
 target "runner-node" {
   inherits = ["runner"]
   target   = "runner-node"
-  tags     = ["local/code-maintainer-runner-node:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-node:${VERSION}"]
 }
 
 target "runner-c" {
   inherits = ["runner"]
   target   = "runner-c"
-  tags     = ["local/code-maintainer-runner-c:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-c:${VERSION}"]
 }
 
 target "runner-cpp" {
   inherits = ["runner"]
   target   = "runner-cpp"
-  tags     = ["local/code-maintainer-runner-cpp:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-cpp:${VERSION}"]
 }
 
 target "runner-rust" {
   inherits = ["runner"]
   target   = "runner-rust"
-  tags     = ["local/code-maintainer-runner-rust:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-rust:${VERSION}"]
 }
 
 target "runner-go" {
   inherits = ["runner"]
   target   = "runner-go"
-  tags     = ["local/code-maintainer-runner-go:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-go:${VERSION}"]
 }
 
 target "runner-full" {
   inherits = ["runner"]
   target   = "runner-full"
-  tags     = ["local/code-maintainer-runner-full:${VERSION}"]
+  tags     = ["local/codemaintainer-runner-full:${VERSION}"]
 }
 
 target "implementation-agent" {
   inherits = ["runner"]
   target   = "implementation-agent"
-  tags     = ["local/code-maintainer-implementation-agent:${VERSION}"]
+  tags     = ["local/codemaintainer-implementation-agent:${VERSION}"]
 }
 
 target "qc-agent" {
   inherits = ["runner"]
   target   = "qc-agent"
-  tags     = ["local/code-maintainer-qc-agent:${VERSION}"]
+  tags     = ["local/codemaintainer-qc-agent:${VERSION}"]
 }

@@ -1,9 +1,19 @@
 {
-	"Path": "github.com/local-code-maintainer/appliance",
+	"Path": "github.com/B1-Mordred/CodeMaintainer",
 	"Main": true,
 	"Dir": "/src",
 	"GoMod": "/src/go.mod",
 	"GoVersion": "1.25.12"
+}
+{
+	"Path": "github.com/davecgh/go-spew",
+	"Version": "v1.1.1",
+	"Time": "2018-02-21T23:26:28Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/davecgh/go-spew@v1.1.1",
+	"GoMod": "/cache/mod/cache/download/github.com/davecgh/go-spew/@v/v1.1.1.mod",
+	"Sum": "h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=",
+	"GoModSum": "h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38="
 }
 {
 	"Path": "github.com/dustin/go-humanize",
@@ -60,6 +70,16 @@
 	"GoModSum": "h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y="
 }
 {
+	"Path": "github.com/mattn/go-pointer",
+	"Version": "v0.0.1",
+	"Time": "2020-07-22T14:01:14Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/mattn/go-pointer@v0.0.1",
+	"GoMod": "/cache/mod/cache/download/github.com/mattn/go-pointer/@v/v0.0.1.mod",
+	"Sum": "h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=",
+	"GoModSum": "h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc="
+}
+{
 	"Path": "github.com/ncruces/go-strftime",
 	"Version": "v1.0.0",
 	"Time": "2025-10-08T11:45:18Z",
@@ -71,6 +91,26 @@
 	"GoModSum": "h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls="
 }
 {
+	"Path": "github.com/pmezard/go-difflib",
+	"Version": "v1.0.0",
+	"Time": "2016-01-10T10:55:54Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/pmezard/go-difflib@v1.0.0",
+	"GoMod": "/cache/mod/cache/download/github.com/pmezard/go-difflib/@v/v1.0.0.mod",
+	"Sum": "h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=",
+	"GoModSum": "h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4="
+}
+{
+	"Path": "github.com/r-lib/tree-sitter-r",
+	"Version": "v1.3.0",
+	"Time": "2026-06-19T17:43:15Z",
+	"Dir": "/cache/mod/github.com/r-lib/tree-sitter-r@v1.3.0",
+	"GoMod": "/cache/mod/cache/download/github.com/r-lib/tree-sitter-r/@v/v1.3.0.mod",
+	"GoVersion": "1.23",
+	"Sum": "h1:JxcUtfxRaq+hN/SbDCwwC9T5gG/DGNRmkea/Xq4m8NA=",
+	"GoModSum": "h1:EiQTehwt8ojqpEcjZHKJmU26zijUuHkmwFi6Rot/GGQ="
+}
+{
 	"Path": "github.com/remyoudompheng/bigfft",
 	"Version": "v0.0.0-20230129092748-24d4a6f8daec",
 	"Time": "2023-01-29T09:27:48Z",
@@ -80,6 +120,173 @@
 	"GoVersion": "1.12",
 	"Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=",
 	"GoModSum": "h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo="
+}
+{
+	"Path": "github.com/stretchr/testify",
+	"Version": "v1.10.0",
+	"Time": "2024-11-12T22:58:45Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/stretchr/testify@v1.10.0",
+	"GoMod": "/cache/mod/cache/download/github.com/stretchr/testify/@v/v1.10.0.mod",
+	"GoVersion": "1.17",
+	"Sum": "h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=",
+	"GoModSum": "h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY="
+}
+{
+	"Path": "github.com/tree-sitter/go-tree-sitter",
+	"Version": "v0.25.0",
+	"Time": "2025-02-02T21:10:42Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/go-tree-sitter@v0.25.0",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/go-tree-sitter/@v/v0.25.0.mod",
+	"GoVersion": "1.23",
+	"Sum": "h1:sx6kcg8raRFCvc9BnXglke6axya12krCJF5xJ2sftRU=",
+	"GoModSum": "h1:r77ig7BikoZhHrrsjAnv8RqGti5rtSyvDHPzgTPsUuU="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-c",
+	"Version": "v0.24.2",
+	"Time": "2026-04-22T08:03:16Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-c@v0.24.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-c/@v/v0.24.2.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:nW+M6BnPUa/fBwks8nqf1NiVvu7nltaC+5bR/lTtJCs=",
+	"GoModSum": "h1:/SpJlv2BuiCgFA5xvtgukFGi51WxctByPUGDxPl60fc="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-c-sharp",
+	"Version": "v0.23.5",
+	"Time": "2026-04-14T16:05:24Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-c-sharp@v0.23.5",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-c-sharp/@v/v0.23.5.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:EeUc2WJE5G1pD6YEqera2yVHYeroeR+/MakKX2a+0xQ=",
+	"GoModSum": "h1:H7/aFm5vR1A8Yn5VIOfLWPdlKuJsMgZ5eDmaJdv8bY0="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-cpp",
+	"Version": "v0.23.4",
+	"Time": "2024-11-11T06:56:44Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-cpp@v0.23.4",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-cpp/@v/v0.23.4.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:LaWZsiqQKvR65yHgKmnaqA+uz6tlDJTJFCyFIeZU/8w=",
+	"GoModSum": "h1:doqNW64BriC7WBCQ1klf0KmJpdEvfxyXtoEybnBo6v8="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-embedded-template",
+	"Version": "v0.23.2",
+	"Time": "2024-11-11T06:51:07Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-embedded-template@v0.23.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-embedded-template/@v/v0.23.2.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:nFkkH6Sbe56EXLmZBqHHcamTpmz3TId97I16EnGy4rg=",
+	"GoModSum": "h1:HNPOhN0qF3hWluYLdxWs5WbzP/iE4aaRVPMsdxuzIaQ="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-go",
+	"Version": "v0.23.4",
+	"Time": "2024-11-24T19:34:38Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-go@v0.23.4",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-go/@v/v0.23.4.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:yt5KMGnTHS+86pJmLIAZMWxukr8W7Ae1STPvQUuNROA=",
+	"GoModSum": "h1:Jrx8QqYN0v7npv1fJRH1AznddllYiCMUChtVjxPK040="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-html",
+	"Version": "v0.23.2",
+	"Time": "2024-11-11T05:55:18Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-html@v0.23.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-html/@v/v0.23.2.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:1UYDV+Yd05GGRhVnTcbP58GkKLSHHZwVaN+lBZV11Lc=",
+	"GoModSum": "h1:gpUv/dG3Xl/eebqgeYeFMt+JLOY9cgFinb/Nw08a9og="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-java",
+	"Version": "v0.23.5",
+	"Time": "2024-12-21T18:21:37Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-java@v0.23.5",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-java/@v/v0.23.5.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:J9YeMGMwXYlKSP3K4Us8CitC6hjtMjqpeOf2GGo6tig=",
+	"GoModSum": "h1:NRKlI8+EznxA7t1Yt3xtraPk1Wzqh3GAIC46wxvc320="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-javascript",
+	"Version": "v0.25.0",
+	"Time": "2025-09-01T07:10:57Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-javascript@v0.25.0",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-javascript/@v/v0.25.0.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:ZkWETb66/w8cc13yhfnNuHOLDQWl3BnKlH6f9AdR88c=",
+	"GoModSum": "h1:lmGD1EJdCA+v0S1u2fFgepMg/opzSg/4pgFym2FPGAs="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-json",
+	"Version": "v0.24.8",
+	"Time": "2024-11-11T06:00:59Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-json@v0.24.8",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-json/@v/v0.24.8.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:tV5rMkihgtiOe14a9LHfDY5kzTl5GNUYe6carZBn0fQ=",
+	"GoModSum": "h1:F351KK0KGvCaYbZ5zxwx/gWWvZhIDl0eMtn+1r+gQbo="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-php",
+	"Version": "v0.24.2",
+	"Time": "2025-08-18T05:11:55Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-php@v0.24.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-php/@v/v0.24.2.mod",
+	"GoVersion": "1.23",
+	"Sum": "h1:yy+COnaaHUNDTKODfNbHhVRD4mQpFELTnBK9+EhpO+w=",
+	"GoModSum": "h1:cEzabPRy4doSxaP9CF9u4FXc3L9Q3Mek3XPVCfqJQRw="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-python",
+	"Version": "v0.25.0",
+	"Time": "2025-09-11T06:45:17Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-python@v0.25.0",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-python/@v/v0.25.0.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:O6XD9v8U1LOcRc3cNj9nM7XufrtEBezE6VrpRrHZDf0=",
+	"GoModSum": "h1:cpdthSy/Yoa28aJFBscFHlGiU+cnSiSh1kuDVtI8YeM="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-ruby",
+	"Version": "v0.23.1",
+	"Time": "2024-11-11T04:48:17Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-ruby@v0.23.1",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-ruby/@v/v0.23.1.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:T/NKHUA+iVbHM440hFx+lzVOzS4dV6z8Qw8ai+72bYo=",
+	"GoModSum": "h1:kUS4kCCQloFcdX6sdpr8p6r2rogbM6ZjTox5ZOQy8cA="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-rust",
+	"Version": "v0.24.2",
+	"Time": "2026-03-27T21:05:57Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-rust@v0.24.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-rust/@v/v0.24.2.mod",
+	"GoVersion": "1.22",
+	"Sum": "h1:NL4nF67ib21RMzzfvkmXlVwe45vvhW10DVyO+D0z/W0=",
+	"GoModSum": "h1:hfeGWic9BAfgTrc7Xf6FaOAguCFJRo3RBbs7QJ6D7MI="
+}
+{
+	"Path": "github.com/tree-sitter/tree-sitter-typescript",
+	"Version": "v0.23.2",
+	"Time": "2024-11-11T02:32:53Z",
+	"Dir": "/cache/mod/github.com/tree-sitter/tree-sitter-typescript@v0.23.2",
+	"GoMod": "/cache/mod/cache/download/github.com/tree-sitter/tree-sitter-typescript/@v/v0.23.2.mod",
+	"GoVersion": "1.22.0",
+	"Sum": "h1:/Odvphn18PniVixb9e97X0DbNVsU6Qocv9mfkyzdXwU=",
+	"GoModSum": "h1:zjzMXT/Ulffel2xfOcAkQQkiAkmgnbtPGlFQw/5X4xA="
 }
 {
 	"Path": "golang.org/x/crypto",
@@ -152,6 +359,16 @@
 	"GoVersion": "1.25.0",
 	"Sum": "h1:7Kn5x/d1svx/PzryTsqeoZN4TZwqeH5pGWjefhLi/1Q=",
 	"GoModSum": "h1:dFHnyTvFWY212G+h7ZY4Vsp/K3U4/7W9TyVaAul8uCA="
+}
+{
+	"Path": "gopkg.in/yaml.v3",
+	"Version": "v3.0.1",
+	"Time": "2022-05-27T08:35:30Z",
+	"Indirect": true,
+	"Dir": "/cache/mod/gopkg.in/yaml.v3@v3.0.1",
+	"GoMod": "/cache/mod/cache/download/gopkg.in/yaml.v3/@v/v3.0.1.mod",
+	"Sum": "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+	"GoModSum": "h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM="
 }
 {
 	"Path": "modernc.org/cc/v4",

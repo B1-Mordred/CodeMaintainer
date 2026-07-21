@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/auth"
+	"github.com/B1-Mordred/CodeMaintainer/internal/auth"
 )
 
 func TestAuthenticationStorePersistsOneTimeBootstrapAndAuditedSessionLifecycle(t *testing.T) {

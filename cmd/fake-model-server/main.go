@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 )
 
 func main() {

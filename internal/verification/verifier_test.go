@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
-	"github.com/local-code-maintainer/appliance/internal/repositories"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	"github.com/B1-Mordred/CodeMaintainer/internal/repositories"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func TestOfflineFixtureChecksOutFixVerifiesAndEmitsStandardArtifacts(t *testing.T) {

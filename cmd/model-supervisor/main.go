@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/models"
+	"github.com/B1-Mordred/CodeMaintainer/internal/models"
 )
 
 var version = "dev"

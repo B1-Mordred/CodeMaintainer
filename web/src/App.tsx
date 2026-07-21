@@ -79,7 +79,7 @@ export function App() {
       <header className="app-header">
         <span className="brand-mark" aria-hidden="true">M</span>
         <div className="brand-copy">
-          <p className="brand-name">Local Code Maintainer</p>
+          <p className="brand-name">CodeMaintainer</p>
           <p className="brand-subtitle">Quality-first maintenance control plane</p>
         </div>
         {principal && <div className="session-summary"><span>{principal.user.display_name} · {principal.user.role}</span><button className="quiet-button" type="button" onClick={() => void logout()}><LogOut aria-hidden="true" size={16} /> Sign out</button></div>}

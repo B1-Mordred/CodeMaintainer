@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 var verificationID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -147,7 +147,7 @@ type junitFailure struct {
 }
 
 func junitArtifact(report Report) []byte {
-	suite := junitSuite{Name: "local-code-maintainer", Tests: len(report.Commands), Cases: make([]junitCase, 0, len(report.Commands))}
+	suite := junitSuite{Name: "codemaintainer", Tests: len(report.Commands), Cases: make([]junitCase, 0, len(report.Commands))}
 	for _, command := range report.Commands {
 		item := junitCase{Name: string(command.Class), Time: strconv.FormatFloat(command.Duration.Seconds(), 'f', 6, 64)}
 		if command.ExitCode != 0 || command.TimedOut {
@@ -179,7 +179,7 @@ func sarifArtifact(report Report) []byte {
 	payload, _ := json.MarshalIndent(map[string]any{
 		"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
 		"runs": []any{map[string]any{
-			"tool":    map[string]any{"driver": map[string]string{"name": "Local Code Maintainer verifier", "version": "1"}},
+			"tool":    map[string]any{"driver": map[string]string{"name": "CodeMaintainer verifier", "version": "1"}},
 			"results": results,
 		}},
 	}, "", "  ")

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/forges"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 const forgeProfileSelect = `SELECT project_id,provider,endpoint,endpoint_allowlist_json,repository,credential_reference,credential_status,webhook_status,sync_direction,polling_minutes,branch_convention,change_request_convention,label_mapping_json,ci_artifact_policy,release_policy,submodules_enabled,enabled,revision,updated_at FROM forge_profiles`

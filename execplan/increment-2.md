@@ -69,6 +69,8 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: a global pack upgrade can be compatible for one project and unsafe for another. Migration 21 stores the installed catalog version and each project's exact assignment independently; lifecycle changes never rewrite assignments, and proposal acceptance requires the exact proposed installed version.
 - Observation: the controller cannot safely own hosted-forge tokens merely to normalize provider metadata.
   Evidence: the Git bridge already owns credential transport and remote Git operations. The new forge service persists only opaque credential references, status, normalized objects, cursors, and provider metadata; GitHub App and GitLab tokens remain confined to the bridge.
+- Observation: the requested GitHub destination existed but had no commits or default branch.
+  Evidence: authenticated `gh repo view B1-Mordred/CodeMaintainer` reported administrator access and an empty `defaultBranchRef`; `git ls-remote --symref` returned no refs. Initial synchronization can therefore preserve the complete local `dev` history without force-pushing or reconciling unrelated commits.
 
 ## Decision Log
 
@@ -122,6 +124,9 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Date/Author: 2026-07-21 / Codex
 - Decision: expose hosted and local repository integrations through a normalized `ForgeProvider` boundary while retaining provider-specific metadata and explicit unsupported/operator-only capabilities.
   Rationale: controller workflows need stable object, cursor, retry, and idempotency semantics without importing provider SDKs or receiving credentials. Explicit capability states prevent a local bare repository or a permission-limited hosted installation from appearing feature-complete.
+  Date/Author: 2026-07-21 / Codex
+- Decision: rename the product and canonical Go module to `CodeMaintainer` and `github.com/B1-Mordred/CodeMaintainer`, but retain compatibility-sensitive operator and persistence identifiers.
+  Rationale: branding, imports, package metadata, Compose identity, schema namespaces, diagnostics, and documentation should match the canonical repository. Existing `MAINTAINER_*` environment variables, executable names, database schema, contract filenames, and the original backup encryption associated-data value remain stable so the repository rename does not invalidate deployments or backups.
   Date/Author: 2026-07-21 / Codex
 
 ## Outcomes & Retrospective
@@ -249,3 +254,5 @@ Revision note (2026-07-21 00:46Z): closed Milestone 2 with a real pinned multi-l
 Revision note (2026-07-21 01:31Z): closed Milestone 3 with migration-backed checksummed capability lifecycle, independent exact project assignments, no-write Repo Doctor scans, optimistic evidence reviews, PHP/R/security catalogs, golden/rehearsal primitives, and matching API/CLI/browser/operator documentation. Recorded the version-separation and trusted-snapshot decisions and advanced the active work boundary to forge normalization and the simulated Windows worker.
 
 Revision note (2026-07-21 02:38Z): recorded the partial Milestone 4 forge foundation before pausing Increment 2 for an operator-directed product rename and first GitHub synchronization. Migration 22, the credential-isolated normalized provider boundary, GitLab configuration and draft-MR support, durable profiles/objects/cursors/idempotency, endpoint and reauthentication policy, REST/OpenAPI/client generation, CLI operations, and focused regressions are present; hosted inventory, browser workbench, Windows simulation, heterogeneous fixtures, and the milestone acceptance gate remain explicitly open.
+
+Revision note (2026-07-21 02:49Z): renamed the product to CodeMaintainer and the Go module to `github.com/B1-Mordred/CodeMaintainer` for initial synchronization with the empty canonical GitHub repository. Updated display branding, imports, package/Compose/service identifiers, schema namespaces, examples, generated metadata, and operator evidence while deliberately retaining stable environment variables, executable names, contract filenames, database schema, and legacy backup encryption context.

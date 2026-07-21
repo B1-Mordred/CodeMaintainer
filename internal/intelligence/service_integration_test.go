@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
-	"github.com/local-code-maintainer/appliance/internal/projects"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	storesqlite "github.com/local-code-maintainer/appliance/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
+	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 )
 
 func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T) {

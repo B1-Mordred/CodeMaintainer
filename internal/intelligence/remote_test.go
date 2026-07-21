@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 )
 
 func TestRemoteAnalyzerValidatesHashBoundFacts(t *testing.T) {

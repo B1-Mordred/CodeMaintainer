@@ -14,17 +14,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
-	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	"github.com/local-code-maintainer/appliance/internal/findings"
-	"github.com/local-code-maintainer/appliance/internal/gitbridge"
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	projectmemory "github.com/local-code-maintainer/appliance/internal/memory"
-	"github.com/local-code-maintainer/appliance/internal/models"
-	"github.com/local-code-maintainer/appliance/internal/storage"
-	"github.com/local-code-maintainer/appliance/internal/verification"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
+	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
+	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	projectmemory "github.com/B1-Mordred/CodeMaintainer/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/models"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
 type GitBackend interface {

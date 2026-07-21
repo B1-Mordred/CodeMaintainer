@@ -1,4 +1,4 @@
-name: local-code-maintainer
+name: codemaintainer
 
 x-runtime-security: &runtime-security
   read_only: true
@@ -13,7 +13,7 @@ x-runtime-security: &runtime-security
 services:
   git-bridge:
     <<: *runtime-security
-    image: local/code-maintainer-git-bridge:0.1.0-dev
+    image: local/codemaintainer-git-bridge:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -52,7 +52,7 @@ services:
 
   model-supervisor:
     <<: *runtime-security
-    image: local/code-maintainer-fake-model-server:0.1.0-dev
+    image: local/codemaintainer-fake-model-server:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -72,7 +72,7 @@ services:
 
   runnerd:
     <<: *runtime-security
-    image: local/code-maintainer-runnerd:0.1.0-dev
+    image: local/codemaintainer-runnerd:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -110,7 +110,7 @@ services:
 
   code-intelligence:
     <<: *runtime-security
-    image: local/code-maintainer-code-intelligence:0.1.0-dev
+    image: local/codemaintainer-code-intelligence:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -127,7 +127,7 @@ services:
 
   controller:
     <<: *runtime-security
-    image: local/code-maintainer-controller:0.1.0-dev
+    image: local/codemaintainer-controller:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -207,7 +207,7 @@ services:
 
   hermes-tool-bridge:
     <<: *runtime-security
-    image: local/code-maintainer-hermes-tool-bridge:0.1.0-dev
+    image: local/codemaintainer-hermes-tool-bridge:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -266,7 +266,7 @@ services:
 
   maintainctl:
     <<: *runtime-security
-    image: local/code-maintainer-cli:0.1.0-dev
+    image: local/codemaintainer-cli:0.1.0-dev
     build:
       context: .
       dockerfile: images/control-plane.Dockerfile
@@ -356,7 +356,7 @@ services:
     restart: "no"
 
   browser-tool:
-    image: local/code-maintainer-browser-tool:0.1.0-dev
+    image: local/codemaintainer-browser-tool:0.1.0-dev
     build:
       context: .
       dockerfile: images/browser-acceptance.Dockerfile

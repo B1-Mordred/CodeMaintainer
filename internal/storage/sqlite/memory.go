@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 )
 
 func (s *Store) PutCandidate(ctx context.Context, scope memory.ProjectScope, candidate memory.Record) (memory.Record, error) {

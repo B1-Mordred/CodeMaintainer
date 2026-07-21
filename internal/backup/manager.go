@@ -427,7 +427,7 @@ func encrypt(key, plain []byte) ([]byte, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return append(nonce, aead.Seal(nil, nonce, plain, []byte("local-code-maintainer-backup-v1"))...), nil
+	return append(nonce, aead.Seal(nil, nonce, plain, []byte(backupAssociatedData))...), nil
 }
 func decrypt(key, payload []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
@@ -441,5 +441,9 @@ func decrypt(key, payload []byte) ([]byte, error) {
 	if len(payload) < aead.NonceSize() {
 		return nil, errors.New("encrypted backup is truncated")
 	}
-	return aead.Open(nil, payload[:aead.NonceSize()], payload[aead.NonceSize():], []byte("local-code-maintainer-backup-v1"))
+	return aead.Open(nil, payload[:aead.NonceSize()], payload[aead.NonceSize():], []byte(backupAssociatedData))
 }
+
+// Keep the pre-rename value so backups produced before the CodeMaintainer
+// product rename remain decryptable.
+const backupAssociatedData = "local-code-maintainer-backup-v1"

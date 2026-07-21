@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/hermesbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/hermesbridge"
 )
 
 func main() {

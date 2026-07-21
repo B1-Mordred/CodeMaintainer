@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/capabilities"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 const installationSelect = `SELECT pack_id, pack_version, checksum_sha256, state, pinned, revision, previous_version, updated_at FROM capability_installations`

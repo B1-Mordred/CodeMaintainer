@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 )
 
 type memoryCandidateStore interface {

@@ -1,6 +1,8 @@
-# Local Code Maintainer
+# CodeMaintainer
 
-Local Code Maintainer is a self-hosted, browser-operated appliance for producing minimal, independently reviewed, deterministically verified maintenance patches across multiple repositories. It targets CPU-only Linux, works without cloud LLMs, and ships a complete deterministic mock profile that needs neither GitHub credentials nor model weights.
+CodeMaintainer is a self-hosted, browser-operated appliance for producing minimal, independently reviewed, deterministically verified maintenance patches across multiple repositories. It targets CPU-only Linux, works without cloud LLMs, and ships a complete deterministic mock profile that needs neither GitHub credentials nor model weights.
+
+Canonical repository: <https://github.com/B1-Mordred/CodeMaintainer>
 
 ## Quick start
 

@@ -24,7 +24,7 @@ cleanup() {
 trap cleanup EXIT
 
 git init -q -b main "$fixture_root/source"
-git -C "$fixture_root/source" config user.name 'Local Code Maintainer Fixture'
+git -C "$fixture_root/source" config user.name 'CodeMaintainer Fixture'
 git -C "$fixture_root/source" config user.email 'fixture@localhost'
 cat >"$fixture_root/source/go.mod" <<'EOF'
 module fixture.local/arithmetic

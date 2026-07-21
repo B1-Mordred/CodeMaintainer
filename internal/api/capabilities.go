@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/capabilities"
+	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 )
 
 func (s *Server) requireCapabilities(w http.ResponseWriter) (*capabilities.Service, bool) {

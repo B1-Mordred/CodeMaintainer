@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/runners"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 )
 
 const maxRequestBytes = 64 << 10

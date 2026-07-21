@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/forges"
-	"github.com/local-code-maintainer/appliance/internal/repositories"
+	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
+	"github.com/B1-Mordred/CodeMaintainer/internal/repositories"
 )
 
 const maxGitOutput = 2 << 20
@@ -635,8 +635,8 @@ func (m *Manager) git(ctx context.Context, args ...string) (string, error) {
 
 func (m *Manager) gitWithIdentity(ctx context.Context, path string, args ...string) (string, error) {
 	return m.runGit(ctx, []string{
-		"GIT_AUTHOR_NAME=Local Code Maintainer", "GIT_AUTHOR_EMAIL=maintainer@localhost",
-		"GIT_COMMITTER_NAME=Local Code Maintainer", "GIT_COMMITTER_EMAIL=maintainer@localhost",
+		"GIT_AUTHOR_NAME=CodeMaintainer", "GIT_AUTHOR_EMAIL=maintainer@localhost",
+		"GIT_COMMITTER_NAME=CodeMaintainer", "GIT_COMMITTER_EMAIL=maintainer@localhost",
 	}, append([]string{"-C", path}, args...)...)
 }
 

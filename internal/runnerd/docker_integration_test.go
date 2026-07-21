@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/runners"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 )
 
 func TestDockerExecutorRunsOfflineGoFixture(t *testing.T) {

@@ -80,7 +80,7 @@ export function OperatorConsole({
   const current = navigation.find((item) => item.id === page)!;
 
   useEffect(() => {
-    document.title = `${current.label} | Local Code Maintainer`;
+    document.title = `${current.label} | CodeMaintainer`;
     if (initialHeadingFocus.current) {
       initialHeadingFocus.current = false;
       return;

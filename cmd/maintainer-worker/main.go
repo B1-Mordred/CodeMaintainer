@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
-	"github.com/local-code-maintainer/appliance/internal/runners"
-	"github.com/local-code-maintainer/appliance/internal/verification"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
+	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
 const (

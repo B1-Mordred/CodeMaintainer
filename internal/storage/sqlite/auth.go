@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/auth"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/auth"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 func (s *Store) BootstrapStatus(ctx context.Context) (bool, error) {

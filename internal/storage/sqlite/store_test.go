@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 func TestJobLifecyclePersistsAcrossRestart(t *testing.T) {

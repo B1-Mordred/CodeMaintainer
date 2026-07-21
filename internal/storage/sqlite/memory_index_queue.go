@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 )
 
 func (s *Store) EnqueueProjectMemoryRebuild(ctx context.Context, scope memory.ProjectScope, actor string) (int, error) {

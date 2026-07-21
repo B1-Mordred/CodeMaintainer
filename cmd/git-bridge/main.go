@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
 )
 
 func main() {

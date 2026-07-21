@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	maintainerauth "github.com/local-code-maintainer/appliance/internal/auth"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	maintainerauth "github.com/B1-Mordred/CodeMaintainer/internal/auth"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 const sessionCookieName = "maintainer_session"

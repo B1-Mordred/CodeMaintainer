@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/local-code-maintainer/appliance/internal/config"
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
+	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 )
 
 type intelligenceProjectConfiguration struct {

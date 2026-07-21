@@ -20,7 +20,7 @@ services:
         read_only: true
 
   model-supervisor:
-    image: local/code-maintainer-inference:0.1.0-dev
+    image: local/codemaintainer-inference:0.1.0-dev
     build:
       context: .
       dockerfile: images/inference/Dockerfile

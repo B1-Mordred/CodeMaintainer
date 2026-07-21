@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/audit"
-	"github.com/local-code-maintainer/appliance/internal/automation"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/audit"
+	"github.com/B1-Mordred/CodeMaintainer/internal/automation"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 )
 
 func (s *Store) SaveSchedule(ctx context.Context, request automation.ScheduleRequest, actor string) (automation.Schedule, error) {

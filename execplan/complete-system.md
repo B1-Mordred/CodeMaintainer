@@ -301,7 +301,7 @@ Container/runtime evidence:
     $ curl http://127.0.0.1:8080/healthz
     {"status":"ok"}
 
-    $ sudo docker inspect local-code-maintainer-controller-1 --format ...
+    $ sudo docker inspect codemaintainer-controller-1 --format ...
     user=1000:1000 readonly=true caps=["ALL"] security=["no-new-privileges:true"]
     ports={"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}
 
@@ -316,7 +316,7 @@ Secure-runner boundary evidence:
     ok  internal/runnerd
     cmd/runnerd [no test files]
 
-    $ docker inspect local-code-maintainer-runnerd-1 --format ...
+    $ docker inspect codemaintainer-runnerd-1 --format ...
     user=1000:1000 readonly=true network=none capdrop=["ALL"]
     security=["no-new-privileges:true"] ports={}
 
@@ -411,7 +411,7 @@ Memory, scheduling, and Hermes evidence:
     all packages passed
     $ docker compose --profile hermes run --rm --no-deps hermes mcp test maintainer
     Connected; Tools discovered: 10
-    $ docker exec -it local-code-maintainer-hermes-1 hermes tools --summary
+    $ docker exec -it codemaintainer-hermes-1 hermes tools --summary
     CLI (1/25): maintainer
 
 Migration v9 and v10 tests prove strict project namespaces, cross-project denial, quarantined-record exclusion, secret rejection, optimistic lifecycle changes, append-only provenance and retrieval traces, content-clearing tombstones, bounded 4K-token retrieval, durable leased index retries, and superseded-version skipping. The optional OpenViking profile pins v0.3.21 without a host port and the controller remains authoritative.
@@ -479,3 +479,5 @@ Revision note (2026-07-21 00:46Z): closed Increment 2 Milestone 2 by isolating p
 Revision note (2026-07-21 01:31Z): closed Increment 2 Milestone 3 with checksummed authority-neutral capability packs, append-only and reauthenticated lifecycle changes, exact project assignments, bounded Git-snapshot Repo Doctor evidence and explicit optimistic reviews, PHP/R/security profiles, rehearsal primitives, and full operator-surface parity. Milestone 4 forge normalization and the constrained simulated Windows worker are now the active boundary.
 
 Revision note (2026-07-21 02:38Z): paused Increment 2 Milestone 4 at a tested forge-foundation checkpoint for the operator-requested CodeMaintainer rename and initial GitHub synchronization. Migration 22, normalized credential-isolated forge profiles/objects/sync history, GitLab bridge support, exact endpoint and reauthentication controls, REST/OpenAPI/generated client, and CLI operations are retained as partial work; hosted inventory, browser parity, Windows simulation, fixtures, and milestone closure remain open.
+
+Revision note (2026-07-21 02:49Z): renamed the product and module to CodeMaintainer and `github.com/B1-Mordred/CodeMaintainer` before the first push to the empty canonical repository. Branding, imports, Compose/package/service identities, schemas, examples, and generated metadata now match; compatibility-sensitive `MAINTAINER_*` variables, executables, database contracts, goal filenames, and backup encryption context remain unchanged.

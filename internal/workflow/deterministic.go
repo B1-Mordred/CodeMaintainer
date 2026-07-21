@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/agents"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/verification"
+	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
 // DeterministicBackend is used only by the explicit mock profile. It applies

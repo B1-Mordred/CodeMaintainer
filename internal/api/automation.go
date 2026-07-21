@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/local-code-maintainer/appliance/internal/automation"
+	"github.com/B1-Mordred/CodeMaintainer/internal/automation"
 )
 
 func (s *Server) listSchedules(w http.ResponseWriter, r *http.Request) {

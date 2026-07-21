@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 const (

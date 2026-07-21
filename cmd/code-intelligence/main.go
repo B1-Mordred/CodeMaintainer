@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/intelligence"
+	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 )
 
 const maxRequestBytes = 4 << 20

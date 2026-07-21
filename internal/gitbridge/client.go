@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local-code-maintainer/appliance/internal/forges"
+	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
 )
 
 const maxResponseBytes = int64(3 << 20)

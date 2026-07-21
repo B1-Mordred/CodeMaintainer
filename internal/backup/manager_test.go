@@ -9,6 +9,12 @@ import (
 
 type fixtureSnapshotter struct{}
 
+func TestProductRenamePreservesBackupEncryptionContext(t *testing.T) {
+	if backupAssociatedData != "local-code-maintainer-backup-v1" {
+		t.Fatalf("backup associated data changed to %q; existing encrypted backups would be unreadable", backupAssociatedData)
+	}
+}
+
 func (fixtureSnapshotter) Snapshot(_ context.Context, target string) error {
 	return os.WriteFile(target, []byte("sqlite snapshot fixture"), 0o600)
 }

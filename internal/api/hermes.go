@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/local-code-maintainer/appliance/internal/automation"
-	"github.com/local-code-maintainer/appliance/internal/jobs"
-	"github.com/local-code-maintainer/appliance/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/automation"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 )
 
 func (s *Server) hermesSubmitJob(w http.ResponseWriter, r *http.Request) {
