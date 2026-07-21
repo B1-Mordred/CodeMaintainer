@@ -160,6 +160,18 @@ type ContextPacket struct {
 	Content  [][]byte        `json:"-"`
 }
 
+type ContextManifestComparison struct {
+	ProjectID          string             `json:"project_id"`
+	LeftID             string             `json:"left_id"`
+	RightID            string             `json:"right_id"`
+	Added              []ContextSelection `json:"added"`
+	Removed            []ContextSelection `json:"removed"`
+	Changed            []ContextSelection `json:"changed"`
+	InputTokenDelta    int                `json:"input_token_delta"`
+	OutputReserveDelta int                `json:"output_reserve_delta"`
+	TruncationChanged  bool               `json:"truncation_changed"`
+}
+
 type Observation struct {
 	Key      string          `json:"key"`
 	Kind     string          `json:"kind"`
@@ -242,6 +254,35 @@ type RetentionResult struct {
 	CachesRemoved int `json:"caches_removed"`
 }
 
+type CacheVerification struct {
+	Key            string `json:"key"`
+	Kind           string `json:"kind"`
+	Status         string `json:"status"`
+	Reason         string `json:"reason"`
+	ExpectedObject string `json:"expected_object_sha256"`
+	ObservedObject string `json:"observed_object_sha256,omitempty"`
+}
+
+type CacheVerificationReport struct {
+	ProjectID   string              `json:"project_id"`
+	Kind        string              `json:"kind,omitempty"`
+	Verified    int                 `json:"verified"`
+	Invalid     int                 `json:"invalid"`
+	Unavailable int                 `json:"unavailable"`
+	Items       []CacheVerification `json:"items"`
+}
+
+type CacheSimulation struct {
+	ProjectID      string `json:"project_id"`
+	TrustDomain    string `json:"trust_domain"`
+	Kind           string `json:"kind"`
+	CurrentBytes   int64  `json:"current_bytes"`
+	EstimatedBytes int64  `json:"estimated_bytes"`
+	QuotaBytes     int64  `json:"quota_bytes"`
+	WouldFit       bool   `json:"would_fit"`
+	Explanation    string `json:"explanation"`
+}
+
 type Store interface {
 	FindBlobAnalysis(context.Context, string, string, string, string) (BlobAnalysis, bool, error)
 	CommitIndex(context.Context, IndexRequest, []BlobAnalysis, []IndexedFile) (IndexRun, error)
@@ -262,6 +303,8 @@ type Store interface {
 	ListTestImpacts(context.Context, string, int) ([]TestImpact, error)
 	PutCacheEntry(context.Context, CacheEntry) (CacheEntry, error)
 	ListCacheEntries(context.Context, string, int) ([]CacheEntry, error)
+	CacheUsage(context.Context, string) (int64, int, error)
+	VerifyCacheEntries(context.Context, string, string) (CacheVerificationReport, error)
 	PurgeCacheEntries(context.Context, string, string, string, string) (int, error)
 }
 

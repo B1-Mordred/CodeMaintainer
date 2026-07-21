@@ -143,6 +143,46 @@ func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T
 	if response.StatusCode != http.StatusOK || manifest.ProjectID != "owner-repo" || len(manifest.Selections) != 1 {
 		t.Fatalf("manifest %d %#v", response.StatusCode, manifest)
 	}
+	secondPacket, err := service.CompileContext(context.Background(), "owner-repo", "", "implementation", 512, 128, []intelligence.ContextCandidate{{ID: "policy", Source: "configuration", Version: "2", Reason: "effective policy", Trust: "trusted", Content: []byte("full suite required"), Priority: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/context-manifests/actions/compare", "application/json", strings.NewReader(fmt.Sprintf(`{"left_id":%q,"right_id":%q}`, packet.Manifest.ID, secondPacket.Manifest.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var comparison intelligence.ContextManifestComparison
+	if err := json.NewDecoder(response.Body).Decode(&comparison); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(comparison.Added) != 1 || len(comparison.Removed) != 1 {
+		t.Fatalf("context comparison %d %#v", response.StatusCode, comparison)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/caches/actions/verify", "application/json", strings.NewReader(`{"kind":"source-parse"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var verification intelligence.CacheVerificationReport
+	if err := json.NewDecoder(response.Body).Decode(&verification); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || verification.Verified != 1 || verification.Invalid != 0 {
+		t.Fatalf("cache verification %d %#v", response.StatusCode, verification)
+	}
+	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/caches/actions/simulate", "application/json", strings.NewReader(`{"trust_domain":"trusted","kind":"source-parse","estimated_bytes":1024}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var simulation intelligence.CacheSimulation
+	if err := json.NewDecoder(response.Body).Decode(&simulation); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !simulation.WouldFit || simulation.QuotaBytes != 512<<20 {
+		t.Fatalf("cache simulation %d %#v", response.StatusCode, simulation)
+	}
 	response, err = http.Post(server.URL+"/api/v1/projects/owner-repo/intelligence/actions/refresh", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)

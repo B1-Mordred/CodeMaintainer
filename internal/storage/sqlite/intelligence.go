@@ -575,6 +575,84 @@ func (s *Store) ListCacheEntries(ctx context.Context, projectID string, limit in
 	}
 	return items, rows.Err()
 }
+
+func (s *Store) CacheUsage(ctx context.Context, projectID string) (int64, int, error) {
+	var bytes int64
+	var entries int
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0),COUNT(*) FROM cache_entries WHERE project_id=?`, projectID).Scan(&bytes, &entries)
+	return bytes, entries, err
+}
+
+func (s *Store) VerifyCacheEntries(ctx context.Context, projectID, kind string) (intelligence.CacheVerificationReport, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT cache_key,kind,input_sha256,object_sha256 FROM cache_entries WHERE project_id=? AND (?='' OR kind=?) ORDER BY kind,cache_key LIMIT 10000`, projectID, kind, kind)
+	if err != nil {
+		return intelligence.CacheVerificationReport{}, err
+	}
+	type expectedEntry struct{ key, kind, input, object string }
+	expected := []expectedEntry{}
+	for rows.Next() {
+		var item expectedEntry
+		if err := rows.Scan(&item.key, &item.kind, &item.input, &item.object); err != nil {
+			rows.Close()
+			return intelligence.CacheVerificationReport{}, err
+		}
+		expected = append(expected, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return intelligence.CacheVerificationReport{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return intelligence.CacheVerificationReport{}, err
+	}
+	actual := map[string]struct{ input, object string }{}
+	blobs, err := s.db.QueryContext(ctx, `SELECT repository,blob_sha256,parser_id,analysis_json FROM code_intel_blobs WHERE project_id=? ORDER BY repository,blob_sha256,parser_id`, projectID)
+	if err != nil {
+		return intelligence.CacheVerificationReport{}, err
+	}
+	for blobs.Next() {
+		var repository, blobSHA256, parserID, payload string
+		if err := blobs.Scan(&repository, &blobSHA256, &parserID, &payload); err != nil {
+			blobs.Close()
+			return intelligence.CacheVerificationReport{}, err
+		}
+		var analysis intelligence.BlobAnalysis
+		if json.Unmarshal([]byte(payload), &analysis) != nil {
+			continue
+		}
+		key, input, object, _, identityErr := intelligence.ParseCacheIdentity(projectID, repository, blobSHA256, parserID, analysis)
+		if identityErr == nil {
+			actual[key] = struct{ input, object string }{input: input, object: object}
+		}
+	}
+	if err := blobs.Err(); err != nil {
+		blobs.Close()
+		return intelligence.CacheVerificationReport{}, err
+	}
+	if err := blobs.Close(); err != nil {
+		return intelligence.CacheVerificationReport{}, err
+	}
+	report := intelligence.CacheVerificationReport{ProjectID: projectID, Kind: kind, Items: []intelligence.CacheVerification{}}
+	for _, entry := range expected {
+		item := intelligence.CacheVerification{Key: entry.key, Kind: entry.kind, ExpectedObject: entry.object}
+		if entry.kind != "source-parse" {
+			item.Status, item.Reason = "unavailable", "this cache kind has no compiled object verifier"
+			report.Unavailable++
+		} else if observed, ok := actual[entry.key]; !ok {
+			item.Status, item.Reason = "invalid", "the registered parsed-blob object is missing"
+			report.Invalid++
+		} else if observed.input != entry.input || observed.object != entry.object {
+			item.Status, item.Reason, item.ObservedObject = "invalid", "input or serialized object integrity does not match", observed.object
+			report.Invalid++
+		} else {
+			item.Status, item.Reason, item.ObservedObject = "verified", "complete input identity and serialized object hash match", observed.object
+			report.Verified++
+		}
+		report.Items = append(report.Items, item)
+	}
+	return report, nil
+}
+
 func (s *Store) PurgeCacheEntries(ctx context.Context, projectID, kind, actorID, reason string) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

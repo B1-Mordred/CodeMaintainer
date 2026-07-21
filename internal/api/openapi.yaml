@@ -1043,6 +1043,27 @@ paths:
       responses:
         "200": { description: Redacted context manifest, content: { application/json: { schema: { $ref: "#/components/schemas/ContextManifest" } } } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/context-manifests/actions/compare:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Compare two project-scoped redacted context manifests deterministically
+      operationId: compareContextManifests
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [left_id, right_id]
+              properties:
+                left_id: { type: string, pattern: "^context_[a-f0-9]{32}$" }
+                right_id: { type: string, pattern: "^context_[a-f0-9]{32}$" }
+      responses:
+        "200": { description: Redacted manifest delta, content: { application/json: { schema: { $ref: "#/components/schemas/ContextManifestComparison" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/baselines:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     get:
@@ -1099,6 +1120,67 @@ paths:
           content: { application/json: { schema: { type: object, required: [purged, kind, reason], properties: { purged: { type: integer, minimum: 0 }, kind: { type: string }, reason: { type: string } } } } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/caches/actions/verify:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Recompute available cache object identities and report integrity without mutation
+      operationId: verifyProjectCaches
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { kind: { type: string, maxLength: 256 } }
+      responses:
+        "200": { description: Cache integrity report, content: { application/json: { schema: { $ref: "#/components/schemas/CacheVerificationReport" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/caches/actions/simulate:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Simulate a verified object against the effective project cache quota without mutation
+      operationId: simulateProjectCache
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [trust_domain, kind, estimated_bytes]
+              properties:
+                trust_domain: { type: string, minLength: 1, maxLength: 256 }
+                kind: { type: string, minLength: 1, maxLength: 256 }
+                estimated_bytes: { type: integer, minimum: 0 }
+      responses:
+        "200": { description: Project quota simulation, content: { application/json: { schema: { $ref: "#/components/schemas/CacheSimulation" } } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/caches/actions/warm:
+    parameters: [{ $ref: "#/components/parameters/ProjectID" }]
+    post:
+      summary: Warm parsed-source cache objects from a bounded exact trusted Git snapshot
+      operationId: warmProjectCaches
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201":
+          description: Immutable warming index run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run, source_excluded]
+                properties:
+                  run: { $ref: "#/components/schemas/IntelligenceRun" }
+                  source_excluded: { type: integer, minimum: 0 }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/actions/cancel:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -2708,6 +2790,20 @@ components:
         truncated: { type: boolean }
         selections: { type: array, items: { $ref: "#/components/schemas/ContextSelection" } }
         created_at: { type: string, format: date-time }
+    ContextManifestComparison:
+      type: object
+      additionalProperties: false
+      required: [project_id, left_id, right_id, added, removed, changed, input_token_delta, output_reserve_delta, truncation_changed]
+      properties:
+        project_id: { type: string }
+        left_id: { type: string, pattern: "^context_[a-f0-9]{32}$" }
+        right_id: { type: string, pattern: "^context_[a-f0-9]{32}$" }
+        added: { type: array, items: { $ref: "#/components/schemas/ContextSelection" } }
+        removed: { type: array, items: { $ref: "#/components/schemas/ContextSelection" } }
+        changed: { type: array, items: { $ref: "#/components/schemas/ContextSelection" } }
+        input_token_delta: { type: integer }
+        output_reserve_delta: { type: integer }
+        truncation_changed: { type: boolean }
     CacheEntry:
       type: object
       additionalProperties: false
@@ -2727,6 +2823,41 @@ components:
         quota_bytes: { type: integer, minimum: 1048576 }
         last_result: { type: string, enum: [hit, miss] }
         result_reason: { type: string }
+    CacheVerification:
+      type: object
+      additionalProperties: false
+      required: [key, kind, status, reason, expected_object_sha256]
+      properties:
+        key: { type: string, pattern: "^[a-f0-9]{64}$" }
+        kind: { type: string }
+        status: { type: string, enum: [verified, invalid, unavailable] }
+        reason: { type: string }
+        expected_object_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        observed_object_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    CacheVerificationReport:
+      type: object
+      additionalProperties: false
+      required: [project_id, verified, invalid, unavailable, items]
+      properties:
+        project_id: { type: string }
+        kind: { type: string }
+        verified: { type: integer, minimum: 0 }
+        invalid: { type: integer, minimum: 0 }
+        unavailable: { type: integer, minimum: 0 }
+        items: { type: array, maxItems: 10000, items: { $ref: "#/components/schemas/CacheVerification" } }
+    CacheSimulation:
+      type: object
+      additionalProperties: false
+      required: [project_id, trust_domain, kind, current_bytes, estimated_bytes, quota_bytes, would_fit, explanation]
+      properties:
+        project_id: { type: string }
+        trust_domain: { type: string }
+        kind: { type: string }
+        current_bytes: { type: integer, minimum: 0 }
+        estimated_bytes: { type: integer, minimum: 0 }
+        quota_bytes: { type: integer, minimum: 1048576 }
+        would_fit: { type: boolean }
+        explanation: { type: string }
     VerificationObservation:
       type: object
       additionalProperties: false

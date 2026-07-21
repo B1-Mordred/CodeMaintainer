@@ -203,6 +203,30 @@ func (s *Server) listContextManifests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) compareContextManifests(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		LeftID  string `json:"left_id"`
+		RightID string `json:"right_id"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if intelligence.ValidateIdentity(request.LeftID) != nil || intelligence.ValidateIdentity(request.RightID) != nil || request.LeftID == request.RightID {
+		writeError(w, http.StatusBadRequest, "invalid_manifest_comparison", "two distinct bounded manifest identities are required")
+		return
+	}
+	result, err := service.CompareContextManifests(r.Context(), r.PathValue("projectID"), request.LeftID, request.RightID)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) listProjectBaselines(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireIntelligence(w); !ok {
 		return
@@ -250,6 +274,59 @@ func (s *Server) listProjectCaches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) verifyProjectCaches(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		Kind string `json:"kind,omitempty"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if request.Kind != "" && intelligence.ValidateIdentity(request.Kind) != nil {
+		writeError(w, http.StatusBadRequest, "invalid_cache_kind", "cache kind must be a bounded identity")
+		return
+	}
+	report, err := service.VerifyCaches(r.Context(), r.PathValue("projectID"), request.Kind)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) simulateProjectCache(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireIntelligence(w)
+	if !ok {
+		return
+	}
+	var request struct {
+		TrustDomain    string `json:"trust_domain"`
+		Kind           string `json:"kind"`
+		EstimatedBytes int64  `json:"estimated_bytes"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if intelligence.ValidateIdentity(request.TrustDomain) != nil || intelligence.ValidateIdentity(request.Kind) != nil || request.EstimatedBytes < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_cache_simulation", "bounded trust domain, cache kind, and non-negative estimated bytes are required")
+		return
+	}
+	configuration, err := s.projectIntelligenceConfiguration(r.Context(), r.PathValue("projectID"))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	result, err := service.SimulateCache(r.Context(), r.PathValue("projectID"), request.TrustDomain, request.Kind, request.EstimatedBytes, configuration.CacheQuotaBytes)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 type cachePurgeRequest struct {

@@ -1076,6 +1076,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/context-manifests/actions/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare two project-scoped redacted context manifests deterministically */
+        post: operations["compareContextManifests"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/baselines": {
         parameters: {
             query?: never;
@@ -1165,6 +1184,63 @@ export interface paths {
         put?: never;
         /** Reauthenticated audited purge of an exact project cache kind or all project caches */
         post: operations["purgeProjectCaches"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/caches/actions/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recompute available cache object identities and report integrity without mutation */
+        post: operations["verifyProjectCaches"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/caches/actions/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate a verified object against the effective project cache quota without mutation */
+        post: operations["simulateProjectCache"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/caches/actions/warm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Warm parsed-source cache objects from a bounded exact trusted Git snapshot */
+        post: operations["warmProjectCaches"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2669,6 +2745,17 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        ContextManifestComparison: {
+            project_id: string;
+            left_id: string;
+            right_id: string;
+            added: components["schemas"]["ContextSelection"][];
+            removed: components["schemas"]["ContextSelection"][];
+            changed: components["schemas"]["ContextSelection"][];
+            input_token_delta: number;
+            output_reserve_delta: number;
+            truncation_changed: boolean;
+        };
         CacheEntry: {
             key: string;
             project_id: string;
@@ -2688,6 +2775,33 @@ export interface components {
             /** @enum {string} */
             last_result: "hit" | "miss";
             result_reason: string;
+        };
+        CacheVerification: {
+            key: string;
+            kind: string;
+            /** @enum {string} */
+            status: "verified" | "invalid" | "unavailable";
+            reason: string;
+            expected_object_sha256: string;
+            observed_object_sha256?: string;
+        };
+        CacheVerificationReport: {
+            project_id: string;
+            kind?: string;
+            verified: number;
+            invalid: number;
+            unavailable: number;
+            items: components["schemas"]["CacheVerification"][];
+        };
+        CacheSimulation: {
+            project_id: string;
+            trust_domain: string;
+            kind: string;
+            current_bytes: number;
+            estimated_bytes: number;
+            quota_bytes: number;
+            would_fit: boolean;
+            explanation: string;
         };
         VerificationObservation: {
             key: string;
@@ -4574,6 +4688,39 @@ export interface operations {
             404: components["responses"]["ErrorResponse"];
         };
     };
+    compareContextManifests: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left_id: string;
+                    right_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Redacted manifest delta */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextManifestComparison"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
     listProjectBaselines: {
         parameters: {
             query?: never;
@@ -4711,6 +4858,103 @@ export interface operations {
             };
             403: components["responses"]["ErrorResponse"];
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    verifyProjectCaches: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    kind?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Cache integrity report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheVerificationReport"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    simulateProjectCache: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    trust_domain: string;
+                    kind: string;
+                    estimated_bytes: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Project quota simulation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheSimulation"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    warmProjectCaches: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable warming index run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: components["schemas"]["IntelligenceRun"];
+                        source_excluded: number;
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     cancelJob: {

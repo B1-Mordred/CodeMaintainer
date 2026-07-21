@@ -125,3 +125,25 @@ func TestIntelligenceRebuildRequiresAndSendsAuditedReason(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIntelligenceCacheSimulationUsesTypedBoundedAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/caches/actions/simulate" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["kind"] != "source-parse" || body["trust_domain"] != "trusted" || body["estimated_bytes"] != float64(4096) {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"project_id":"project-one","trust_domain":"trusted","kind":"source-parse","current_bytes":0,"estimated_bytes":4096,"quota_bytes":536870912,"would_fit":true,"explanation":"fits"}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.intelligence([]string{"simulate-cache", "project-one", "--kind", "source-parse", "--trust-domain", "trusted", "--estimated-bytes", "4096"}); err != nil {
+		t.Fatal(err)
+	}
+}

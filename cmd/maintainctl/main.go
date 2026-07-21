@@ -122,7 +122,7 @@ func run(arguments []string) error {
 
 func (c client) intelligence(arguments []string) error {
 	if len(arguments) < 2 {
-		return errors.New("usage: maintainctl intelligence <status|query|refresh|rebuild|contexts|baselines|differentials|test-impacts|caches|purge-cache> <project-id> [arguments]")
+		return errors.New("usage: maintainctl intelligence <status|query|refresh|rebuild|contexts|compare-contexts|baselines|differentials|test-impacts|caches|verify-cache|simulate-cache|warm-cache|purge-cache> <project-id> [arguments]")
 	}
 	action, projectID := arguments[0], arguments[1]
 	if projectID == "" {
@@ -157,6 +157,11 @@ func (c client) intelligence(arguments []string) error {
 		return c.printJSON(http.MethodPost, base+"/intelligence/actions/rebuild", map[string]any{"reason": *reason})
 	case "contexts":
 		return c.printJSON(http.MethodGet, base+"/context-manifests", nil)
+	case "compare-contexts":
+		if len(arguments) != 4 {
+			return errors.New("usage: maintainctl intelligence compare-contexts <project-id> <left-manifest-id> <right-manifest-id>")
+		}
+		return c.printJSON(http.MethodPost, base+"/context-manifests/actions/compare", map[string]any{"left_id": arguments[2], "right_id": arguments[3]})
 	case "baselines":
 		return c.printJSON(http.MethodGet, base+"/baselines", nil)
 	case "differentials":
@@ -165,6 +170,33 @@ func (c client) intelligence(arguments []string) error {
 		return c.printJSON(http.MethodGet, base+"/test-impacts", nil)
 	case "caches":
 		return c.printJSON(http.MethodGet, base+"/caches", nil)
+	case "verify-cache":
+		flags := flag.NewFlagSet("intelligence verify-cache", flag.ContinueOnError)
+		kind := flags.String("kind", "", "exact cache kind, or all project caches")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl intelligence verify-cache <project-id> [--kind kind]")
+		}
+		return c.printJSON(http.MethodPost, base+"/caches/actions/verify", map[string]any{"kind": *kind})
+	case "simulate-cache":
+		flags := flag.NewFlagSet("intelligence simulate-cache", flag.ContinueOnError)
+		kind := flags.String("kind", "", "cache kind")
+		trustDomain := flags.String("trust-domain", "", "cache trust domain")
+		estimatedBytes := flags.Int64("estimated-bytes", -1, "estimated verified object bytes")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *kind == "" || *trustDomain == "" || *estimatedBytes < 0 {
+			return errors.New("usage: maintainctl intelligence simulate-cache <project-id> --kind kind --trust-domain domain --estimated-bytes bytes")
+		}
+		return c.printJSON(http.MethodPost, base+"/caches/actions/simulate", map[string]any{"kind": *kind, "trust_domain": *trustDomain, "estimated_bytes": *estimatedBytes})
+	case "warm-cache":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl intelligence warm-cache <project-id>")
+		}
+		return c.printJSON(http.MethodPost, base+"/caches/actions/warm", nil)
 	case "purge-cache":
 		flags := flag.NewFlagSet("intelligence purge-cache", flag.ContinueOnError)
 		kind := flags.String("kind", "", "exact cache kind, or all project caches")
@@ -778,6 +810,10 @@ Commands:
   intelligence status|refresh|rebuild <project-id>
   intelligence query <project-id> <term>
   intelligence contexts|baselines|differentials|test-impacts|caches <project-id>
+  intelligence compare-contexts <project-id> <left-manifest-id> <right-manifest-id>
+  intelligence verify-cache <project-id> [--kind kind]
+  intelligence simulate-cache <project-id> --kind kind --trust-domain domain --estimated-bytes bytes
+  intelligence warm-cache <project-id>
   intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>

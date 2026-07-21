@@ -107,25 +107,33 @@ func (service *Service) Index(ctx context.Context, request IndexRequest) (IndexR
 }
 
 func (service *Service) registerParseCache(ctx context.Context, request IndexRequest, file SourceFile, analysis BlobAnalysis) error {
-	const trustDomain = "trusted-source"
-	const kind = "source-parse"
-	key, err := NewCacheKey(request.ProjectID, trustDomain, kind, request.Repository, file.BlobSHA256, request.ParserID, fmt.Sprintf("schema-%d", SchemaVersion))
+	key, inputSHA256, objectSHA256, bytes, err := ParseCacheIdentity(request.ProjectID, request.Repository, file.BlobSHA256, request.ParserID, analysis)
 	if err != nil {
 		return err
 	}
-	inputDigest := sha256.Sum256([]byte(strings.Join([]string{request.Repository, file.BlobSHA256, request.ParserID, fmt.Sprintf("schema-%d", SchemaVersion)}, "\x00")))
-	payload, err := json.Marshal(analysis)
-	if err != nil {
-		return err
-	}
-	objectDigest := sha256.Sum256(payload)
 	_, err = service.RegisterCacheEntry(ctx, CacheEntry{
-		Key: key, ProjectID: request.ProjectID, TrustDomain: trustDomain, Kind: kind,
-		InputSHA256: hex.EncodeToString(inputDigest[:]), ObjectSHA256: hex.EncodeToString(objectDigest[:]),
-		Bytes: int64(len(payload)), Verified: true, ExpiresAt: time.Now().UTC().Add(time.Duration(request.CacheRetentionDays) * 24 * time.Hour),
+		Key: key, ProjectID: request.ProjectID, TrustDomain: "trusted-source", Kind: "source-parse",
+		InputSHA256: inputSHA256, ObjectSHA256: objectSHA256,
+		Bytes: bytes, Verified: true, ExpiresAt: time.Now().UTC().Add(time.Duration(request.CacheRetentionDays) * 24 * time.Hour),
 		QuotaBytes: request.CacheQuotaBytes,
 	})
 	return err
+}
+
+func ParseCacheIdentity(projectID, repository, blobSHA256, parserID string, analysis BlobAnalysis) (string, string, string, int64, error) {
+	const trustDomain = "trusted-source"
+	const kind = "source-parse"
+	key, err := NewCacheKey(projectID, trustDomain, kind, repository, blobSHA256, parserID, fmt.Sprintf("schema-%d", SchemaVersion))
+	if err != nil {
+		return "", "", "", 0, err
+	}
+	inputDigest := sha256.Sum256([]byte(strings.Join([]string{repository, blobSHA256, parserID, fmt.Sprintf("schema-%d", SchemaVersion)}, "\x00")))
+	payload, err := json.Marshal(analysis)
+	if err != nil {
+		return "", "", "", 0, err
+	}
+	objectDigest := sha256.Sum256(payload)
+	return key, hex.EncodeToString(inputDigest[:]), hex.EncodeToString(objectDigest[:]), int64(len(payload)), nil
 }
 
 func validateIndexRequest(request IndexRequest) error {
@@ -333,6 +341,48 @@ func (service *Service) CompileContext(ctx context.Context, projectID, jobID, st
 	return packet, nil
 }
 
+func (service *Service) CompareContextManifests(ctx context.Context, projectID, leftID, rightID string) (ContextManifestComparison, error) {
+	if ValidateIdentity(projectID) != nil || ValidateIdentity(leftID) != nil || ValidateIdentity(rightID) != nil || leftID == rightID {
+		return ContextManifestComparison{}, errors.New("two distinct bounded project manifest identities are required")
+	}
+	left, err := service.store.GetContextManifest(ctx, projectID, leftID)
+	if err != nil {
+		return ContextManifestComparison{}, err
+	}
+	right, err := service.store.GetContextManifest(ctx, projectID, rightID)
+	if err != nil {
+		return ContextManifestComparison{}, err
+	}
+	result := ContextManifestComparison{ProjectID: projectID, LeftID: leftID, RightID: rightID, Added: []ContextSelection{}, Removed: []ContextSelection{}, Changed: []ContextSelection{}, InputTokenDelta: right.UsedTokens - left.UsedTokens, OutputReserveDelta: right.ReservedOutputTokens - left.ReservedOutputTokens, TruncationChanged: left.Truncated != right.Truncated}
+	leftByID := make(map[string]ContextSelection, len(left.Selections))
+	rightByID := make(map[string]ContextSelection, len(right.Selections))
+	for _, item := range left.Selections {
+		leftByID[item.ID] = item
+	}
+	for _, item := range right.Selections {
+		rightByID[item.ID] = item
+	}
+	for id, item := range rightByID {
+		before, ok := leftByID[id]
+		if !ok {
+			result.Added = append(result.Added, item)
+			continue
+		}
+		if before.SHA256 != item.SHA256 || before.Included != item.Included || before.Exclusion != item.Exclusion || before.Stale != item.Stale || before.Reason != item.Reason {
+			result.Changed = append(result.Changed, item)
+		}
+	}
+	for id, item := range leftByID {
+		if _, ok := rightByID[id]; !ok {
+			result.Removed = append(result.Removed, item)
+		}
+	}
+	for _, values := range [][]ContextSelection{result.Added, result.Removed, result.Changed} {
+		sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
+	}
+	return result, nil
+}
+
 func CompareObservations(baseline, candidate []Observation) []DifferentialObservation {
 	base := make(map[string]Observation, len(baseline))
 	current := make(map[string]Observation, len(candidate))
@@ -479,6 +529,30 @@ func (service *Service) CacheEntries(ctx context.Context, projectID string, limi
 		return nil, errors.New("valid project identity is required")
 	}
 	return service.store.ListCacheEntries(ctx, projectID, limit)
+}
+
+func (service *Service) VerifyCaches(ctx context.Context, projectID, kind string) (CacheVerificationReport, error) {
+	if ValidateIdentity(projectID) != nil || (kind != "" && ValidateIdentity(kind) != nil) {
+		return CacheVerificationReport{}, errors.New("valid project and optional cache kind are required")
+	}
+	return service.store.VerifyCacheEntries(ctx, projectID, kind)
+}
+
+func (service *Service) SimulateCache(ctx context.Context, projectID, trustDomain, kind string, estimatedBytes, quotaBytes int64) (CacheSimulation, error) {
+	if ValidateIdentity(projectID) != nil || ValidateIdentity(trustDomain) != nil || ValidateIdentity(kind) != nil || estimatedBytes < 0 || quotaBytes < 1<<20 || quotaBytes > 1<<40 {
+		return CacheSimulation{}, errors.New("bounded cache simulation identities, size, and quota are required")
+	}
+	usage, _, err := service.store.CacheUsage(ctx, projectID)
+	if err != nil {
+		return CacheSimulation{}, err
+	}
+	result := CacheSimulation{ProjectID: projectID, TrustDomain: trustDomain, Kind: kind, CurrentBytes: usage, EstimatedBytes: estimatedBytes, QuotaBytes: quotaBytes, WouldFit: usage+estimatedBytes <= quotaBytes}
+	if result.WouldFit {
+		result.Explanation = "The estimated verified object fits without evicting unrelated project evidence."
+	} else {
+		result.Explanation = "The estimate exceeds the project quota; registration will fail transactionally without eviction."
+	}
+	return result, nil
 }
 
 func (service *Service) PurgeCache(ctx context.Context, projectID, kind, actorID, reason string, recentlyReauthenticated bool) (int, error) {

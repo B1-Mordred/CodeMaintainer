@@ -77,6 +77,17 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	if listed, listErr := store.ListContextManifests(ctx, "project-one", 10); listErr != nil || len(listed) != 1 {
 		t.Fatalf("context manifest list = %#v %v", listed, listErr)
 	}
+	changedPacket, err := service.CompileContext(ctx, "project-one", "", "qc", 320, 80, []intelligence.ContextCandidate{
+		{ID: "target", Source: "code_intelligence", Version: "def456", Reason: "candidate changed symbol", Trust: "untrusted", Content: []byte("func RunChanged()"), Priority: 100},
+		{ID: "policy", Source: "configuration", Version: "7", Reason: "effective verification policy", Trust: "trusted", Content: []byte("full suite required"), Priority: 90},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison, err := service.CompareContextManifests(ctx, "project-one", packet.Manifest.ID, changedPacket.Manifest.ID)
+	if err != nil || len(comparison.Added) != 1 || len(comparison.Removed) != 2 || len(comparison.Changed) != 1 || comparison.OutputReserveDelta != 16 {
+		t.Fatalf("context comparison = %#v %v", comparison, err)
+	}
 
 	baseline, err := service.CaptureBaseline(ctx, intelligence.Baseline{ProjectID: "project-one", Revision: "abc123", ConfigSHA256: hash("config"), ToolchainID: "go-v1", PackSetSHA256: hash("packs"), ActorID: "admin", Reason: "clean environment baseline", Observations: []intelligence.Observation{{Key: "unit", Kind: "test", Status: "failed", Value: json.RawMessage(`{"failures":1}`)}, {Key: "lint", Kind: "lint", Status: "passed", Value: json.RawMessage(`{"warnings":0}`)}}})
 	if err != nil {
@@ -140,6 +151,18 @@ func TestIncrementalIndexContextDifferentialImpactAndCacheLifecycle(t *testing.T
 	}
 	if hits != 3 {
 		t.Fatalf("parsed-blob cache results = %#v", entries)
+	}
+	verification, err := service.VerifyCaches(ctx, "project-one", "")
+	if err != nil || verification.Verified != 3 || verification.Unavailable != 1 || verification.Invalid != 0 {
+		t.Fatalf("cache verification = %#v %v", verification, err)
+	}
+	simulation, err := service.SimulateCache(ctx, "project-one", "trusted", "source-parse", 1024, 512<<20)
+	if err != nil || !simulation.WouldFit || simulation.CurrentBytes == 0 {
+		t.Fatalf("cache simulation = %#v %v", simulation, err)
+	}
+	tooLarge, err := service.SimulateCache(ctx, "project-one", "trusted", "source-parse", 512<<20, 512<<20)
+	if err != nil || tooLarge.WouldFit {
+		t.Fatalf("over-quota cache simulation = %#v %v", tooLarge, err)
 	}
 	overQuotaKey, _ := intelligence.NewCacheKey("project-one", "trusted", "quota-test", "complete-input")
 	if _, err := service.RegisterCacheEntry(ctx, intelligence.CacheEntry{Key: overQuotaKey, ProjectID: "project-one", TrustDomain: "trusted", Kind: "quota-test", InputSHA256: hash("quota-input"), ObjectSHA256: hash("quota-object"), Bytes: 1 << 20, QuotaBytes: 1 << 20, Verified: true, ExpiresAt: time.Now().UTC().Add(time.Hour)}); !errors.Is(err, storage.ErrBudgetExceeded) {
