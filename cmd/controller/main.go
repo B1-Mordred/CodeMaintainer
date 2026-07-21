@@ -136,7 +136,11 @@ func run(logger *slog.Logger) error {
 		go func() { indexErrors <- synchronizer.Run(ctx) }()
 	}
 
-	intelligenceService, err := intelligence.NewService(store, nil)
+	intelligenceAnalyzer, err := configuredIntelligenceAnalyzer()
+	if err != nil {
+		return err
+	}
+	intelligenceService, err := intelligence.NewService(store, intelligenceAnalyzer)
 	if err != nil {
 		return err
 	}
@@ -278,12 +282,20 @@ func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.St
 	if err := json.Unmarshal(revision.After, &document); err != nil {
 		return nil, nil, err
 	}
+	intelligenceAnalyzer, err := configuredIntelligenceAnalyzer()
+	if err != nil {
+		return nil, nil, err
+	}
 	coordinator, err := workflow.NewCoordinator(store, gitClient, modelManager, execution, artifactStore,
-		worktreesRoot, document.Workflow.MaxReviewCycles)
+		worktreesRoot, document.Workflow.MaxReviewCycles, intelligenceAnalyzer)
 	if err != nil {
 		return nil, nil, err
 	}
 	return workflow.New(store, coordinator), modelManager, nil
+}
+
+func configuredIntelligenceAnalyzer() (intelligence.Analyzer, error) {
+	return intelligence.NewRemoteAnalyzer(env("MAINTAINER_CODE_INTELLIGENCE_URL", "http://code-intelligence:8090"))
 }
 
 func readToken(path string) ([]byte, error) {

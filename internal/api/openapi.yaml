@@ -2823,7 +2823,7 @@ components:
     IntelligenceStatus:
       type: object
       additionalProperties: false
-      required: [project_id, state, files, languages, failures, storage_bytes, parser_ids, indexing_enabled, retention_days, cache_quota_bytes]
+      required: [project_id, state, files, languages, failures, storage_bytes, parser_ids, tool_ids, indexing_enabled, retention_days, cache_quota_bytes]
       properties:
         project_id: { type: string }
         latest_revision: { type: string }
@@ -2834,6 +2834,7 @@ components:
         failures: { type: integer, minimum: 0 }
         storage_bytes: { type: integer, minimum: 0 }
         parser_ids: { type: array, items: { type: string } }
+        tool_ids: { type: array, items: { type: string } }
         fresh_at: { type: string, format: date-time }
         indexing_enabled: { type: boolean }
         retention_days: { type: integer, minimum: 1, maximum: 3650 }

@@ -99,7 +99,7 @@ func (s *Store) CommitIndex(ctx context.Context, request intelligence.IndexReque
 }
 
 func (s *Store) IntelligenceStatus(ctx context.Context, projectID string) (intelligence.Status, error) {
-	status := intelligence.Status{ProjectID: projectID, State: "never_indexed", Languages: []string{}, ParserIDs: []string{}}
+	status := intelligence.Status{ProjectID: projectID, State: "never_indexed", Languages: []string{}, ParserIDs: []string{}, ToolIDs: []string{}}
 	var completed string
 	err := s.db.QueryRowContext(ctx, `SELECT id, revision, state, files, failures, bytes, parser_id, completed_at FROM code_intel_runs WHERE project_id = ? ORDER BY completed_at DESC, id DESC LIMIT 1`, projectID).Scan(&status.LatestRunID, &status.LatestRevision, &status.State, &status.Files, &status.Failures, new(int64), new(string), &completed)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -141,7 +141,33 @@ func (s *Store) IntelligenceStatus(ctx context.Context, projectID string) (intel
 	}
 	sort.Strings(status.Languages)
 	sort.Strings(status.ParserIDs)
-	return status, rows.Err()
+	if err := rows.Err(); err != nil {
+		return status, err
+	}
+	providerRows, err := s.db.QueryContext(ctx, `SELECT b.analysis_json FROM code_intel_files f JOIN code_intel_runs r ON r.id=f.run_id JOIN code_intel_blobs b ON b.project_id=r.project_id AND b.repository=r.repository AND b.blob_sha256=f.blob_sha256 AND b.parser_id=r.parser_id WHERE f.run_id=?`, status.LatestRunID)
+	if err != nil {
+		return status, err
+	}
+	defer providerRows.Close()
+	providers := map[string]bool{}
+	for providerRows.Next() {
+		var payload string
+		if err := providerRows.Scan(&payload); err != nil {
+			return status, err
+		}
+		var analysis intelligence.BlobAnalysis
+		if err := json.Unmarshal([]byte(payload), &analysis); err != nil {
+			return status, err
+		}
+		for _, provider := range analysis.Providers {
+			providers[provider.ID] = true
+		}
+	}
+	for provider := range providers {
+		status.ToolIDs = append(status.ToolIDs, provider)
+	}
+	sort.Strings(status.ToolIDs)
+	return status, providerRows.Err()
 }
 
 func (s *Store) QueryIntelligence(ctx context.Context, query intelligence.Query) (intelligence.QueryResult, error) {

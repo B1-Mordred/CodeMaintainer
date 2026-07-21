@@ -38,7 +38,7 @@ func NewService(store Store, analyzer Analyzer) (*Service, error) {
 		return nil, errors.New("intelligence store is required")
 	}
 	if analyzer == nil {
-		analyzer = LexicalAnalyzer{}
+		analyzer = SyntaxAnalyzer{}
 	}
 	return &Service{store: store, analyzer: analyzer}, nil
 }
@@ -199,10 +199,12 @@ func (LexicalAnalyzer) Analyze(_ context.Context, filePath, parserID string, con
 }
 
 func analyzeGo(filePath, parserID string, content []byte, analysis BlobAnalysis) BlobAnalysis {
+	analysis.Providers = append(analysis.Providers, AnalysisProvider{ID: "go-ast@1.25.12", Capability: "syntax", Status: "complete"})
 	set := token.NewFileSet()
 	parsed, err := parser.ParseFile(set, filePath, content, parser.SkipObjectResolution)
 	if err != nil {
 		analysis.Failure = "Go syntax could not be parsed"
+		analysis.Providers[0].Status = "partial"
 		return analysis
 	}
 	for _, declaration := range parsed.Decls {
@@ -536,6 +538,13 @@ func (service *Service) BaselineSupersessions(ctx context.Context, projectID str
 	return service.store.ListBaselineSupersessions(ctx, projectID, limit)
 }
 
+func (service *Service) Baselines(ctx context.Context, projectID string, limit int) ([]Baseline, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListBaselines(ctx, projectID, limit)
+}
+
 func (service *Service) CompareAndSave(ctx context.Context, baseline Baseline, candidateSHA, purpose string, observations []Observation) (Differential, error) {
 	if baseline.ID == "" || len(candidateSHA) != 64 || ValidateIdentity(purpose) != nil || len(observations) == 0 || len(observations) > 10_000 {
 		return Differential{}, errors.New("stored baseline, candidate hash, purpose, and bounded observations are required")
@@ -597,6 +606,13 @@ func (service *Service) DifferentialCorrections(ctx context.Context, projectID s
 	return service.store.ListDifferentialCorrections(ctx, projectID, limit)
 }
 
+func (service *Service) Differentials(ctx context.Context, projectID string, limit int) ([]Differential, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListDifferentials(ctx, projectID, limit)
+}
+
 func (service *Service) RecordTestImpact(ctx context.Context, impact TestImpact) (TestImpact, error) {
 	if ValidateIdentity(impact.ProjectID) != nil || ValidateIdentity(impact.Revision) != nil || len(impact.ChangedSymbols) == 0 || len(impact.Selections) > 10_000 || strings.TrimSpace(impact.PolicyExplanation) == "" {
 		return TestImpact{}, errors.New("test impact requires bounded project, revision, symbols, selections, and policy explanation")
@@ -637,6 +653,13 @@ func (service *Service) TestImpactOverrides(ctx context.Context, projectID strin
 		return nil, errors.New("valid project identity is required")
 	}
 	return service.store.ListTestImpactOverrides(ctx, projectID, limit)
+}
+
+func (service *Service) TestImpacts(ctx context.Context, projectID string, limit int) ([]TestImpact, error) {
+	if ValidateIdentity(projectID) != nil {
+		return nil, errors.New("valid project identity is required")
+	}
+	return service.store.ListTestImpacts(ctx, projectID, limit)
 }
 
 func (service *Service) RegisterCacheEntry(ctx context.Context, entry CacheEntry) (CacheEntry, error) {

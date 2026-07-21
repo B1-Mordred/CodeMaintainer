@@ -46,19 +46,19 @@ case "$action" in
 	else
 		git rev-parse HEAD >.data/updates/known-good-source
 	fi
-	for image in local/code-maintainer-controller:0.1.0-dev local/code-maintainer-cli:0.1.0-dev local/code-maintainer-runnerd:0.1.0-dev local/code-maintainer-fake-model-server:0.1.0-dev local/code-maintainer-git-bridge:0.1.0-dev; do
+	for image in local/code-maintainer-controller:0.1.0-dev local/code-maintainer-cli:0.1.0-dev local/code-maintainer-runnerd:0.1.0-dev local/code-maintainer-fake-model-server:0.1.0-dev local/code-maintainer-git-bridge:0.1.0-dev local/code-maintainer-code-intelligence:0.1.0-dev; do
 		if "${docker_command[@]}" image inspect "$image" >/dev/null 2>&1; then
 			"${docker_command[@]}" image tag "$image" "${image%:*}:known-good"
 		fi
 	done
-    compose build controller maintainctl runnerd model-supervisor git-bridge
+    compose build controller maintainctl runnerd model-supervisor git-bridge code-intelligence
     compose -f compose.yaml -f compose.dev.yaml up -d
     compose run --rm maintainctl health
 	git rev-parse HEAD >.data/updates/deployed-source
     printf 'Candidate promoted. Known-good source metadata is in .data/updates.\n'
     ;;
   rollback)
-	for image in local/code-maintainer-controller:0.1.0-dev local/code-maintainer-cli:0.1.0-dev local/code-maintainer-runnerd:0.1.0-dev local/code-maintainer-fake-model-server:0.1.0-dev local/code-maintainer-git-bridge:0.1.0-dev; do
+	for image in local/code-maintainer-controller:0.1.0-dev local/code-maintainer-cli:0.1.0-dev local/code-maintainer-runnerd:0.1.0-dev local/code-maintainer-fake-model-server:0.1.0-dev local/code-maintainer-git-bridge:0.1.0-dev local/code-maintainer-code-intelligence:0.1.0-dev; do
 		known_good="${image%:*}:known-good"
 		"${docker_command[@]}" image inspect "$known_good" >/dev/null
 		"${docker_command[@]}" image tag "$known_good" "$image"

@@ -35,6 +35,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w" -o /out/git-bridge ./cmd/git-bridge && \
     CGO_ENABLED=0 go build -trimpath -buildvcs=false \
       -ldflags="-s -w" -o /out/hermes-tool-bridge ./cmd/hermes-tool-bridge
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go build -trimpath -buildvcs=false \
+      -ldflags="-s -w" -o /out/code-intelligence ./cmd/code-intelligence
 
 FROM gcr.io/distroless/static-debian12@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS controller
 COPY --from=build --chown=65532:65532 /out/controller /controller
@@ -58,6 +62,12 @@ COPY --from=build --chown=65532:65532 /out/fake-model-server /fake-model-server
 USER 65532:65532
 EXPOSE 8082
 ENTRYPOINT ["/fake-model-server"]
+
+FROM debian:12.13-slim@sha256:2749ca60ffb3c42de053229d7967d292d7dad1067936b38995da0bbfb96c4c23 AS code-intelligence
+COPY --from=build --chown=65532:65532 /out/code-intelligence /code-intelligence
+USER 65532:65532
+EXPOSE 8090
+ENTRYPOINT ["/code-intelligence"]
 
 FROM debian:12.13-slim@sha256:2749ca60ffb3c42de053229d7967d292d7dad1067936b38995da0bbfb96c4c23 AS git-bridge
 ARG DEBIAN_SNAPSHOT=20260505T000000Z

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/local-code-maintainer/appliance/internal/agents"
 	artifactfiles "github.com/local-code-maintainer/appliance/internal/artifacts"
@@ -20,6 +21,7 @@ import (
 	"github.com/local-code-maintainer/appliance/internal/gitbridge"
 	"github.com/local-code-maintainer/appliance/internal/intelligence"
 	"github.com/local-code-maintainer/appliance/internal/jobs"
+	projectmemory "github.com/local-code-maintainer/appliance/internal/memory"
 	"github.com/local-code-maintainer/appliance/internal/models"
 	"github.com/local-code-maintainer/appliance/internal/storage"
 	"github.com/local-code-maintainer/appliance/internal/verification"
@@ -41,6 +43,7 @@ type coordinatorStore interface {
 	storage.FindingStore
 	storage.ProjectStore
 	intelligence.Store
+	projectmemory.DurableStore
 }
 
 type Coordinator struct {
@@ -55,12 +58,16 @@ type Coordinator struct {
 }
 
 func NewCoordinator(store coordinatorStore, git GitBackend, modelManager models.Manager, execution ExecutionBackend,
-	artifacts artifactManager, worktreesRoot string, maxReviewCycles int) (*Coordinator, error) {
+	artifacts artifactManager, worktreesRoot string, maxReviewCycles int, analyzers ...intelligence.Analyzer) (*Coordinator, error) {
 	if store == nil || git == nil || modelManager == nil || execution == nil || artifacts == nil ||
 		!filepath.IsAbs(worktreesRoot) || maxReviewCycles < 1 || maxReviewCycles > 10 {
 		return nil, storage.ErrInvalid
 	}
-	intelligenceService, err := intelligence.NewService(store, nil)
+	var analyzer intelligence.Analyzer
+	if len(analyzers) > 0 {
+		analyzer = analyzers[0]
+	}
+	intelligenceService, err := intelligence.NewService(store, analyzer)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +110,7 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 				digest := sha256.Sum256(file.Content)
 				sources = append(sources, intelligence.SourceFile{Path: file.Path, BlobSHA256: hex.EncodeToString(digest[:]), Content: file.Content})
 			}
-			indexed, err = c.intelligence.Index(ctx, intelligence.IndexRequest{ProjectID: job.ProjectID, Repository: job.Repository, Revision: synced.BaseSHA, ParserID: "controller-syntax-v1", CacheRetentionDays: c.jobConfigInt(ctx, job.ID, "intelligence.index_retention_days", 30), CacheQuotaBytes: c.jobConfigInt64(ctx, job.ID, "intelligence.cache_quota_bytes", 512<<20), Files: sources})
+			indexed, err = c.intelligence.Index(ctx, intelligence.IndexRequest{ProjectID: job.ProjectID, Repository: job.Repository, Revision: synced.BaseSHA, ParserID: "controller-syntax-v2", CacheRetentionDays: c.jobConfigInt(ctx, job.ID, "intelligence.index_retention_days", 30), CacheQuotaBytes: c.jobConfigInt64(ctx, job.ID, "intelligence.cache_quota_bytes", 512<<20), Files: sources})
 			if err != nil {
 				return Outcome{}, err
 			}
@@ -639,8 +646,81 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		{ID: "task", Source: "task_contract", Version: job.AcceptanceCriteriaHash, Reason: "operator request", Trust: "trusted", Content: []byte(job.Task), Priority: 1000},
 		{ID: "criteria", Source: "acceptance_criteria", Version: job.AcceptanceCriteriaHash, Reason: "locked completion contract", Trust: "trusted", Content: criteriaPayload, Priority: 990},
 	}
+	if snapshot, ok := c.jobConfigSnapshot(ctx, job.ID); ok {
+		payload, _ := json.Marshal(snapshot)
+		candidates = append(candidates, intelligence.ContextCandidate{ID: "effective-configuration", Source: "effective_configuration", Version: snapshot.SHA256, Reason: "immutable acceptance-time configuration and provenance", Trust: "trusted", Content: payload, Priority: 980})
+	}
+	if len(blockers) != 0 {
+		payload, _ := json.Marshal(blockers)
+		candidates = append(candidates, intelligence.ContextCandidate{ID: "unresolved-findings", Source: "unresolved_findings", Version: fmt.Sprintf("review-%d", job.ReviewCycle), Reason: "validated unresolved QC findings for the current repair cycle", Trust: "untrusted", Content: payload, Priority: 970})
+	}
+	policyPayload, _ := json.Marshal(verification.DefaultPolicy())
+	candidates = append(candidates, intelligence.ContextCandidate{ID: "protected-path-policy", Source: "controller_policy", Version: "verification-policy-v1", Reason: "trusted protected-path and bounded-diff policy applied by the verifier", Trust: "trusted", Content: policyPayload, Priority: 960})
+	if parts := strings.SplitN(job.Repository, "/", 2); len(parts) == 2 {
+		scope := projectmemory.ProjectScope{Owner: parts[0], Repository: parts[1]}
+		memories, memoryErr := c.store.ListMemory(ctx, scope, projectmemory.StatusCanonical, 20)
+		if memoryErr != nil {
+			return agents.TaskPacket{}, memoryErr
+		}
+		now := time.Now().UTC()
+		for _, record := range memories {
+			if !record.Verified || !record.SecretScanPass || (record.ExpiresAt != nil && !record.ExpiresAt.After(now)) {
+				continue
+			}
+			candidates = append(candidates, intelligence.ContextCandidate{ID: "memory:" + record.ID, Source: "verified_memory", Version: fmt.Sprintf("v%d:%s", record.Version, record.ContentHash), Reason: "canonical project-namespaced memory with verification provenance", Trust: "verified_memory", Content: []byte(record.Content), Priority: 760, Stale: record.Status == projectmemory.StatusStale})
+		}
+	}
+	baselines, err := c.intelligence.Baselines(ctx, job.ProjectID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
+	differentials, err := c.intelligence.Differentials(ctx, job.ProjectID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
+	impacts, err := c.intelligence.TestImpacts(ctx, job.ProjectID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
+	for _, evidence := range []struct {
+		id, source, reason string
+		value              any
+	}{
+		{id: "baseline-evidence", source: "verification_baselines", reason: "recent exact-identity pre-change evidence", value: baselines},
+		{id: "differential-evidence", source: "verification_differentials", reason: "recent candidate comparison and unresolved classifications", value: differentials},
+		{id: "test-impact-evidence", source: "test_impact", reason: "recent changed-symbol test selection and full-suite policy", value: impacts},
+	} {
+		payload, _ := json.Marshal(evidence.value)
+		if string(payload) != "[]" && string(payload) != "null" {
+			candidates = append(candidates, intelligence.ContextCandidate{ID: evidence.id, Source: evidence.source, Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: evidence.reason, Trust: "trusted", Content: payload, Priority: 740})
+		}
+	}
+	rangeContexts := map[string][]string{}
 	for _, file := range files {
-		candidates = append(candidates, intelligence.ContextCandidate{ID: "file:" + file.Path, Source: "repository_file", Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: "bounded relevant source selected by controller policy", Trust: "untrusted", Content: []byte(file.Content), Priority: 500 - contextPriority(file.Path)})
+		source, reason, priority := "repository_file", "bounded relevant source selected by controller policy", 400-contextPriority(file.Path)
+		if strings.HasSuffix(file.Path, "AGENTS.md") || file.Path == "project.md" || strings.HasPrefix(file.Path, "docs/") {
+			source, reason, priority = "repository_instructions", "repository instructions or authoritative documentation", 900
+		}
+		candidates = append(candidates, intelligence.ContextCandidate{ID: "file:" + file.Path, Source: source, Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: reason, Trust: "untrusted", Content: []byte(file.Content), Priority: priority})
+		query, queryErr := c.intelligence.Query(ctx, intelligence.Query{ProjectID: job.ProjectID, Revision: job.BaseSHA, Term: file.Path, Limit: 8})
+		if errors.Is(queryErr, storage.ErrNotFound) {
+			continue
+		}
+		if queryErr != nil {
+			return agents.TaskPacket{}, queryErr
+		}
+		for _, symbol := range query.Symbols {
+			if symbol.Path != file.Path {
+				continue
+			}
+			fragment := sourceLineRange(file.Content, symbol.StartLine, symbol.EndLine)
+			if fragment == "" {
+				continue
+			}
+			id := "symbol:" + symbol.ID
+			rangeContexts[file.Path] = append(rangeContexts[file.Path], id)
+			candidates = append(candidates, intelligence.ContextCandidate{ID: id, Source: "code_intelligence_range", Version: firstNonempty(job.ResultSHA, job.BaseSHA), Reason: fmt.Sprintf("exact indexed %s %s at %s:%d-%d", symbol.Kind, symbol.Name, symbol.Path, symbol.StartLine, symbol.EndLine), Trust: "untrusted", Content: []byte(fragment), Priority: 700})
+		}
 	}
 	inputBudget := c.jobConfigInt(ctx, job.ID, "intelligence.context_input_tokens", 32_768)
 	outputReserve := c.jobConfigInt(ctx, job.ID, "intelligence.context_output_reserve_tokens", 8_192)
@@ -661,6 +741,21 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	for _, file := range files {
 		if included["file:"+file.Path] {
 			selectedFiles = append(selectedFiles, file)
+			continue
+		}
+		fragments := []string{}
+		for _, id := range rangeContexts[file.Path] {
+			if included[id] {
+				for _, candidate := range candidates {
+					if candidate.ID == id {
+						fragments = append(fragments, string(candidate.Content))
+						break
+					}
+				}
+			}
+		}
+		if len(fragments) != 0 {
+			selectedFiles = append(selectedFiles, agents.FileContext{Path: file.Path, Content: strings.Join(fragments, "\n\n")})
 		}
 	}
 	if len(selectedFiles) == 0 {
@@ -676,6 +771,20 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		return agents.TaskPacket{}, err
 	}
 	return packet, nil
+}
+
+func sourceLineRange(content string, startLine, endLine int) string {
+	if startLine < 1 || endLine < startLine || endLine-startLine > 2000 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if startLine > len(lines) {
+		return ""
+	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	return strings.Join(lines[startLine-1:endLine], "\n")
 }
 
 func firstNonempty(values ...string) string {

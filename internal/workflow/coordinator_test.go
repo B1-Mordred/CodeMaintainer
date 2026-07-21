@@ -204,6 +204,19 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if strings.Contains(string(manifestPayload), "package arithmetic") || manifests[0].BudgetTokens != 4096 || manifests[0].ReservedOutputTokens != 1024 {
 		t.Fatalf("context manifest stored source content or omitted its output reservation: %s", manifestPayload)
 	}
+	sources := map[string]bool{}
+	for _, manifest := range manifests {
+		for _, selection := range manifest.Selections {
+			if selection.Included {
+				sources[selection.Source] = true
+			}
+		}
+	}
+	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings"} {
+		if !sources[required] {
+			t.Fatalf("context manifests omitted production source %q: %#v", required, sources)
+		}
+	}
 	indexStatus, err := store.IntelligenceStatus(ctx, "fixture")
 	if err != nil || indexStatus.LatestRevision != job.BaseSHA || indexStatus.Files != 3 {
 		t.Fatalf("workflow index status = %#v, %v", indexStatus, err)

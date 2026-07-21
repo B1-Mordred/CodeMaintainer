@@ -47,14 +47,21 @@ type Relation struct {
 }
 
 type BlobAnalysis struct {
-	BlobSHA256     string     `json:"blob_sha256"`
-	ParserID       string     `json:"parser_id"`
-	Language       string     `json:"language"`
-	Classification string     `json:"classification"`
-	Bytes          int64      `json:"bytes"`
-	Symbols        []Symbol   `json:"symbols"`
-	Relations      []Relation `json:"relations"`
-	Failure        string     `json:"failure,omitempty"`
+	BlobSHA256     string             `json:"blob_sha256"`
+	ParserID       string             `json:"parser_id"`
+	Language       string             `json:"language"`
+	Classification string             `json:"classification"`
+	Bytes          int64              `json:"bytes"`
+	Symbols        []Symbol           `json:"symbols"`
+	Relations      []Relation         `json:"relations"`
+	Failure        string             `json:"failure,omitempty"`
+	Providers      []AnalysisProvider `json:"providers,omitempty"`
+}
+
+type AnalysisProvider struct {
+	ID         string `json:"id"`
+	Capability string `json:"capability"`
+	Status     string `json:"status"`
 }
 
 type IndexedFile struct {
@@ -93,6 +100,7 @@ type Status struct {
 	Failures        int       `json:"failures"`
 	StorageBytes    int64     `json:"storage_bytes"`
 	ParserIDs       []string  `json:"parser_ids"`
+	ToolIDs         []string  `json:"tool_ids"`
 	FreshAt         time.Time `json:"fresh_at,omitempty"`
 	IndexingEnabled bool      `json:"indexing_enabled"`
 	RetentionDays   int       `json:"retention_days"`

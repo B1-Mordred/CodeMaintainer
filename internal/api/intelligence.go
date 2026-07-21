@@ -141,7 +141,7 @@ func (s *Server) refreshIntelligence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "no_indexable_files", "the bounded trusted snapshot contained no indexable source files")
 		return
 	}
-	run, err := service.Index(r.Context(), intelligence.IndexRequest{ProjectID: projectID, Repository: project.Repository, Revision: snapshot.Revision, ParserID: "controller-syntax-v1", CacheRetentionDays: configuration.RetentionDays, CacheQuotaBytes: configuration.CacheQuotaBytes, Files: files})
+	run, err := service.Index(r.Context(), intelligence.IndexRequest{ProjectID: projectID, Repository: project.Repository, Revision: snapshot.Revision, ParserID: "controller-syntax-v2", CacheRetentionDays: configuration.RetentionDays, CacheQuotaBytes: configuration.CacheQuotaBytes, Files: files})
 	if err != nil {
 		s.storageError(w, r, err)
 		return

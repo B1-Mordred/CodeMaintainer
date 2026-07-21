@@ -2812,6 +2812,7 @@ export interface components {
             failures: number;
             storage_bytes: number;
             parser_ids: string[];
+            tool_ids: string[];
             /** Format: date-time */
             fresh_at?: string;
             indexing_enabled: boolean;

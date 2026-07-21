@@ -19,7 +19,7 @@ lint:
 	docker compose run --rm web-tool npm run check:api
 
 build:
-	docker compose build controller maintainctl runnerd model-supervisor git-bridge
+	docker compose build controller maintainctl runnerd model-supervisor git-bridge code-intelligence
 	docker compose run --rm web-tool sh -c 'npm ci && npm run build'
 
 build-runners:

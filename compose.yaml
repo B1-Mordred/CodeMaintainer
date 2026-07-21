@@ -108,6 +108,23 @@ services:
     mem_limit: 256m
     cpus: 1.0
 
+  code-intelligence:
+    <<: *runtime-security
+    image: local/code-maintainer-code-intelligence:0.1.0-dev
+    build:
+      context: .
+      dockerfile: images/control-plane.Dockerfile
+      target: code-intelligence
+    user: "65532:65532"
+    environment:
+      CODE_INTELLIGENCE_LISTEN: 0.0.0.0:8090
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    networks:
+      - control
+    mem_limit: 512m
+    cpus: 1.0
+
   controller:
     <<: *runtime-security
     image: local/code-maintainer-controller:0.1.0-dev
@@ -125,6 +142,7 @@ services:
       MAINTAINER_PROFILE: mock
       MAINTAINER_SECURE_COOKIE: ${MAINTAINER_SECURE_COOKIE:-false}
       MAINTAINER_GIT_BRIDGE_URL: http://git-bridge:8083
+      MAINTAINER_CODE_INTELLIGENCE_URL: http://code-intelligence:8090
       MAINTAINER_GIT_BRIDGE_TOKEN_FILE: /var/lib/maintainer/secrets/git-bridge.token
       MAINTAINER_OPENVIKING_URL: ${MAINTAINER_OPENVIKING_URL:-}
       MAINTAINER_OPENVIKING_API_KEY_FILE: /var/lib/maintainer/secrets/openviking.token
@@ -145,6 +163,8 @@ services:
       - hermes-control
     depends_on:
       git-bridge:
+        condition: service_started
+      code-intelligence:
         condition: service_started
     healthcheck:
       test: ["CMD", "/maintainctl", "health"]
