@@ -54,13 +54,16 @@ func (s *Service) Profile(ctx context.Context, id string) (Profile, error) {
 }
 
 func (s *Service) SaveProfile(ctx context.Context, request SaveProfileRequest) (Profile, error) {
+	current, currentErr := s.store.GetWindowsWorkerProfile(ctx, request.Profile.ID)
+	if request.Profile.Mode == "remote" && request.Profile.CredentialReference == "" && currentErr == nil {
+		request.Profile.CredentialReference = current.CredentialReference
+	}
 	if err := validateProfile(request.Profile); err != nil {
 		return Profile{}, err
 	}
 	if strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 1000 {
 		return Profile{}, errors.New("a bounded worker-profile reason is required")
 	}
-	current, _ := s.store.GetWindowsWorkerProfile(ctx, request.Profile.ID)
 	credentialChanged := current.CredentialReference != request.Profile.CredentialReference
 	gateRaised := (!current.ManualGates.CodeSigning && request.Profile.ManualGates.CodeSigning) ||
 		(!current.ManualGates.PhysicalHardware && request.Profile.ManualGates.PhysicalHardware) ||
@@ -158,6 +161,9 @@ func validateProfile(profile Profile) error {
 		}
 	} else if err := validateHostedEndpoint(profile.Endpoint, profile.EndpointAllowlist); err != nil {
 		return err
+	}
+	if profile.Mode == "remote" && !safeID.MatchString(profile.CredentialReference) {
+		return errors.New("remote Windows worker requires a safe opaque credential reference")
 	}
 	if len(profile.SigningPolicyReference) > 128 || (profile.SigningPolicyReference != "" && !safeID.MatchString(profile.SigningPolicyReference)) {
 		return errors.New("Windows worker signing policy reference is invalid")

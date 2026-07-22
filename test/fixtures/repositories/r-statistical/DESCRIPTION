@@ -1,0 +1,5 @@
+Package: codemaintainerfixture
+Version: 1.0.0
+Title: Deterministic Statistical Fixture
+Description: Small fixture for Repo Doctor and golden-result validation.
+License: MIT

@@ -45,18 +45,28 @@ func run(logger *slog.Logger) error {
 	if err := configureGitLab(manager); err != nil {
 		return err
 	}
-	var webhook *gitbridge.WebhookValidator
+	var webhooks gitbridge.WebhookValidators
 	if webhookPath := strings.TrimSpace(os.Getenv("GIT_BRIDGE_WEBHOOK_SECRET_FILE")); webhookPath != "" {
 		secret, readErr := os.ReadFile(webhookPath)
 		if readErr != nil {
 			return readErr
 		}
-		webhook, err = gitbridge.NewWebhookValidator([]byte(strings.TrimSpace(string(secret))))
+		webhooks.GitHub, err = gitbridge.NewWebhookValidator([]byte(strings.TrimSpace(string(secret))))
 		if err != nil {
 			return err
 		}
 	}
-	handler, err := gitbridge.NewServiceWithWebhook(manager, token, webhook, logger)
+	if webhookPath := strings.TrimSpace(os.Getenv("GITLAB_WEBHOOK_SECRET_FILE")); webhookPath != "" {
+		secret, readErr := os.ReadFile(webhookPath)
+		if readErr != nil {
+			return readErr
+		}
+		webhooks.GitLab, err = gitbridge.NewGitLabWebhookValidator([]byte(strings.TrimSpace(string(secret))))
+		if err != nil {
+			return err
+		}
+	}
+	handler, err := gitbridge.NewServiceWithWebhooks(manager, token, webhooks, logger)
 	if err != nil {
 		return err
 	}

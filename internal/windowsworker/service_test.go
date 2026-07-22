@@ -96,7 +96,7 @@ func TestProfilesFailClosedOnEndpointAuthorityAndManualGates(t *testing.T) {
 	remote.ID, remote.Mode = "windows-remote", "remote"
 	remote.Endpoint = "https://windows-worker.example.test"
 	remote.EndpointAllowlist = []string{remote.Endpoint}
-	remote.CredentialReference = "worker-secret:windows-main"
+	remote.CredentialReference = "windows-main"
 	remote.ManualGates.CodeSigning = true
 	remote.SigningPolicyReference = "release-signing-policy"
 	store := &memoryStore{profiles: map[string]Profile{}, runs: map[string]Result{}}
@@ -106,6 +106,11 @@ func TestProfilesFailClosedOnEndpointAuthorityAndManualGates(t *testing.T) {
 	}
 	if _, err := service.SaveProfile(context.Background(), SaveProfileRequest{Profile: remote, Reason: "enable signing", ActorID: "admin", Reauthenticated: true}); err != nil {
 		t.Fatal(err)
+	}
+	retained := remote
+	retained.CredentialReference = ""
+	if saved, err := service.SaveProfile(context.Background(), SaveProfileRequest{Profile: retained, ExpectedRevision: 1, Reason: "retain write-only binding", ActorID: "admin"}); err != nil || saved.CredentialReference != "windows-main" {
+		t.Fatalf("write-only credential binding was not retained: %#v %v", saved, err)
 	}
 	request := validRun(remote.ID, JobSigningRequest)
 	request.OperatorGated, request.ActorRole = false, "operator"

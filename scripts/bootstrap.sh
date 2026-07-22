@@ -63,6 +63,13 @@ if [[ ! -e "$github_webhook_secret" ]]; then
 fi
 chmod 600 "$github_webhook_secret"
 
+gitlab_webhook_secret=.data/secrets/gitlab-webhook.secret
+if [[ ! -e "$gitlab_webhook_secret" ]]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$gitlab_webhook_secret"
+fi
+chmod 600 "$gitlab_webhook_secret"
+
 hermes_control_token=.data/secrets/hermes-control.token
 if [[ ! -e "$hermes_control_token" ]]; then
   umask 077

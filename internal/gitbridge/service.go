@@ -44,11 +44,26 @@ type ForgeBackend interface {
 	SyncForge(context.Context, forges.SyncRequest) (forges.SyncPage, error)
 }
 
+type WebhookValidationBackend interface {
+	Validate(context.Context, WebhookValidationRequest) (PullRequestEvent, error)
+}
+
 func NewService(backend Backend, token []byte, logger *slog.Logger) (http.Handler, error) {
 	return NewServiceWithWebhook(backend, token, nil, logger)
 }
 
 func NewServiceWithWebhook(backend Backend, token []byte, webhook *WebhookValidator, logger *slog.Logger) (http.Handler, error) {
+	if webhook == nil {
+		return newServiceWithWebhookValidator(backend, token, nil, logger)
+	}
+	return newServiceWithWebhookValidator(backend, token, WebhookValidators{GitHub: webhook}, logger)
+}
+
+func NewServiceWithWebhooks(backend Backend, token []byte, validators WebhookValidators, logger *slog.Logger) (http.Handler, error) {
+	return newServiceWithWebhookValidator(backend, token, validators, logger)
+}
+
+func newServiceWithWebhookValidator(backend Backend, token []byte, webhook WebhookValidationBackend, logger *slog.Logger) (http.Handler, error) {
 	if backend == nil || len(token) < 32 || logger == nil {
 		return nil, errors.New("Git bridge backend, private token, and logger are required")
 	}
@@ -139,7 +154,7 @@ func NewServiceWithWebhook(backend Backend, token []byte, webhook *WebhookValida
 	})
 	mux.HandleFunc("POST /v1/webhooks/validate", func(w http.ResponseWriter, r *http.Request) {
 		if webhook == nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "GitHub webhooks are disabled"})
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "forge webhooks are disabled"})
 			return
 		}
 		var request WebhookValidationRequest

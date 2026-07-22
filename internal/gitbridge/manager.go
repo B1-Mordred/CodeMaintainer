@@ -380,7 +380,7 @@ func (m *Manager) PullRequestEvent(ctx context.Context, projectID string, number
 	payload, _ := json.Marshal(pull)
 	digest := sha256.Sum256(payload)
 	event := PullRequestEvent{
-		DeliveryID: "poll-" + hex.EncodeToString(digest[:16]), Repository: registration.Repository,
+		Provider: "github", DeliveryID: "poll-" + hex.EncodeToString(digest[:16]), Repository: registration.Repository,
 		Number: pull.Number, Action: pull.State, Outcome: "pending", Branch: pull.Branch,
 		BaseBranch: pull.Base, HeadSHA: pull.HeadSHA, PayloadSHA256: hex.EncodeToString(digest[:]),
 	}

@@ -15,7 +15,7 @@ import (
 
 func TestAuthenticatedGitHubMergePromotesExactJobCandidateOnce(t *testing.T) {
 	ctx := context.Background()
-	store, job, record := seedGitHubEventFixture(t, ctx)
+	store, job, record := seedForgeEventFixture(t, ctx, "github")
 	defer store.Close()
 	event := gitbridge.PullRequestEvent{
 		DeliveryID: "delivery-merge", Repository: job.Repository, Number: 23, Action: "closed", Outcome: "merged",
@@ -38,7 +38,7 @@ func TestAuthenticatedGitHubMergePromotesExactJobCandidateOnce(t *testing.T) {
 
 func TestAuthenticatedGitHubRejectionStalesCandidateAndExactSHAIsRequired(t *testing.T) {
 	ctx := context.Background()
-	store, job, record := seedGitHubEventFixture(t, ctx)
+	store, job, record := seedForgeEventFixture(t, ctx, "github")
 	defer store.Close()
 	event := gitbridge.PullRequestEvent{
 		DeliveryID: "delivery-reject", Repository: job.Repository, Number: 23, Action: "closed", Outcome: "rejected",
@@ -65,19 +65,42 @@ func TestAuthenticatedGitHubRejectionStalesCandidateAndExactSHAIsRequired(t *tes
 	}
 }
 
-func seedGitHubEventFixture(t *testing.T, ctx context.Context) (*Store, jobs.Job, memory.Record) {
+func TestAuthenticatedGitLabMergePromotesExactJobCandidateOnce(t *testing.T) {
+	ctx := context.Background()
+	store, job, record := seedForgeEventFixture(t, ctx, "gitlab")
+	defer store.Close()
+	event := gitbridge.PullRequestEvent{
+		Provider: "gitlab", DeliveryID: "gitlab-delivery-merge", Repository: job.Repository, Number: 23, Action: "closed", Outcome: "merged",
+		Branch: "maintainer/" + job.ID, BaseBranch: "main", HeadSHA: job.ResultSHA,
+		MergedCommit: "abcdef0123456789abcdef0123456789abcdef01", PayloadSHA256: strings.Repeat("e", 64),
+	}
+	result, err := store.ApplyGitHubPullRequestEvent(ctx, event)
+	if err != nil || result.AffectedMemory != 1 || result.Replay {
+		t.Fatalf("merge result = %#v, %v", result, err)
+	}
+	promoted, err := store.GetMemory(ctx, record.Scope, record.ID)
+	if err != nil || promoted.Status != memory.StatusCanonical || promoted.MergedCommit != event.MergedCommit {
+		t.Fatalf("promoted memory = %#v, %v", promoted, err)
+	}
+	replay, err := store.ApplyGitHubPullRequestEvent(ctx, event)
+	if err != nil || !replay.Replay {
+		t.Fatalf("replay = %#v, %v", replay, err)
+	}
+}
+
+func seedForgeEventFixture(t *testing.T, ctx context.Context, provider string) (*Store, jobs.Job, memory.Record) {
 	t.Helper()
 	store, err := Open(ctx, ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.UpsertProject(ctx, projects.UpsertRequest{
-		ID: "github-fixture", Provider: "github", Repository: "owner/repo", DefaultBranch: "main",
+		ID: provider + "-fixture", Provider: provider, Repository: "owner/repo", DefaultBranch: "main",
 	}, "administrator"); err != nil {
 		t.Fatal(err)
 	}
 	job, err := store.CreateJob(ctx, storage.CreateJobParams{
-		ID: "job_github", ProjectID: "github-fixture", Repository: "owner/repo", Task: "repair", ActorID: "operator",
+		ID: "job_" + provider, ProjectID: provider + "-fixture", Repository: "owner/repo", Task: "repair", ActorID: "operator",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +137,7 @@ func seedGitHubEventFixture(t *testing.T, ctx context.Context) (*Store, jobs.Job
 		ID: "artifact_abcdef0123456789abcdef0123456789", JobID: job.ID, ProjectID: job.ProjectID,
 		ObjectSHA256: publicationDigest, Bytes: 2, RelativePath: "objects/dd/" + publicationDigest,
 		Kind: "publication", MediaType: "application/json", Producer: "workflow-controller", IdempotencyKey: "publication",
-		Metadata: []byte(`{"provider":"github","number":23,"branch":"maintainer/job_github","result_sha":"0123456789abcdef0123456789abcdef01234567"}`),
+		Metadata: []byte(`{"provider":"` + provider + `","number":23,"branch":"maintainer/job_` + provider + `","result_sha":"0123456789abcdef0123456789abcdef01234567"}`),
 	}); err != nil {
 		t.Fatal(err)
 	}

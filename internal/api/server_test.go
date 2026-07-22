@@ -614,7 +614,7 @@ func (rejectingWebhookValidator) ValidateWebhook(context.Context, gitbridge.Webh
 	return gitbridge.PullRequestEvent{}, errors.New("fixture signature rejected")
 }
 
-func TestGitHubWebhookIsPublicButFailsClosedAtIsolatedValidator(t *testing.T) {
+func TestForgeWebhooksArePublicButFailClosedAtIsolatedValidator(t *testing.T) {
 	store, err := storesqlite.Open(context.Background(), ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -627,18 +627,26 @@ func TestGitHubWebhookIsPublicButFailsClosedAtIsolatedValidator(t *testing.T) {
 	server := httptest.NewServer(NewServer(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "mock",
 		WithAuthentication(authService, false), WithGitHubWebhookValidator(rejectingWebhookValidator{})))
 	t.Cleanup(server.Close)
-	request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/github/webhooks", strings.NewReader(`{"action":"closed"}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-GitHub-Delivery", "delivery-fixture")
-	request.Header.Set("X-GitHub-Event", "pull_request")
-	request.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("invalid public webhook returned %d", response.StatusCode)
+	for _, provider := range []string{"github", "gitlab"} {
+		request, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/"+provider+"/webhooks", strings.NewReader(`{"action":"closed"}`))
+		request.Header.Set("Content-Type", "application/json")
+		if provider == "github" {
+			request.Header.Set("X-GitHub-Delivery", "delivery-fixture")
+			request.Header.Set("X-GitHub-Event", "pull_request")
+			request.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
+		} else {
+			request.Header.Set("X-Gitlab-Webhook-UUID", "delivery-fixture")
+			request.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+			request.Header.Set("X-Gitlab-Token", strings.Repeat("0", 32))
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("invalid public %s webhook returned %d", provider, response.StatusCode)
+		}
 	}
 }
 

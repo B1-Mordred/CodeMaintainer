@@ -265,6 +265,28 @@ paths:
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
         "503": { $ref: "#/components/responses/ErrorResponse" }
+  /gitlab/webhooks:
+    post:
+      security: []
+      summary: Receive a GitLab merge-request webhook and validate its secret token in the isolated Git bridge
+      operationId: receiveGitLabWebhook
+      parameters:
+        - { name: X-Gitlab-Webhook-UUID, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: X-Gitlab-Event, in: header, required: true, schema: { type: string, const: "Merge Request Hook" } }
+        - { name: X-Gitlab-Token, in: header, required: true, schema: { type: string, minLength: 32, maxLength: 4096, writeOnly: true } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Authenticated delivery was atomically applied or recognized as a replay
+          content: { application/json: { schema: { $ref: "#/components/schemas/GitHubDeliveryResult" } } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "503": { $ref: "#/components/responses/ErrorResponse" }
   /workflow/states:
     get:
       summary: List stable workflow state names
@@ -2415,7 +2437,7 @@ components:
         mode: { type: string, enum: [simulator, remote] }
         endpoint: { type: string, maxLength: 2048 }
         endpoint_allowlist: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 2048 } }
-        credential_reference: { type: string, maxLength: 128, writeOnly: true, description: Opaque worker secret reference; never secret material. }
+        credential_reference: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", writeOnly: true, description: Opaque worker secret reference; never secret material or a path. }
         credential_status: { type: string, maxLength: 128 }
         health: { type: string, maxLength: 128 }
         capacity: { type: integer, minimum: 1, maximum: 64 }

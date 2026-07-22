@@ -231,6 +231,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/gitlab/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive a GitLab merge-request webhook and validate its secret token in the isolated Git bridge */
+        post: operations["receiveGitLabWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow/states": {
         parameters: {
             query?: never;
@@ -2597,7 +2614,7 @@ export interface components {
             mode: "simulator" | "remote";
             endpoint: string;
             endpoint_allowlist: string[];
-            /** @description Opaque worker secret reference; never secret material. */
+            /** @description Opaque worker secret reference; never secret material or a path. */
             credential_reference?: string;
             credential_status: string;
             health: string;
@@ -4236,6 +4253,40 @@ export interface operations {
                 "X-GitHub-Delivery": string;
                 "X-GitHub-Event": "pull_request";
                 "X-Hub-Signature-256": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Authenticated delivery was atomically applied or recognized as a replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubDeliveryResult"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
+        };
+    };
+    receiveGitLabWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Gitlab-Webhook-UUID": string;
+                "X-Gitlab-Event": "Merge Request Hook";
+                "X-Gitlab-Token": string;
             };
             path?: never;
             cookie?: never;

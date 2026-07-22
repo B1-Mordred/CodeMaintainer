@@ -33,6 +33,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
+	windowsrouting "github.com/B1-Mordred/CodeMaintainer/internal/windowsworker/routing"
 	windowssimulator "github.com/B1-Mordred/CodeMaintainer/internal/windowsworker/simulator"
 	"github.com/B1-Mordred/CodeMaintainer/internal/workflow"
 )
@@ -152,7 +153,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	windowsWorkerService, err := windowsworker.NewService(store, windowssimulator.New())
+	windowsAdapter, err := windowsrouting.New(windowssimulator.New(), windowsrouting.DirectoryTokens{Root: env("MAINTAINER_WINDOWS_WORKER_SECRET_ROOT", "/run/secrets/windows-workers")}, nil)
+	if err != nil {
+		return err
+	}
+	windowsWorkerService, err := windowsworker.NewService(store, windowsAdapter)
 	if err != nil {
 		return err
 	}

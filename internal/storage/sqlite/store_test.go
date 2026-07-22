@@ -221,8 +221,8 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 23 {
-		t.Fatalf("applied migration count = %d, want 23", migrations)
+	if migrations != 24 {
+		t.Fatalf("applied migration count = %d, want 24", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -279,6 +279,8 @@ func TestMigration17PreservesVersion16DraftsAndAddsImportStorage(t *testing.T) {
 		 author_id TEXT NOT NULL, reviewer_id TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL,
 		 applied_revision_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 		) STRICT`,
+		`CREATE TABLE jobs(id TEXT PRIMARY KEY)`,
+		migration013,
 		`INSERT INTO config_drafts(id, scope_kind, scope_id, state, base_scope_version, version,
 		 author_id, reason, created_at, updated_at) VALUES(
 		 'configdraft_existing', 'system', '', 'draft', 1, 2, 'operator', 'retained',
@@ -314,6 +316,38 @@ func TestMigration17PreservesVersion16DraftsAndAddsImportStorage(t *testing.T) {
 	}
 }
 
+func TestMigration24PreservesAppendOnlyGitHubDeliveryAndAllowsGitLabEvents(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `CREATE TABLE jobs(id TEXT PRIMARY KEY); INSERT INTO jobs(id) VALUES('job_fixture');`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, migration013); err != nil {
+		t.Fatal(err)
+	}
+	insert := `INSERT INTO github_deliveries(delivery_id,event,action,outcome,repository,pr_number,job_id,head_sha,merged_commit,payload_sha256,affected_records,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+	if _, err := db.ExecContext(ctx, insert, "github-existing", "pull_request", "closed", "merged", "owner/repo", 1, "job_fixture", strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 64), 1, "2026-07-22T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, migration024); err != nil {
+		t.Fatal(err)
+	}
+	var event string
+	if err := db.QueryRowContext(ctx, `SELECT event FROM github_deliveries WHERE delivery_id='github-existing'`).Scan(&event); err != nil || event != "pull_request" {
+		t.Fatalf("retained event %q error %v", event, err)
+	}
+	if _, err := db.ExecContext(ctx, insert, "gitlab-new", "merge_request", "closed", "rejected", "owner/repo", 2, "job_fixture", strings.Repeat("d", 40), "", strings.Repeat("e", 64), 0, "2026-07-22T00:01:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE github_deliveries SET outcome='merged' WHERE delivery_id='gitlab-new'`); err == nil {
+		t.Fatal("migrated forge delivery was mutable")
+	}
+}
+
 func TestMigration14PreservesHistoricalMemoryIndexQueueWithoutSequence(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "historical.db")
@@ -332,6 +366,7 @@ func TestMigration14PreservesHistoricalMemoryIndexQueueWithoutSequence(t *testin
 		 validation_result, created_at) VALUES('config_fixture', 'system', 1, '{}', '{"schema_version":1}', '[]', '{}', '2026-07-20T00:00:00Z')`,
 		`CREATE TABLE memory_records(id TEXT PRIMARY KEY)`,
 		`CREATE TABLE jobs(id TEXT PRIMARY KEY, project_id TEXT NOT NULL)`,
+		migration013,
 		`CREATE TABLE job_transitions(sequence INTEGER PRIMARY KEY, job_id TEXT NOT NULL, to_state TEXT NOT NULL, created_at TEXT NOT NULL)`,
 		`CREATE TABLE schedule_runs(sequence INTEGER PRIMARY KEY, schedule_id TEXT NOT NULL, job_id TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL)`,
 		`CREATE TABLE automation_requests(sequence INTEGER PRIMARY KEY, kind TEXT NOT NULL, job_id TEXT NOT NULL, requested_by TEXT NOT NULL, created_at TEXT NOT NULL)`,

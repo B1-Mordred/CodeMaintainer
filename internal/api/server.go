@@ -169,6 +169,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/admin/update/preflight", s.updatePreflight)
 	mux.HandleFunc("GET /api/v1/system/status", s.systemStatus)
 	mux.HandleFunc("POST /api/v1/github/webhooks", s.githubWebhook)
+	mux.HandleFunc("POST /api/v1/gitlab/webhooks", s.gitlabWebhook)
 	mux.HandleFunc("GET /api/v1/workflow/states", s.workflowStates)
 	mux.HandleFunc("GET /api/v1/projects", s.listProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.upsertProject)
@@ -463,8 +464,16 @@ func (s *Server) workflowStates(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
+	s.forgeWebhook(w, r, "github")
+}
+
+func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) {
+	s.forgeWebhook(w, r, "gitlab")
+}
+
+func (s *Server) forgeWebhook(w http.ResponseWriter, r *http.Request, provider string) {
 	if s.githubEvents == nil {
-		writeError(w, http.StatusServiceUnavailable, "github_webhooks_disabled", "GitHub webhook validation is disabled")
+		writeError(w, http.StatusServiceUnavailable, "forge_webhooks_disabled", "forge webhook validation is disabled")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
@@ -473,12 +482,15 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_webhook", "the bounded webhook payload is invalid")
 		return
 	}
-	event, err := s.githubEvents.ValidateWebhook(r.Context(), gitbridge.WebhookValidationRequest{
-		DeliveryID: r.Header.Get("X-GitHub-Delivery"), Event: r.Header.Get("X-GitHub-Event"),
-		Signature256: r.Header.Get("X-Hub-Signature-256"), Payload: base64.StdEncoding.EncodeToString(payload),
-	})
+	request := gitbridge.WebhookValidationRequest{Provider: provider, Payload: base64.StdEncoding.EncodeToString(payload)}
+	if provider == "github" {
+		request.DeliveryID, request.Event, request.Signature256 = r.Header.Get("X-GitHub-Delivery"), r.Header.Get("X-GitHub-Event"), r.Header.Get("X-Hub-Signature-256")
+	} else {
+		request.DeliveryID, request.Event, request.Token = r.Header.Get("X-Gitlab-Webhook-UUID"), r.Header.Get("X-Gitlab-Event"), r.Header.Get("X-Gitlab-Token")
+	}
+	event, err := s.githubEvents.ValidateWebhook(r.Context(), request)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_webhook_signature", "the GitHub webhook could not be authenticated")
+		writeError(w, http.StatusUnauthorized, "invalid_webhook_signature", "the forge webhook could not be authenticated")
 		return
 	}
 	result, err := s.store.ApplyGitHubPullRequestEvent(r.Context(), event)

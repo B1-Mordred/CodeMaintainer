@@ -77,6 +77,57 @@ func TestWebhookValidationStaysBehindAuthenticatedBridgeClient(t *testing.T) {
 	}
 }
 
+func TestGitLabWebhookValidatorAuthenticatesAndNormalizesMergeRequest(t *testing.T) {
+	secret := []byte("gitlab-webhook-secret-0123456789ab")
+	validator, err := NewGitLabWebhookValidator(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"object_kind":"merge_request","project":{"path_with_namespace":"owner/repo"},"object_attributes":{"iid":41,"action":"merge","state":"merged","source_branch":"maintainer/job_41","target_branch":"main","merge_commit_sha":"abcdef0123456789abcdef0123456789abcdef01","last_commit":{"id":"0123456789abcdef0123456789abcdef01234567"}}}`)
+	request := WebhookValidationRequest{Provider: "gitlab", DeliveryID: "gitlab-delivery-41", Event: "Merge Request Hook", Token: string(secret), Payload: base64.StdEncoding.EncodeToString(payload)}
+	event, err := validator.Validate(context.Background(), request)
+	if err != nil || event.Provider != "gitlab" || event.Outcome != "merged" || event.Number != 41 || event.Repository != "owner/repo" {
+		t.Fatalf("event %#v error %v", event, err)
+	}
+	request.Token = "wrong-token-with-at-least-thirty-two"
+	if _, err := validator.Validate(context.Background(), request); err == nil {
+		t.Fatal("invalid GitLab secret token accepted")
+	}
+	request.Token = string(secret)
+	request.Payload = base64.StdEncoding.EncodeToString(append(payload, ' '))
+	if tampered, err := validator.Validate(context.Background(), request); err != nil || tampered.PayloadSHA256 == event.PayloadSHA256 {
+		t.Fatalf("payload identity was not exact: %#v %v", tampered, err)
+	}
+}
+
+func TestWebhookMultiplexerKeepsProviderValidatorsSeparate(t *testing.T) {
+	githubSecret := []byte("0123456789abcdef0123456789abcdef")
+	gitlabSecret := []byte("gitlab-webhook-secret-0123456789ab")
+	github, _ := NewWebhookValidator(githubSecret)
+	gitlab, _ := NewGitLabWebhookValidator(gitlabSecret)
+	validators := WebhookValidators{GitHub: github, GitLab: gitlab}
+	payload := []byte(`{"object_kind":"merge_request","project":{"path_with_namespace":"owner/repo"},"object_attributes":{"iid":41,"action":"close","state":"closed","source_branch":"maintainer/job_41","target_branch":"main","merge_commit_sha":"","last_commit":{"id":"0123456789abcdef0123456789abcdef01234567"}}}`)
+	event, err := validators.Validate(context.Background(), WebhookValidationRequest{Provider: "gitlab", DeliveryID: "gitlab-close-41", Event: "Merge Request Hook", Token: string(gitlabSecret), Payload: base64.StdEncoding.EncodeToString(payload)})
+	if err != nil || event.Outcome != "rejected" {
+		t.Fatalf("event %#v error %v", event, err)
+	}
+	bridgeToken := []byte("bridge-token-0123456789abcdef0123")
+	handler, err := NewServiceWithWebhooks(&fixtureBackend{}, bridgeToken, validators, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, err := NewClient(server.URL, bridgeToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err = client.ValidateWebhook(context.Background(), WebhookValidationRequest{Provider: "gitlab", DeliveryID: "gitlab-client-close-41", Event: "Merge Request Hook", Token: string(gitlabSecret), Payload: base64.StdEncoding.EncodeToString(payload)})
+	if err != nil || event.Provider != "gitlab" || event.Outcome != "rejected" {
+		t.Fatalf("client event %#v error %v", event, err)
+	}
+}
+
 func webhookSignature(secret, payload []byte) string {
 	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write(payload)

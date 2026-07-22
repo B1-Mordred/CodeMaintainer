@@ -106,7 +106,7 @@ func isPublicRoute(r *http.Request) bool {
 		return true
 	}
 	switch r.URL.Path {
-	case "/api/v1/auth/status", "/api/v1/auth/bootstrap", "/api/v1/auth/login", "/api/v1/github/webhooks":
+	case "/api/v1/auth/status", "/api/v1/auth/bootstrap", "/api/v1/auth/login", "/api/v1/github/webhooks", "/api/v1/gitlab/webhooks":
 		return true
 	default:
 		return false
