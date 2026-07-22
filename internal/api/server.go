@@ -33,6 +33,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	"github.com/B1-Mordred/CodeMaintainer/internal/ui"
+	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 )
 
 const maxRequestBody = 1 << 20
@@ -57,6 +58,7 @@ type Server struct {
 	intelligence   *intelligence.Service
 	capabilities   *capabilities.Service
 	forges         *forges.Service
+	windowsWorkers *windowsworker.Service
 }
 
 type ArtifactReader interface {
@@ -134,6 +136,10 @@ func WithForges(service *forges.Service) Option {
 	return func(server *Server) { server.forges = service }
 }
 
+func WithWindowsWorkers(service *windowsworker.Service) Option {
+	return func(server *Server) { server.windowsWorkers = service }
+}
+
 func WithVersion(version string) Option { return func(server *Server) { server.version = version } }
 
 func NewServer(store storage.Store, logger *slog.Logger, profile string, options ...Option) *Server {
@@ -188,6 +194,12 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/forge-profile/actions/sync", s.syncForgeProfile)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/forge-sync-runs", s.listForgeSyncRuns)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/forge-objects", s.listForgeObjects)
+	mux.HandleFunc("GET /api/v1/windows-workers/profiles", s.listWindowsWorkerProfiles)
+	mux.HandleFunc("GET /api/v1/windows-workers/profiles/{profileID}", s.getWindowsWorkerProfile)
+	mux.HandleFunc("PUT /api/v1/windows-workers/profiles/{profileID}", s.saveWindowsWorkerProfile)
+	mux.HandleFunc("POST /api/v1/windows-workers/profiles/{profileID}/actions/probe", s.probeWindowsWorkerProfile)
+	mux.HandleFunc("GET /api/v1/windows-workers/profiles/{profileID}/runs", s.listWindowsWorkerRuns)
+	mux.HandleFunc("POST /api/v1/windows-workers/profiles/{profileID}/runs", s.runWindowsWorkerJob)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/intelligence/status", s.intelligenceStatus)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/query", s.queryIntelligence)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/intelligence/actions/refresh", s.refreshIntelligence)

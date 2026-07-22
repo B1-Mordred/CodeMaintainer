@@ -32,6 +32,8 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
+	windowssimulator "github.com/B1-Mordred/CodeMaintainer/internal/windowsworker/simulator"
 	"github.com/B1-Mordred/CodeMaintainer/internal/workflow"
 )
 
@@ -150,7 +152,14 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithIntelligence(intelligenceService), api.WithCapabilities(capabilityService), api.WithVersion(version)}
+	windowsWorkerService, err := windowsworker.NewService(store, windowssimulator.New())
+	if err != nil {
+		return err
+	}
+	if _, err := windowsWorkerService.EnsureSimulatorProfile(ctx, "controller-bootstrap"); err != nil {
+		return err
+	}
+	serverOptions := []api.Option{api.WithArtifactReader(artifactStore), api.WithAuthentication(authService, secureCookie), api.WithModelManager(modelManager), api.WithBackupService(backupManager), api.WithConfigRegistry(configRegistry), api.WithIntelligence(intelligenceService), api.WithCapabilities(capabilityService), api.WithWindowsWorkers(windowsWorkerService), api.WithVersion(version)}
 	gitToken, err := readToken(env("MAINTAINER_GIT_BRIDGE_TOKEN_FILE", filepath.Join(dataRoot, "secrets", "git-bridge.token")))
 	if err != nil {
 		return err

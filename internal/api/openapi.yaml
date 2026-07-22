@@ -581,6 +581,73 @@ paths:
       responses:
         "200": { description: Normalized objects, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ForgeObject" } } } } } } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /windows-workers/profiles:
+    get:
+      summary: List registered Windows worker profiles and the fixed operation vocabulary
+      operationId: listWindowsWorkerProfiles
+      responses:
+        "200":
+          description: Credential-safe Windows worker inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, approved_job_types, items]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  approved_job_types: { type: array, items: { $ref: "#/components/schemas/WindowsJobType" } }
+                  items: { type: array, items: { $ref: "#/components/schemas/WindowsWorkerProfile" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /windows-workers/profiles/{profileID}:
+    parameters:
+      - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" } }
+    get:
+      summary: Read one Windows worker profile
+      operationId: getWindowsWorkerProfile
+      responses:
+        "200": { description: Windows worker profile, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerProfile" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+    put:
+      summary: Save an optimistic Windows worker profile with bounded inventory and exact endpoint admission
+      operationId: saveWindowsWorkerProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerProfileRequest" } } } }
+      responses:
+        "200": { description: Saved Windows worker profile, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerProfile" } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /windows-workers/profiles/{profileID}/actions/probe:
+    parameters:
+      - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" } }
+    post:
+      summary: Probe Windows worker health, capacity, VM template, and pinned toolchains
+      operationId: probeWindowsWorkerProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "200": { description: Structured worker probe, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerProbe" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /windows-workers/profiles/{profileID}/runs:
+    parameters:
+      - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" } }
+    get:
+      summary: List durable structured Windows worker results
+      operationId: listWindowsWorkerRuns
+      responses:
+        "200": { description: Windows worker run history, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/WindowsWorkerResult" } } } } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Run one controller-approved Windows operation with immutable source and inventory identities
+      description: The closed request intentionally has no command, script, image, mount, path, network, environment, or argument fields.
+      operationId: runWindowsWorkerJob
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerRunRequest" } } } }
+      responses:
+        "200": { description: Durable idempotent worker result, content: { application/json: { schema: { $ref: "#/components/schemas/WindowsWorkerResult" } } } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/memory:
     parameters:
       - { $ref: "#/components/parameters/ProjectID" }
@@ -2328,6 +2395,133 @@ components:
         target_version: { type: string }
         expected_revision: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 1, maxLength: 1000 }
+    WindowsJobType:
+      type: string
+      enum: [dotnet_restore_build_test, powershell_pester, windows_service_lifecycle, inno_installer_lifecycle, hamilton_discovery, vpn_workflow, release_consistency, installer_iq_evidence, equipment_simulation, signing_request]
+    WindowsWorkerManualGates:
+      type: object
+      additionalProperties: false
+      required: [physical_hardware, code_signing, production_vpn]
+      properties:
+        physical_hardware: { type: boolean }
+        code_signing: { type: boolean }
+        production_vpn: { type: boolean }
+    WindowsWorkerProfileSettings:
+      type: object
+      additionalProperties: false
+      required: [name, mode, endpoint, endpoint_allowlist, credential_status, health, capacity, vm_template_id, toolchains, allowed_job_types, timeout_seconds, simulator_profile_ids, artifact_retention_days, manual_gates, enabled]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        mode: { type: string, enum: [simulator, remote] }
+        endpoint: { type: string, maxLength: 2048 }
+        endpoint_allowlist: { type: array, minItems: 1, maxItems: 20, items: { type: string, maxLength: 2048 } }
+        credential_reference: { type: string, maxLength: 128, writeOnly: true, description: Opaque worker secret reference; never secret material. }
+        credential_status: { type: string, maxLength: 128 }
+        health: { type: string, maxLength: 128 }
+        capacity: { type: integer, minimum: 1, maximum: 64 }
+        vm_template_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        toolchains: { type: object, minProperties: 1, maxProperties: 50, additionalProperties: { type: string, maxLength: 64 } }
+        allowed_job_types: { type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: { $ref: "#/components/schemas/WindowsJobType" } }
+        timeout_seconds: { type: integer, minimum: 30, maximum: 86400 }
+        simulator_profile_ids: { type: array, maxItems: 50, uniqueItems: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" } }
+        artifact_retention_days: { type: integer, minimum: 1, maximum: 3650 }
+        signing_policy_reference: { type: string, maxLength: 128 }
+        manual_gates: { $ref: "#/components/schemas/WindowsWorkerManualGates" }
+        enabled: { type: boolean }
+    WindowsWorkerProfileRequest:
+      allOf:
+        - { $ref: "#/components/schemas/WindowsWorkerProfileSettings" }
+        - type: object
+          required: [expected_revision, reason]
+          properties:
+            expected_revision: { type: integer, minimum: 0 }
+            reason: { type: string, minLength: 1, maxLength: 1000 }
+    WindowsWorkerProfile:
+      allOf:
+        - { $ref: "#/components/schemas/WindowsWorkerProfileSettings" }
+        - type: object
+          required: [id, revision, updated_at]
+          properties:
+            id: { type: string }
+            revision: { type: integer, minimum: 1 }
+            updated_at: { type: string, format: date-time }
+    WindowsWorkerProbe:
+      type: object
+      additionalProperties: false
+      required: [profile_id, ready, mode, health, capacity, vm_template_id, toolchains, problems, checked_at]
+      properties:
+        profile_id: { type: string }
+        ready: { type: boolean }
+        mode: { type: string, enum: [simulator, remote] }
+        health: { type: string }
+        capacity: { type: integer, minimum: 0, maximum: 64 }
+        vm_template_id: { type: string }
+        toolchains: { type: object, maxProperties: 50, additionalProperties: { type: string } }
+        problems: { type: array, maxItems: 100, items: { type: string } }
+        checked_at: { type: string, format: date-time }
+    WindowsWorkerImmutableInput:
+      type: object
+      additionalProperties: false
+      required: [repository_sha, capability_pack_checksum, toolchain_inventory_checksum, source_artifact_id]
+      properties:
+        repository_sha: { type: string, pattern: "^[a-f0-9]{40}$" }
+        capability_pack_checksum: { type: string, pattern: "^[a-f0-9]{64}$" }
+        toolchain_inventory_checksum: { type: string, pattern: "^[a-f0-9]{64}$" }
+        source_artifact_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        previous_installer_artifact_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        release_version: { type: string, maxLength: 64 }
+        expected_service_name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        hamilton_profile_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        simulator_profile_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+    WindowsWorkerRunRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, job_id, job_type, input, idempotency_key, operator_gated]
+      properties:
+        project_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        job_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        job_type: { $ref: "#/components/schemas/WindowsJobType" }
+        input: { $ref: "#/components/schemas/WindowsWorkerImmutableInput" }
+        idempotency_key: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        operator_gated: { type: boolean }
+    WindowsWorkerCheck:
+      type: object
+      additionalProperties: false
+      required: [id, state, summary, duration_ms]
+      properties:
+        id: { type: string }
+        state: { type: string, enum: [passed, failed, skipped] }
+        summary: { type: string, maxLength: 4096 }
+        duration_ms: { type: integer, minimum: 0 }
+    WindowsWorkerArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, kind, media_type, sha256, bytes, metadata]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        media_type: { type: string }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 0, maximum: 268435456 }
+        metadata: { type: object, additionalProperties: true }
+    WindowsWorkerResult:
+      type: object
+      additionalProperties: false
+      required: [run_id, profile_id, project_id, job_id, job_type, input_sha256, state, checks, artifacts, idempotency_key, replay, started_at, completed_at]
+      properties:
+        run_id: { type: string }
+        profile_id: { type: string }
+        project_id: { type: string }
+        job_id: { type: string }
+        job_type: { $ref: "#/components/schemas/WindowsJobType" }
+        input_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        state: { type: string, enum: [completed, failed] }
+        checks: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/WindowsWorkerCheck" } }
+        artifacts: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/WindowsWorkerArtifact" } }
+        idempotency_key: { type: string }
+        replay: { type: boolean }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
     ForgeProfileSettings:
       type: object
       required: [provider, endpoint, endpoint_allowlist, repository, credential_status, webhook_status, sync_direction, polling_minutes, branch_convention, change_request_convention, label_mapping, ci_artifact_policy, release_policy, submodules_enabled, enabled]

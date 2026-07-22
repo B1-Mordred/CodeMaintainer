@@ -26,6 +26,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [ ] (2026-07-21 00:16Z) Increment 2 Milestone 2 evidence review: migration 20 and append-only attributed/audited baseline supersession, differential correction, and targeted-test override histories are implemented across REST/OpenAPI/generated client/CLI/browser. Safety policy prevents classifying new failures away or overriding the fresh full-suite gate. Rich parser/reference enrichment and broader context sources keep the milestone open.
 - [x] (2026-07-21 00:46Z) Increment 2 Milestone 2 closed: real pinned multi-language Tree-sitter runs in an isolated no-mount internal service while the controller remains static non-CGO; bounded SCIP/read-only-LSP facts are controller-validated; tool provenance is visible; and production context draws from immutable config, policy, instructions/docs, exact symbol ranges, verified memory, findings, baselines/differentials, and impact evidence. Normal/non-CGO tests, Compose, image builds, and live service probes pass.
 - [x] (2026-07-21 01:31Z) Increment 2 Milestone 3 closed: canonical checksummed authority-neutral capability packs, reauthenticated/pinned/reversible lifecycle, independent exact project assignments, bounded trusted-snapshot Repo Doctor, disabled evidence-backed optimistic proposals, PHP/R/security manifests, rehearsal primitives, and complete browser/API/CLI/docs parity are implemented through migration 21. Full Go/vet, focused race, frontend accessibility/build, generated-client/OpenAPI, and Compose gates pass.
+- [ ] (2026-07-22 08:40Z) Increment 2 Milestone 4 paused at a tested Windows-worker checkpoint: migration 23, ten fixed non-executable job types, optimistic/audited profiles, durable idempotent results, authenticated bounded protocol, deterministic simulator, .NET lab automation pack, and REST/OpenAPI/generated-client/CLI/accessible-browser parity are integrated. Full Go tests/vet, six frontend files with nine tests/build, API drift, zero-warning OpenAPI lint, and Compose validation pass. Remote-adapter selection, heterogeneous fixtures, remaining forge/restart failures, docs, and the full milestone gate remain open.
 
 ## Surprises & Discoveries
 
@@ -75,6 +76,9 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: the rebuilt controller logged `SQL logic error: no such column: sequence (1)` although fresh race tests passed. Inspecting the live SQLite schema showed migration 10 recorded without `memory_index_operations.sequence`; forward-only migration 14 now rebuilds and preserves that queue for both historical and fresh databases.
 - Observation: a fresh `govulncheck` database identified 22 reachable vulnerabilities in the originally pinned Go 1.25.0 standard library, and the scanner container initially could not create checksum-database state because its `GOPATH` still pointed outside the writable cache.
   Evidence: assigning `GOPATH=/cache/gopath` made the scanner reproducible; updating every Go build/tool image and the module directive to Go 1.25.12 at immutable digest `sha256:ea341baa...` reduced the rerun to zero reachable vulnerabilities. npm also reported zero vulnerabilities; Docker Scout is absent and the production OCI scan remains operator-only.
+
+- Observation: the Windows worker capability pack needs domain types but must not import the simulator implementation.
+  Evidence: the simulator now lives in `internal/windowsworker/simulator`; `internal/capabilities` imports only the pure closed contract and controller composition explicitly chooses the safe CI adapter.
 
 ## Decision Log
 
@@ -165,6 +169,9 @@ The security boundary matters as much as the workflow. The controller is the sol
 - Decision: advance the entire Go build and developer toolchain from 1.25.0 to the patched 1.25.12 release and pin the resolved Bookworm image digest everywhere.
   Rationale: the final reachability scan found standard-library security fixes that cannot be safely backported in application code. One version and digest across control-plane, inference-supervisor, runner, and developer builds prevents a stale stage from silently reintroducing the vulnerable library.
   Date/Author: 2026-07-20 / Codex
+- Decision: constrain Windows work to ten controller-owned operation classes with immutable source/pack/toolchain identities and structured checks/artifacts.
+  Rationale: simulator and future remote adapters can prove .NET, PowerShell, service, installer, HAMILTON, VPN, release, IQ, equipment, and signing workflows without exposing arbitrary PowerShell, commands, images, mounts, paths, networks, environment, or arguments.
+  Date/Author: 2026-07-22 / Codex
 
 ## Outcomes & Retrospective
 
@@ -173,6 +180,8 @@ All implementation milestones are closed except for the explicitly operator-owne
 Increment 1 remains the preserved base for a new active Increment 2 effort. The additive implementation plan is `execplan/increment-2.md`; it keeps this completed plan intact while extending configuration, intelligence, heterogeneous repository support, quality policy, provider routing, evidence, evaluation, observability, and the browser information architecture.
 
 Increment 2 Milestone 3 adds a controller-trusted capability catalog and no-write onboarding path without changing the Increment 1 execution authority. Pack lifecycle and project assignment history are durable and audited; Repo Doctor treats repository content only as bounded hash-cited evidence and cannot silently apply its own proposals.
+
+Increment 2 Milestone 4 is paused, not closed, at a green Windows-worker vertical checkpoint. Its domain, migration, simulator, protocol, pack, API, CLI, and browser workbench are durable and schema-bound; the remaining real-adapter, fixture, failure/restart, documentation, and complete acceptance work stays tracked in `execplan/increment-2.md`.
 
 The deterministic local lifecycle and separate implementation/QC container boundary pass end to end. The final gate also passes full Go unit/integration/race/vet, frontend build/API drift/WCAG automation, all Compose views, authenticated live diagnostics, desktop/mobile pinned-Chromium interaction, hardened agent-image execution, Go/npm vulnerability checks, and source/package/image inventory generation. Real GitHub installation behavior, licensed GGUF inference, OpenViking embeddings, official Hermes runtime, remote OIDC/TLS, separate-host encrypted restore/update rollback, dedicated rootless worker topology, and OCI image scanning are intentionally not simulated as production proof; `docs/acceptance.md` gives their exact validation boundary.
 
@@ -483,3 +492,5 @@ Revision note (2026-07-21 02:38Z): paused Increment 2 Milestone 4 at a tested fo
 Revision note (2026-07-21 02:49Z): renamed the product and module to CodeMaintainer and `github.com/B1-Mordred/CodeMaintainer` before the first push to the empty canonical repository. Branding, imports, Compose/package/service identities, schemas, examples, and generated metadata now match; compatibility-sensitive `MAINTAINER_*` variables, executables, database contracts, goal filenames, and backup encryption context remain unchanged.
 
 Revision note (2026-07-22 08:13Z): resumed Increment 2 Milestone 4 and added bounded paginated hosted GitHub/GitLab inventory, safe transient retry and rate-limit continuation, registered-project identity binding, explicit provider capability gaps, and a provider-neutral browser workbench with write-only credential-reference handling. GitLab webhook normalization, restart/API failures, Windows simulation, heterogeneous fixtures, documentation, and milestone acceptance remain open.
+
+Revision note (2026-07-22 08:40Z): paused Increment 2 at a tested Milestone 4 Windows-worker checkpoint. Migration 23, ten fixed non-executable operation classes, optimistic profiles, durable idempotent structured evidence, authenticated bounded protocol, deterministic simulator, .NET lab automation pack, and API/CLI/browser parity are integrated. Full Go tests/vet, frontend accessibility tests/build, generated API drift, zero-warning OpenAPI lint, and Compose validation pass; the remaining remote adapter, heterogeneous fixtures, forge/restart failures, docs, and milestone gate stay open.

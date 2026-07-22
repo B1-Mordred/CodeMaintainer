@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import {
   Activity, Bell, BookOpen, Boxes, BrainCircuit, CheckCircle2, ChevronRight,
   CircleDot, ClipboardCheck, Cpu, Database, FileClock, FolderGit2,
-  Gauge, GitBranch, HardDrive, ListChecks, MemoryStick, RefreshCw, Settings,
+  Gauge, GitBranch, HardDrive, ListChecks, MemoryStick, MonitorCog, RefreshCw, Settings,
   ShieldCheck, SlidersHorizontal, TerminalSquare, TimerReset, Users,
 } from "lucide-react";
 import { api, getCSRFToken } from "./api/client";
@@ -11,6 +11,7 @@ import { ConfigurationPage } from "./ConfigurationPage";
 import { IntelligencePage } from "./IntelligencePage";
 import { CapabilityPage } from "./CapabilityPage";
 import { ForgePage } from "./ForgePage";
+import { WindowsWorkersPage } from "./WindowsWorkersPage";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -28,7 +29,7 @@ type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "forges" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -41,6 +42,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
   { id: "forges", label: "Git forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
+  { id: "windows-workers", label: "Windows workers", icon: <MonitorCog aria-hidden="true" />, group: "integrate" },
   { id: "automation", label: "Scheduling / Hermes", icon: <FileClock aria-hidden="true" />, group: "integrate" },
   { id: "configuration", label: "Configuration", icon: <SlidersHorizontal aria-hidden="true" />, group: "manage" },
   { id: "administration", label: "Administration", icon: <Settings aria-hidden="true" />, group: "manage" },
@@ -139,6 +141,7 @@ export function OperatorConsole({
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
       {page === "memory" && <MemoryPage />}
       {page === "forges" && <ForgePage />}
+      {page === "windows-workers" && <WindowsWorkersPage />}
       {page === "automation" && <AutomationPage expert={expert} />}
       {page === "configuration" && <ConfigurationPage expert={expert} />}
       {page === "administration" && <AdministrationPage status={initialStatus} />}

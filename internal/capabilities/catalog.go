@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 )
 
 var safeID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
@@ -19,7 +21,7 @@ type Catalog struct {
 }
 
 func BuiltInCatalog() (*Catalog, error) {
-	manifests := []Manifest{php83Intranet(), rStatistical(), sbomFMEA()}
+	manifests := []Manifest{php83Intranet(), windowsDotNetLabAutomation(), rStatistical(), sbomFMEA()}
 	for index := range manifests {
 		checksum, err := ComputeChecksum(manifests[index])
 		if err != nil {
@@ -167,6 +169,57 @@ func enumField(key, label, help, fallback string, allowed ...string) UIField {
 
 func php83Intranet() Manifest {
 	return Manifest{SchemaVersion: 1, ID: "php83-intranet", Name: "PHP 8.3 intranet", Version: "1.0.0", Description: "Evidence-driven PHP 8.3 intranet verification profiles.", Languages: []string{"php", "javascript", "typescript", "twig"}, Compatibility: Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"linux/amd64", "linux/arm64"}}, Prerequisites: []Prerequisite{{ID: "php83-toolchain", Required: true, Help: "Pinned PHP 8.3 verifier profile must be installed."}, {ID: "mysql8-service", Help: "Required only when database rehearsals are selected."}, {ID: "redis-service", Help: "Required only when Redis integration is selected."}}, DetectionRules: []DetectionRule{{ID: "composer-project", AnyPaths: []string{"composer.json"}, Confidence: 95, Explanation: "Composer manifest identifies a PHP project."}, {ID: "phpunit-project", AnyPaths: []string{"phpunit.xml", "phpunit.xml.dist"}, Confidence: 90, Explanation: "PHPUnit configuration enables parsed tests."}, {ID: "web-assets", AnyPaths: []string{"vite.config.*", "tailwind.config.*"}, Confidence: 75, Explanation: "Frontend build configuration is present."}}, RunnerProfileIDs: []string{"php83-verify", "php83-browser"}, OperationClasses: []string{"composer-validate", "composer-audit", "phpunit", "phpstan", "psalm", "rector-dry-run", "infection-selected", "twig-validate", "apache-rehearsal", "mysql8-rehearsal", "redis-rehearsal", "vite-build", "playwright-test", "repository-portability-check"}, ParserIDs: []string{"junit-v1", "clover-v1", "phpstan-json-v1", "playwright-json-v1"}, PolicyFragments: []string{"php-lock-required", "rector-dry-run-only", "database-disposable-only"}, ContextSelectors: []string{"composer-autoload", "php-config", "templates", "migrations", "frontend-config"}, RiskRules: []string{"migration-high-risk", "auth-high-risk", "theme-contract-risk"}, Documentation: []string{"composer-command-reference", "migration-notes", "theme-plugin-contract"}, WorkflowChanges: []WorkflowChange{{Stage: "verify", OperationID: "composer-validate", Required: true, Description: "Validate Composer metadata and lock consistency."}, {Stage: "verify", OperationID: "phpunit", Description: "Run repository-selected PHPUnit profile."}, {Stage: "rehearsal", OperationID: "repository-portability-check", Required: true, Description: "Check CRLF, shebangs, permissions, encoding, and case collisions."}}, UISchema: []UIField{enumField("analysis.static", "Static analysis", "Select a repository-pinned analyzer.", "auto", "auto", "phpstan", "psalm", "disabled"), enumField("tests.coverage", "Coverage engine", "Select coverage only when available.", "auto", "auto", "pcov", "xdebug", "disabled"), booleanField("services.mysql8", "Disposable MySQL 8", "Enable schema and fixture rehearsal.", false), booleanField("services.redis", "Disposable Redis", "Enable Redis integration rehearsal.", false), booleanField("browser.playwright", "Playwright", "Enable browser and visual checks.", false)}, Rehearsals: []RehearsalDefinition{{ID: "php-portability", Kind: "repository", OperationID: "repository-portability-check", ArtifactKinds: []string{"portability-report"}, ComparisonClass: "structured", ApprovalPolicy: "review-required"}, {ID: "php-web-journey", Kind: "browser", OperationID: "playwright-test", ArtifactKinds: []string{"screenshot", "accessibility-snapshot", "journey-report"}, ComparisonClass: "masked-visual", ApprovalPolicy: "review-required"}, {ID: "php-database", Kind: "database", OperationID: "mysql8-rehearsal", ArtifactKinds: []string{"migration-report", "schema-diff"}, ComparisonClass: "structured", ApprovalPolicy: "review-required"}}}
+}
+
+func windowsDotNetLabAutomation() Manifest {
+	return Manifest{
+		SchemaVersion: SchemaVersion, ID: "windows-dotnet-labautomation", Name: "Windows .NET lab automation", Version: "1.0.0",
+		Description:   "Simulator-first deterministic .NET, Windows service, installer, HAMILTON, and instrument lifecycle evidence.",
+		Languages:     []string{"csharp", "powershell", "inno-setup"},
+		Compatibility: Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"windows/amd64", "simulator/linux-amd64"}},
+		Prerequisites: []Prerequisite{
+			{ID: "windows-worker-simulator", Required: true, Help: "The deterministic simulated Windows worker must pass its connection probe."},
+			{ID: "windows-worker-remote", Help: "Required only for an operator-approved disposable real Windows VM."},
+			{ID: "code-signing-service", Help: "Required only for isolated operator-approved signing requests."},
+		},
+		DetectionRules: []DetectionRule{
+			{ID: "dotnet-project", AnyPaths: []string{"*.sln", "*.csproj", "global.json"}, Confidence: 95, Explanation: "A .NET solution, project, or pinned SDK manifest is present."},
+			{ID: "powershell-tests", AnyPaths: []string{"*.ps1", "*.psm1", "*.Tests.ps1"}, Confidence: 85, Explanation: "PowerShell or Pester sources are present."},
+			{ID: "inno-installer", AnyPaths: []string{"*.iss"}, Confidence: 90, Explanation: "An Inno Setup installer definition is present."},
+			{ID: "hamilton-integration", AnyPaths: []string{"*hamilton*", "**/*hamilton*"}, Confidence: 70, Explanation: "HAMILTON integration evidence requires an explicit discovery profile."},
+		},
+		RunnerProfileIDs: []string{"windows-simulator", "windows-disposable-vm"},
+		OperationClasses: append([]string(nil), windowsworker.ApprovedJobTypes...),
+		ParserIDs:        []string{"trx-v1", "pester-nunit-v1", "windows-service-report-v1", "inno-lifecycle-v1", "installer-iq-v1"},
+		PolicyFragments:  []string{"windows-simulator-first", "windows-lock-restore", "windows-operator-gates", "windows-signing-isolated"},
+		ContextSelectors: []string{"dotnet-projects", "powershell-modules", "installer-definitions", "service-definitions", "release-metadata", "hamilton-profiles"},
+		RiskRules:        []string{"installer-change-high-risk", "service-change-high-risk", "driver-change-high-risk", "signing-operator-only", "vpn-operator-only", "hardware-operator-only"},
+		Documentation:    []string{"windows-toolchain-inventory", "service-lifecycle", "installer-upgrade-uninstall", "iq-installation-evidence", "hamilton-discovery-profile", "operator-gated-external-validation"},
+		WorkflowChanges: []WorkflowChange{
+			{Stage: "verify", OperationID: windowsworker.JobDotNet, Required: true, Description: "Restore with pinned locks, build release output, and parse .NET test evidence."},
+			{Stage: "verify", OperationID: windowsworker.JobPowerShell, Description: "Run controller-approved PowerShell analysis and Pester tests."},
+			{Stage: "rehearsal", OperationID: windowsworker.JobServiceLifecycle, Description: "Simulate Windows service install, start/stop, recovery, and cleanup."},
+			{Stage: "rehearsal", OperationID: windowsworker.JobInstallerLifecycle, Description: "Simulate Inno build, install, upgrade, repair, uninstall, and residue checks."},
+			{Stage: "rehearsal", OperationID: windowsworker.JobEquipmentSimulator, Required: true, Description: "Exercise equipment protocols against a registered simulator before hardware."},
+			{Stage: "release", OperationID: windowsworker.JobReleaseConsistency, Required: true, Description: "Compare release, assembly, file, and installer versions."},
+		},
+		UISchema: []UIField{
+			enumField("worker.profile", "Windows worker", "Select only a configured simulator or disposable VM profile.", "windows-simulator", "windows-simulator", "windows-disposable-vm"),
+			enumField("dotnet.restore", ".NET restore", "Require a deterministic lock-bound restore policy.", "locked", "locked", "locked-offline"),
+			booleanField("powershell.pester", "Pester", "Run Pester using the pinned worker inventory.", true),
+			booleanField("service.lifecycle", "Service lifecycle", "Verify service installation, recovery, and cleanup.", false),
+			booleanField("installer.lifecycle", "Inno lifecycle", "Verify install, upgrade, repair, uninstall, and residue.", false),
+			enumField("hamilton.profile", "HAMILTON profile", "Use an explicit controller-registered discovery profile.", "disabled", "disabled", "hamilton-sim-v1"),
+			enumField("equipment.profile", "Equipment profile", "Use simulation before any operator-gated hardware.", "instrument-sim-v1", "instrument-sim-v1", "disabled"),
+			booleanField("release.consistency", "Release consistency", "Compare release and file metadata.", true),
+			booleanField("installer.iq_evidence", "IQ installation evidence", "Collect structured bounded installation qualification evidence.", false),
+		},
+		Rehearsals: []RehearsalDefinition{
+			{ID: "windows-service-lifecycle", Kind: "windows-service", OperationID: windowsworker.JobServiceLifecycle, ArtifactKinds: []string{"service-lifecycle-report"}, ComparisonClass: "structured", ApprovalPolicy: "review-required"},
+			{ID: "windows-installer-lifecycle", Kind: "windows-installer", OperationID: windowsworker.JobInstallerLifecycle, ArtifactKinds: []string{"installer", "installation-evidence", "residue-report"}, ComparisonClass: "structured", ApprovalPolicy: "release-review"},
+			{ID: "windows-instrument-simulator", Kind: "equipment-simulator", OperationID: windowsworker.JobEquipmentSimulator, ArtifactKinds: []string{"equipment-simulator-report", "protocol-trace"}, ComparisonClass: "structured", ApprovalPolicy: "review-required"},
+		},
+	}
 }
 
 func rStatistical() Manifest {

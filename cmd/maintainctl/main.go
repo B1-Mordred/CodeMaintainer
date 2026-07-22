@@ -118,9 +118,56 @@ func run(arguments []string) error {
 		return api.pack(arguments[1:])
 	case "forge":
 		return api.forge(arguments[1:])
+	case "windows-worker":
+		return api.windowsWorker(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) windowsWorker(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl windows-worker <profiles|get|save|probe|runs|run> ...")
+	}
+	switch arguments[0] {
+	case "profiles":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl windows-worker profiles")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/windows-workers/profiles", nil)
+	case "get", "probe", "runs":
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: maintainctl windows-worker %s <profile-id>", arguments[0])
+		}
+		base := "/api/v1/windows-workers/profiles/" + url.PathEscape(arguments[1])
+		switch arguments[0] {
+		case "get":
+			return c.printJSON(http.MethodGet, base, nil)
+		case "probe":
+			return c.printJSON(http.MethodPost, base+"/actions/probe", nil)
+		default:
+			return c.printJSON(http.MethodGet, base+"/runs", nil)
+		}
+	case "save", "run":
+		if len(arguments) != 3 {
+			return fmt.Errorf("usage: maintainctl windows-worker %s <profile-id> <closed-json-file|->", arguments[0])
+		}
+		raw, err := readJSONDocument(arguments[2])
+		if err != nil {
+			return err
+		}
+		var body any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return err
+		}
+		base := "/api/v1/windows-workers/profiles/" + url.PathEscape(arguments[1])
+		if arguments[0] == "save" {
+			return c.printJSON(http.MethodPut, base, body)
+		}
+		return c.printJSON(http.MethodPost, base+"/runs", body)
+	default:
+		return fmt.Errorf("windows-worker action %q is not implemented", arguments[0])
 	}
 }
 
@@ -1041,6 +1088,7 @@ Commands:
 	pack assignments <project-id>
 	pack proposal <dry-run|accept|reject> <project-id> <scan-id> <proposal-id> --version <n> --reason <text> [--config file]
   forge profiles|get|save|probe|sync|runs|objects
+  windows-worker profiles|get|save|probe|runs|run
   intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>

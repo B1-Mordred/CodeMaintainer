@@ -30,6 +30,8 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
+	windowssimulator "github.com/B1-Mordred/CodeMaintainer/internal/windowsworker/simulator"
 )
 
 func testServer(t *testing.T) (*httptest.Server, *storesqlite.Store) {
@@ -94,10 +96,88 @@ func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store
 		store.Close()
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry), WithIntelligence(intelligenceService), WithCapabilities(capabilityService)))
+	windowsWorkerService, err := windowsworker.NewService(store, windowssimulator.New())
+	if err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if _, err := windowsWorkerService.EnsureSimulatorProfile(context.Background(), "test-bootstrap"); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(store, logger, "mock", WithArtifactReader(artifactStore), WithConfigRegistry(configRegistry), WithIntelligence(intelligenceService), WithCapabilities(capabilityService), WithWindowsWorkers(windowsWorkerService)))
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { store.Close() })
 	return server, store, artifactStore
+}
+
+func TestWindowsWorkerAPIUsesClosedSimulatorOperationsAndDurableReplay(t *testing.T) {
+	server, _ := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/windows-workers/profiles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profiles struct {
+		SchemaVersion    int                     `json:"schema_version"`
+		ApprovedJobTypes []string                `json:"approved_job_types"`
+		Items            []windowsworker.Profile `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&profiles); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || profiles.SchemaVersion != 1 || len(profiles.Items) != 1 || len(profiles.ApprovedJobTypes) != 10 {
+		t.Fatalf("profiles %d %#v", response.StatusCode, profiles)
+	}
+
+	probe, err := http.Post(server.URL+"/api/v1/windows-workers/profiles/windows-simulator/actions/probe", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probeResult windowsworker.Probe
+	if err := json.NewDecoder(probe.Body).Decode(&probeResult); err != nil {
+		t.Fatal(err)
+	}
+	probe.Body.Close()
+	if probe.StatusCode != http.StatusOK || !probeResult.Ready || probeResult.Mode != "simulator" {
+		t.Fatalf("probe %d %#v", probe.StatusCode, probeResult)
+	}
+
+	payload := `{"project_id":"owner-repo","job_id":"dotnet-fixture","job_type":"dotnet_restore_build_test","input":{"repository_sha":"0123456789abcdef0123456789abcdef01234567","capability_pack_checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","toolchain_inventory_checksum":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","source_artifact_id":"source-fixture"},"idempotency_key":"windows-api-replay","operator_gated":false}`
+	first, err := http.Post(server.URL+"/api/v1/windows-workers/profiles/windows-simulator/runs", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstResult windowsworker.Result
+	if err := json.NewDecoder(first.Body).Decode(&firstResult); err != nil {
+		t.Fatal(err)
+	}
+	first.Body.Close()
+	if first.StatusCode != http.StatusOK || firstResult.State != "completed" || firstResult.Replay || len(firstResult.Checks) != 3 {
+		t.Fatalf("first run %d %#v", first.StatusCode, firstResult)
+	}
+	second, err := http.Post(server.URL+"/api/v1/windows-workers/profiles/windows-simulator/runs", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secondResult windowsworker.Result
+	if err := json.NewDecoder(second.Body).Decode(&secondResult); err != nil {
+		t.Fatal(err)
+	}
+	second.Body.Close()
+	if second.StatusCode != http.StatusOK || !secondResult.Replay || secondResult.RunID != firstResult.RunID {
+		t.Fatalf("replay %d %#v", second.StatusCode, secondResult)
+	}
+
+	malicious := strings.TrimSuffix(payload, "}") + `,"command":"powershell -EncodedCommand bad"}`
+	rejected, err := http.Post(server.URL+"/api/v1/windows-workers/profiles/windows-simulator/runs", "application/json", strings.NewReader(malicious))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected.Body.Close()
+	if rejected.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown executable field returned %d", rejected.StatusCode)
+	}
 }
 
 func TestIntelligenceAPIIsProjectScopedAndNeverAcceptsBrowserSource(t *testing.T) {
@@ -280,7 +360,7 @@ func TestCapabilityAPIUsesTrustedCatalogAndRepoDoctorSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || len(catalog.Items) != 3 {
+	if response.StatusCode != http.StatusOK || len(catalog.Items) != 4 {
 		t.Fatalf("catalog status=%d items=%d", response.StatusCode, len(catalog.Items))
 	}
 	requestBody := `{"target_version":"1.0.0","expected_revision":0,"reason":"reviewed trusted catalog entry"}`

@@ -668,6 +668,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/windows-workers/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered Windows worker profiles and the fixed operation vocabulary */
+        get: operations["listWindowsWorkerProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/windows-workers/profiles/{profileID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        /** Read one Windows worker profile */
+        get: operations["getWindowsWorkerProfile"];
+        /** Save an optimistic Windows worker profile with bounded inventory and exact endpoint admission */
+        put: operations["saveWindowsWorkerProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/windows-workers/profiles/{profileID}/actions/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe Windows worker health, capacity, VM template, and pinned toolchains */
+        post: operations["probeWindowsWorkerProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/windows-workers/profiles/{profileID}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        /** List durable structured Windows worker results */
+        get: operations["listWindowsWorkerRuns"];
+        put?: never;
+        /**
+         * Run one controller-approved Windows operation with immutable source and inventory identities
+         * @description The closed request intentionally has no command, script, image, mount, path, network, environment, or argument fields.
+         */
+        post: operations["runWindowsWorkerJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/memory": {
         parameters: {
             query?: never;
@@ -2504,6 +2583,115 @@ export interface components {
             target_version: string;
             expected_revision: number;
             reason: string;
+        };
+        /** @enum {string} */
+        WindowsJobType: "dotnet_restore_build_test" | "powershell_pester" | "windows_service_lifecycle" | "inno_installer_lifecycle" | "hamilton_discovery" | "vpn_workflow" | "release_consistency" | "installer_iq_evidence" | "equipment_simulation" | "signing_request";
+        WindowsWorkerManualGates: {
+            physical_hardware: boolean;
+            code_signing: boolean;
+            production_vpn: boolean;
+        };
+        WindowsWorkerProfileSettings: {
+            name: string;
+            /** @enum {string} */
+            mode: "simulator" | "remote";
+            endpoint: string;
+            endpoint_allowlist: string[];
+            /** @description Opaque worker secret reference; never secret material. */
+            credential_reference?: string;
+            credential_status: string;
+            health: string;
+            capacity: number;
+            vm_template_id: string;
+            toolchains: {
+                [key: string]: string;
+            };
+            allowed_job_types: components["schemas"]["WindowsJobType"][];
+            timeout_seconds: number;
+            simulator_profile_ids: string[];
+            artifact_retention_days: number;
+            signing_policy_reference?: string;
+            manual_gates: components["schemas"]["WindowsWorkerManualGates"];
+            enabled: boolean;
+        };
+        WindowsWorkerProfileRequest: components["schemas"]["WindowsWorkerProfileSettings"] & {
+            expected_revision: number;
+            reason: string;
+        };
+        WindowsWorkerProfile: components["schemas"]["WindowsWorkerProfileSettings"] & {
+            id: string;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        WindowsWorkerProbe: {
+            profile_id: string;
+            ready: boolean;
+            /** @enum {string} */
+            mode: "simulator" | "remote";
+            health: string;
+            capacity: number;
+            vm_template_id: string;
+            toolchains: {
+                [key: string]: string;
+            };
+            problems: string[];
+            /** Format: date-time */
+            checked_at: string;
+        };
+        WindowsWorkerImmutableInput: {
+            repository_sha: string;
+            capability_pack_checksum: string;
+            toolchain_inventory_checksum: string;
+            source_artifact_id: string;
+            previous_installer_artifact_id?: string;
+            release_version?: string;
+            expected_service_name?: string;
+            hamilton_profile_id?: string;
+            simulator_profile_id?: string;
+        };
+        WindowsWorkerRunRequest: {
+            project_id: string;
+            job_id: string;
+            job_type: components["schemas"]["WindowsJobType"];
+            input: components["schemas"]["WindowsWorkerImmutableInput"];
+            idempotency_key: string;
+            operator_gated: boolean;
+        };
+        WindowsWorkerCheck: {
+            id: string;
+            /** @enum {string} */
+            state: "passed" | "failed" | "skipped";
+            summary: string;
+            duration_ms: number;
+        };
+        WindowsWorkerArtifact: {
+            id: string;
+            kind: string;
+            media_type: string;
+            sha256: string;
+            bytes: number;
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        WindowsWorkerResult: {
+            run_id: string;
+            profile_id: string;
+            project_id: string;
+            job_id: string;
+            job_type: components["schemas"]["WindowsJobType"];
+            input_sha256: string;
+            /** @enum {string} */
+            state: "completed" | "failed";
+            checks: components["schemas"]["WindowsWorkerCheck"][];
+            artifacts: components["schemas"]["WindowsWorkerArtifact"][];
+            idempotency_key: string;
+            replay: boolean;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            completed_at: string;
         };
         ForgeProfileSettings: {
             /** @enum {string} */
@@ -4750,6 +4938,168 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listWindowsWorkerProfiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential-safe Windows worker inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        schema_version: 1;
+                        approved_job_types: components["schemas"]["WindowsJobType"][];
+                        items: components["schemas"]["WindowsWorkerProfile"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    getWindowsWorkerProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Windows worker profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WindowsWorkerProfile"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    saveWindowsWorkerProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowsWorkerProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved Windows worker profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WindowsWorkerProfile"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    probeWindowsWorkerProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Structured worker probe */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WindowsWorkerProbe"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            502: components["responses"]["ErrorResponse"];
+        };
+    };
+    listWindowsWorkerRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Windows worker run history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["WindowsWorkerResult"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    runWindowsWorkerJob: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WindowsWorkerRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable idempotent worker result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WindowsWorkerResult"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
         };
     };
     listProjectMemory: {

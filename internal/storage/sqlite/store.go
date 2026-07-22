@@ -88,6 +88,9 @@ var migration021 string
 //go:embed migrations/022_forges.sql
 var migration022 string
 
+//go:embed migrations/023_windows_workers.sql
+var migration023 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -164,7 +167,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}, {13, migration013}, {14, migration014}, {15, migration015}, {16, migration016}, {17, migration017}, {18, migration018}, {19, migration019}, {20, migration020}, {21, migration021}, {22, migration022}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}, {13, migration013}, {14, migration014}, {15, migration015}, {16, migration016}, {17, migration017}, {18, migration018}, {19, migration019}, {20, migration020}, {21, migration021}, {22, migration022}, {23, migration023}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {

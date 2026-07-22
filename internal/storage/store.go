@@ -19,6 +19,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 )
 
 var (
@@ -204,6 +205,7 @@ type Store interface {
 	intelligence.Store
 	capabilities.Store
 	forges.Store
+	windowsworker.Store
 	Close() error
 }
 
