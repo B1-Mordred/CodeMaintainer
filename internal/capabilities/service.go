@@ -26,11 +26,18 @@ type Store interface {
 	TransitionCapability(context.Context, TransitionRequest) (Installation, LifecycleEvent, error)
 	ListCapabilityEvents(context.Context, string, int) ([]LifecycleEvent, error)
 	ListCapabilityAssignments(context.Context, string, int) ([]Assignment, error)
+	UpdateCapabilityAssignmentConfiguration(context.Context, AssignmentConfigurationRequest) (Assignment, error)
 	SaveRepoDoctorScan(context.Context, Scan, string) (Scan, error)
 	GetRepoDoctorScan(context.Context, string, string) (Scan, error)
 	ListRepoDoctorScans(context.Context, string, int) ([]Scan, error)
 	ReviewRepoDoctorProposal(context.Context, ReviewRequest) (Proposal, *Assignment, error)
 }
+
+var (
+	ErrConfigurationConflict = errors.New("capability assignment revision is stale")
+	ErrConfigurationNotFound = errors.New("capability assignment not found")
+	ErrConfigurationInvalid  = errors.New("capability assignment configuration is invalid")
+)
 
 type TransitionRequest struct {
 	PackID           string
@@ -74,6 +81,56 @@ func (s *Service) Installations(ctx context.Context) ([]Installation, error) {
 }
 func (s *Service) Assignments(ctx context.Context, projectID string) ([]Assignment, error) {
 	return s.store.ListCapabilityAssignments(ctx, projectID, 100)
+}
+
+func (s *Service) PreviewAssignmentConfiguration(ctx context.Context, projectID, packID string, expectedRevision int64, config json.RawMessage) (map[string]any, error) {
+	assignment, manifest, normalized, err := s.prepareAssignmentConfiguration(ctx, projectID, packID, expectedRevision, config)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"project_id": projectID, "pack_id": packID, "pack_version": assignment.PackVersion,
+		"expected_revision": expectedRevision, "current": assignment.Config, "effective": normalized,
+		"changed": string(assignment.Config) != string(normalized), "workflow_changes": manifest.WorkflowChanges,
+		"will_modify_repository": false,
+	}, nil
+}
+
+func (s *Service) UpdateAssignmentConfiguration(ctx context.Context, request AssignmentConfigurationRequest) (Assignment, error) {
+	if strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 1000 {
+		return Assignment{}, errors.New("a bounded configuration reason is required")
+	}
+	_, _, normalized, err := s.prepareAssignmentConfiguration(ctx, request.ProjectID, request.PackID, request.ExpectedRevision, request.Config)
+	if err != nil {
+		return Assignment{}, err
+	}
+	request.Config = normalized
+	return s.store.UpdateCapabilityAssignmentConfiguration(ctx, request)
+}
+
+func (s *Service) prepareAssignmentConfiguration(ctx context.Context, projectID, packID string, expectedRevision int64, config json.RawMessage) (Assignment, Manifest, json.RawMessage, error) {
+	assignments, err := s.store.ListCapabilityAssignments(ctx, projectID, 100)
+	if err != nil {
+		return Assignment{}, Manifest{}, nil, err
+	}
+	for _, assignment := range assignments {
+		if assignment.PackID != packID {
+			continue
+		}
+		if assignment.Revision != expectedRevision {
+			return Assignment{}, Manifest{}, nil, ErrConfigurationConflict
+		}
+		manifest, _, err := s.Manifest(packID, assignment.PackVersion)
+		if err != nil {
+			return Assignment{}, Manifest{}, nil, err
+		}
+		normalized, err := NormalizeConfiguration(manifest, config)
+		if err != nil {
+			return Assignment{}, Manifest{}, nil, fmt.Errorf("%w: %v", ErrConfigurationInvalid, err)
+		}
+		return assignment, manifest, normalized, nil
+	}
+	return Assignment{}, Manifest{}, nil, ErrConfigurationNotFound
 }
 func (s *Service) Events(ctx context.Context, packID string) ([]LifecycleEvent, error) {
 	return s.store.ListCapabilityEvents(ctx, packID, 100)
@@ -176,11 +233,32 @@ func (s *Service) Review(ctx context.Context, request ReviewRequest) (Proposal, 
 	if strings.TrimSpace(request.Reason) == "" || len(request.Reason) > 1000 {
 		return Proposal{}, nil, errors.New("a bounded review reason is required")
 	}
-	if len(request.Config) == 0 {
+	if request.Accept {
+		scan, err := s.GetScan(ctx, request.ProjectID, request.ScanID)
+		if err != nil {
+			return Proposal{}, nil, err
+		}
+		for _, proposal := range scan.Proposals {
+			if proposal.ID == request.ProposalID && proposal.Kind == "capability_pack" {
+				var selected struct {
+					Version string `json:"version"`
+				}
+				if json.Unmarshal(proposal.Value, &selected) != nil {
+					return Proposal{}, nil, errors.New("capability proposal is invalid")
+				}
+				manifest, _, err := s.Manifest(proposal.Key, selected.Version)
+				if err != nil {
+					return Proposal{}, nil, err
+				}
+				request.Config, err = NormalizeConfiguration(manifest, request.Config)
+				if err != nil {
+					return Proposal{}, nil, fmt.Errorf("%w: %v", ErrConfigurationInvalid, err)
+				}
+				break
+			}
+		}
+	} else {
 		request.Config = json.RawMessage(`{}`)
-	}
-	if !json.Valid(request.Config) || len(request.Config) > 64<<10 {
-		return Proposal{}, nil, errors.New("configuration must be bounded valid JSON")
 	}
 	return s.store.ReviewRepoDoctorProposal(ctx, request)
 }
@@ -210,9 +288,11 @@ func (s *Service) DryRun(ctx context.Context, projectID, scanID, proposalID stri
 				return nil, err
 			}
 			result["manifest"], result["trust"], result["workflow_changes"] = manifest, report, manifest.WorkflowChanges
-			if len(config) > 0 && !json.Valid(config) {
-				return nil, errors.New("configuration is invalid JSON")
+			normalized, err := NormalizeConfiguration(manifest, config)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", ErrConfigurationInvalid, err)
 			}
+			result["effective_configuration"] = normalized
 		}
 		return result, nil
 	}

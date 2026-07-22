@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -216,6 +218,48 @@ func scanAssignment(row scanner) (capabilities.Assignment, error) {
 	return item, err
 }
 
+func (s *Store) UpdateCapabilityAssignmentConfiguration(ctx context.Context, request capabilities.AssignmentConfigurationRequest) (capabilities.Assignment, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return capabilities.Assignment{}, err
+	}
+	defer tx.Rollback()
+	var assignment capabilities.Assignment
+	var enabled int
+	var raw, updated string
+	err = tx.QueryRowContext(ctx, `SELECT project_id,pack_id,pack_version,enabled,config_json,revision,updated_at FROM capability_assignments WHERE project_id=? AND pack_id=?`, request.ProjectID, request.PackID).Scan(&assignment.ProjectID, &assignment.PackID, &assignment.PackVersion, &enabled, &raw, &assignment.Revision, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return assignment, storage.ErrNotFound
+	}
+	if err != nil {
+		return assignment, err
+	}
+	if assignment.Revision != request.ExpectedRevision {
+		return assignment, storage.ErrConflict
+	}
+	now := s.now()
+	result, err := tx.ExecContext(ctx, `UPDATE capability_assignments SET config_json=?,revision=revision+1,updated_at=? WHERE project_id=? AND pack_id=? AND revision=?`, string(request.Config), now.Format(timestampFormat), request.ProjectID, request.PackID, request.ExpectedRevision)
+	if err != nil {
+		return assignment, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return assignment, storage.ErrConflict
+	}
+	assignment.Config = append(json.RawMessage(nil), request.Config...)
+	assignment.Enabled = enabled == 1
+	assignment.Revision++
+	assignment.UpdatedAt = now
+	digest := sha256.Sum256(request.Config)
+	details, _ := json.Marshal(map[string]any{"revision": assignment.Revision, "configuration_sha256": hex.EncodeToString(digest[:]), "reason": request.Reason})
+	if err := appendAuditTx(ctx, tx, s.now, audit.AppendRequest{ActorID: request.ActorID, ActorRole: "administrator", Action: "capability_pack.configuration", TargetType: "capability_assignment", TargetID: request.ProjectID + ":" + request.PackID, Details: details}); err != nil {
+		return assignment, err
+	}
+	if err := tx.Commit(); err != nil {
+		return assignment, err
+	}
+	return assignment, nil
+}
+
 func (s *Store) SaveRepoDoctorScan(ctx context.Context, scan capabilities.Scan, actorID string) (capabilities.Scan, error) {
 	if len(scan.Proposals) > 1000 || len(scan.Findings) > 1000 {
 		return scan, storage.ErrInvalid
@@ -341,7 +385,7 @@ func (s *Store) ReviewRepoDoctorProposal(ctx context.Context, request capabiliti
 	defer tx.Rollback()
 	var proposal capabilities.Proposal
 	var value, evidence string
-	err = tx.QueryRowContext(ctx, `SELECT id,scan_id,project_id,kind,proposal_key,value_json,confidence,evidence_json,state,version FROM repo_doctor_proposals WHERE id=? AND scan_id=?`, request.ProposalID, request.ScanID).Scan(&proposal.ID, &proposal.ScanID, &proposal.ProjectID, &proposal.Kind, &proposal.Key, &value, &proposal.Confidence, &evidence, &proposal.State, &proposal.Version)
+	err = tx.QueryRowContext(ctx, `SELECT id,scan_id,project_id,kind,proposal_key,value_json,confidence,evidence_json,state,version FROM repo_doctor_proposals WHERE id=? AND scan_id=? AND project_id=?`, request.ProposalID, request.ScanID, request.ProjectID).Scan(&proposal.ID, &proposal.ScanID, &proposal.ProjectID, &proposal.Kind, &proposal.Key, &value, &proposal.Confidence, &evidence, &proposal.State, &proposal.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return proposal, nil, storage.ErrNotFound
 	}

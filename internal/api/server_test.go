@@ -382,6 +382,67 @@ func TestCapabilityAPIUsesTrustedCatalogAndRepoDoctorSource(t *testing.T) {
 	}
 }
 
+func TestCapabilityConfigurationAPIUsesTypedOptimisticControllerValidation(t *testing.T) {
+	server, store := testServer(t)
+	service, err := capabilities.NewService(store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan, err := service.Scan(context.Background(), capabilities.ScanInput{ProjectID: "owner-repo", Repository: "owner/repo", Revision: "abc123", Files: []capabilities.SourceFile{{Path: "DESCRIPTION", Content: []byte("Package: fixture\n")}, {Path: "renv.lock", Content: []byte(`{"R":{"Version":"4.4.1"}}`)}}}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proposal capabilities.Proposal
+	for _, candidate := range scan.Proposals {
+		if candidate.Key == "r-statistical-validation" {
+			proposal = candidate
+		}
+	}
+	if _, _, err := service.Transition(context.Background(), capabilities.TransitionRequest{PackID: "r-statistical-validation", Action: "install", TargetVersion: "1.0.0", ActorID: "admin", Reason: "install R pack"}, true); err != nil {
+		t.Fatal(err)
+	}
+	_, assignment, err := service.Review(context.Background(), capabilities.ReviewRequest{ProjectID: scan.ProjectID, ScanID: scan.ID, ProposalID: proposal.ID, ExpectedVersion: proposal.Version, Accept: true, ActorID: "operator", Reason: "accept detected R pack"})
+	if err != nil || assignment == nil {
+		t.Fatalf("assignment %#v error %v", assignment, err)
+	}
+	path := server.URL + "/api/v1/projects/owner-repo/capability-packs/r-statistical-validation/actions/preview-configuration"
+	request, _ := http.NewRequest(http.MethodPost, path, strings.NewReader(fmt.Sprintf(`{"expected_revision":%d,"reason":"preview","config":{"unknown":true}}`, assignment.Revision)))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown config status = %d", response.StatusCode)
+	}
+	valid := fmt.Sprintf(`{"expected_revision":%d,"reason":"reviewed tolerance","config":{"tolerance":{"absolute":0.02},"golden":{"dataset_reference":"tests/golden"}}}`, assignment.Revision)
+	request, _ = http.NewRequest(http.MethodPut, server.URL+"/api/v1/projects/owner-repo/capability-packs/r-statistical-validation/configuration", strings.NewReader(valid))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated capabilities.Assignment
+	if err := json.NewDecoder(response.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || updated.Revision != assignment.Revision+1 || !strings.Contains(string(updated.Config), `"absolute":0.02`) {
+		t.Fatalf("updated assignment %#v status %d", updated, response.StatusCode)
+	}
+	request, _ = http.NewRequest(http.MethodPut, server.URL+"/api/v1/projects/owner-repo/capability-packs/r-statistical-validation/configuration", strings.NewReader(valid))
+	request.Header.Set("Content-Type", "application/json")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("stale config status = %d", response.StatusCode)
+	}
+}
+
 func TestHealthStaticShellAndSecurityHeaders(t *testing.T) {
 	server, _ := testServer(t)
 	for _, path := range []string{"/healthz", "/"} {

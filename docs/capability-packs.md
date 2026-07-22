@@ -6,7 +6,7 @@ The Onboarding & packs page is the normal operator interface for Repo Doctor and
 
 A pack is a typed declarative manifest compiled into the controller. Its SHA-256 checksum covers the canonical manifest content. A manifest can name only controller-registered runner profiles, operation classes, parsers, policy fragments, context selectors, risk and documentation rules, UI fields, and rehearsal definitions. It has no image, executable, mount, network, host path, Linux capability, unrestricted environment, model argument, or free-form runner-command field. Pack installation never changes runner authority.
 
-Lifecycle changes use optimistic installation revisions and append both a pack event and an audit event in the same SQLite transaction. Install, enable, disable, upgrade, rollback, pin, and unpin require recent administrator reauthentication. A pin blocks upgrade and rollback. Upgrade targets must be newer, rollback targets must be older and must appear in the retained lifecycle history. Project assignments retain an exact pack version and bounded JSON configuration; upgrading an installation never silently changes an assignment.
+Lifecycle changes use optimistic installation revisions and append both a pack event and an audit event in the same SQLite transaction. Install, enable, disable, upgrade, rollback, pin, and unpin require recent administrator reauthentication. A pin blocks upgrade and rollback. Upgrade targets must be newer, rollback targets must be older and must appear in the retained lifecycle history. Project assignments retain an exact pack version and controller-normalized typed configuration; upgrading an installation never silently changes an assignment. The browser renders only fields declared by the trusted manifest. The controller rejects duplicate JSON keys, unknown or nested undeclared fields, arrays, out-of-range numbers, invalid enumerations, unsafe repository references, malformed timestamps, and documents larger than 64 KiB. Defaults are expanded before storage so API, CLI, and browser inspection see the same effective document.
 
 The built-in catalog currently includes:
 
@@ -22,7 +22,9 @@ Repo Doctor accepts no repository paths, bytes, commands, detector rules, pack m
 
 Detection covers languages, frameworks, package managers and locks, build/test/static-analysis configuration, CI, guidance and ownership files, migrations and risk paths, submodules/LFS, UTF-8, and CRLF observations. Each finding and proposal cites a snapshot path and SHA-256 content identity with a confidence score. Repository text is untrusted data; it is never interpreted as a controller instruction.
 
-A scan writes findings and disabled proposals only. It does not install a pack, create an assignment, edit configuration, modify the repository, or change an allow-list. Re-scans compare findings with the previous scan and expose added/removed drift. The operator can inspect the current-versus-proposed JSON, edit bounded proposal configuration, run a no-write preview, and explicitly accept or reject using the proposal revision. A stale review conflicts. Accepting a pack proposal succeeds only when the exact proposed checksummed version is already installed and enabled; proposal review and assignment then commit transactionally.
+A scan writes findings and disabled proposals only. It does not install a pack, create an assignment, edit configuration, modify the repository, or change an allow-list. Re-scans compare findings with the previous scan and expose added/removed drift. The operator can inspect current and proposed state, edit the trusted typed proposal fields, run a no-write preview, and explicitly accept or reject using the proposal revision. A stale review conflicts. Accepting a pack proposal succeeds only when the exact proposed checksummed version is already installed and enabled; proposal review and normalized assignment then commit transactionally.
+
+An existing assignment can be reconfigured from the same typed editor. Preview invokes controller validation without mutation and returns the normalized effective configuration and fixed workflow impact. Apply requires the exact assignment revision plus an audited reason, increments the revision transactionally, and stores only a configuration digest in the audit payload. A stale revision conflicts and no partial update is retained. R and security pack details are documented in [R statistical validation](r-statistical-pack.md) and [SBOM, FMEA, and security](sbom-fmea-security-pack.md).
 
 ## Golden and rehearsal primitives
 
@@ -48,3 +50,12 @@ maintainctl pack proposal accept owner-repository scan_ID proposal_ID --version 
 ```
 
 Lifecycle history and exact project assignments remain inspectable with `maintainctl pack events PACK_ID` and `maintainctl pack assignments PROJECT_ID`.
+
+Preview and apply the same typed assignment document used by the browser:
+
+```text
+maintainctl pack configure-preview --revision 3 --config r-profile.json --reason "review reproducibility controls" PROJECT_ID r-statistical-validation
+maintainctl pack configure --revision 3 --config r-profile.json --reason "approve reproducibility controls" PROJECT_ID r-statistical-validation
+```
+
+The configuration file must be a JSON object using only catalog-declared fields. Preview first when automating an update; apply still performs the complete validation again inside the optimistic write path.

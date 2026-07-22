@@ -60,15 +60,17 @@ type WorkflowChange struct {
 }
 
 type UIField struct {
-	Key      string          `json:"key"`
-	Label    string          `json:"label"`
-	Kind     string          `json:"kind"`
-	Default  json.RawMessage `json:"default"`
-	Allowed  []string        `json:"allowed,omitempty"`
-	Minimum  *float64        `json:"minimum,omitempty"`
-	Maximum  *float64        `json:"maximum,omitempty"`
-	Help     string          `json:"help"`
-	Advanced bool            `json:"advanced,omitempty"`
+	Key       string          `json:"key"`
+	Label     string          `json:"label"`
+	Kind      string          `json:"kind"`
+	Default   json.RawMessage `json:"default"`
+	Allowed   []string        `json:"allowed,omitempty"`
+	Minimum   *float64        `json:"minimum,omitempty"`
+	Maximum   *float64        `json:"maximum,omitempty"`
+	MaxLength int             `json:"max_length,omitempty"`
+	Format    string          `json:"format,omitempty"`
+	Help      string          `json:"help"`
+	Advanced  bool            `json:"advanced,omitempty"`
 }
 
 // RehearsalDefinition is a reusable golden/rehearsal primitive. Artifact
@@ -123,6 +125,15 @@ type Assignment struct {
 	Config      json.RawMessage `json:"config"`
 	Revision    int64           `json:"revision"`
 	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+type AssignmentConfigurationRequest struct {
+	ProjectID        string
+	PackID           string
+	ExpectedRevision int64
+	Config           json.RawMessage
+	ActorID          string
+	Reason           string
 }
 
 type Evidence struct {
@@ -182,6 +193,7 @@ type ScanInput struct {
 }
 
 type ReviewRequest struct {
+	ProjectID       string
 	ScanID          string
 	ProposalID      string
 	ExpectedVersion int64

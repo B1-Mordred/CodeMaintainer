@@ -98,6 +98,57 @@ func TestSyncPersistsNormalizedMetadataAndReplaysIdempotently(t *testing.T) {
 	}
 }
 
+func TestForgeProfileCursorObjectsAndIdempotencySurviveRestart(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "controller.db")
+	store, err := sqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createProject(t, store, "restart-project", "gitlab")
+	metadata := json.RawMessage(`{"web_url":"https://forge.example.test/fixture/restart-project/-/issues/8"}`)
+	provider := fakeForge{page: forges.SyncPage{
+		Provider: "gitlab", NextCursor: "cursor-page-two", RateLimitRemaining: 7,
+		Objects: []forges.Object{{Provider: "gitlab", Kind: "issue", ExternalID: "8", Title: "retained issue", ProviderMetadata: metadata}},
+	}}
+	service, _ := forges.NewService(store, provider)
+	profile := validProfile("restart-project", "gitlab")
+	profile.CredentialReference = "gitbridge-secret:gitlab-restart"
+	created, err := service.SaveProfile(ctx, forges.SaveProfileRequest{Profile: profile, ActorID: "admin", Reason: "configure restart fixture", Reauthenticated: true})
+	if err != nil || created.Revision != 1 {
+		t.Fatalf("profile = %#v err=%v", created, err)
+	}
+	first, err := service.Sync(ctx, profile.ProjectID, "cursor-page-one", "restart-sync-1", "operator")
+	if err != nil || first.Replay || first.OutputCursor != "cursor-page-two" {
+		t.Fatalf("first sync = %#v err=%v", first, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = sqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	service, _ = forges.NewService(store, provider)
+	restoredProfile, err := service.Profile(ctx, profile.ProjectID)
+	if err != nil || restoredProfile.Revision != 1 || restoredProfile.CredentialReference != profile.CredentialReference {
+		t.Fatalf("restored profile = %#v err=%v", restoredProfile, err)
+	}
+	restoredObjects, err := service.Objects(ctx, profile.ProjectID, "issue")
+	if err != nil || len(restoredObjects) != 1 || string(restoredObjects[0].ProviderMetadata) != string(metadata) {
+		t.Fatalf("restored objects = %#v err=%v", restoredObjects, err)
+	}
+	replay, err := service.Sync(ctx, profile.ProjectID, "cursor-page-one", "restart-sync-1", "operator")
+	if err != nil || !replay.Replay || replay.ID != first.ID || replay.OutputCursor != first.OutputCursor {
+		t.Fatalf("restart replay = %#v err=%v", replay, err)
+	}
+	if _, err := service.Sync(ctx, profile.ProjectID, "different-cursor", "restart-sync-1", "operator"); !errors.Is(err, storage.ErrIdempotencyKey) {
+		t.Fatalf("changed cursor replay error = %v", err)
+	}
+}
+
 func TestProviderOutputIsBoundedAndNamespaceChecked(t *testing.T) {
 	ctx := context.Background()
 	store := openStore(t)

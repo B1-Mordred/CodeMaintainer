@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ func TestRepoDoctorRequiresReviewAndExactInstalledPack(t *testing.T) {
 	if err != nil || preview["will_modify_repository"] != false {
 		t.Fatalf("unsafe dry run: %#v %v", preview, err)
 	}
-	_, _, err = service.Review(context.Background(), capabilities.ReviewRequest{ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: true, ActorID: "operator", Reason: "reviewed evidence", Config: json.RawMessage(`{}`)})
+	_, _, err = service.Review(context.Background(), capabilities.ReviewRequest{ProjectID: scan.ProjectID, ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: true, ActorID: "operator", Reason: "reviewed evidence", Config: json.RawMessage(`{}`)})
 	if !errors.Is(err, storage.ErrConflict) {
 		t.Fatalf("assignment without installed pack error = %v", err)
 	}
@@ -87,14 +88,14 @@ func TestRepoDoctorRequiresReviewAndExactInstalledPack(t *testing.T) {
 	if _, _, err := service.Transition(context.Background(), capabilities.TransitionRequest{PackID: manifest.ID, Action: "install", TargetVersion: manifest.Version, ActorID: "admin", Reason: "approved trusted pack"}, true); err != nil {
 		t.Fatal(err)
 	}
-	accepted, assignment, err := service.Review(context.Background(), capabilities.ReviewRequest{ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: true, ActorID: "operator", Reason: "reviewed evidence", Config: json.RawMessage(`{"tests":{"coverage":"pcov"}}`)})
+	accepted, assignment, err := service.Review(context.Background(), capabilities.ReviewRequest{ProjectID: scan.ProjectID, ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: true, ActorID: "operator", Reason: "reviewed evidence", Config: json.RawMessage(`{"tests":{"coverage":"pcov"}}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if accepted.State != "accepted" || assignment == nil || !assignment.Enabled || assignment.PackVersion != "1.0.0" {
 		t.Fatalf("unexpected accepted proposal: %#v %#v", accepted, assignment)
 	}
-	if _, _, err := service.Review(context.Background(), capabilities.ReviewRequest{ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: false, ActorID: "operator", Reason: "stale review"}); !errors.Is(err, storage.ErrConflict) {
+	if _, _, err := service.Review(context.Background(), capabilities.ReviewRequest{ProjectID: scan.ProjectID, ScanID: scan.ID, ProposalID: pack.ID, ExpectedVersion: 1, Accept: false, ActorID: "operator", Reason: "stale review"}); !errors.Is(err, storage.ErrConflict) {
 		t.Fatalf("stale review error = %v", err)
 	}
 }
@@ -147,5 +148,78 @@ func TestLifecyclePinUpgradeAndRollbackAreAuditedAndReversible(t *testing.T) {
 	events, err := service.Events(context.Background(), base.ID)
 	if err != nil || len(events) != 5 {
 		t.Fatalf("events=%d err=%v", len(events), err)
+	}
+}
+
+func TestTypedAssignmentConfigurationIsValidatedAuditedAndRestartDurable(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "capabilities.db")
+	store, err := storesqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertProject(ctx, projects.UpsertRequest{ID: "r-fixture", Provider: "local", Repository: "owner/r-fixture", DefaultBranch: "main", LocalRemoteName: "r-fixture.git"}, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	service, err := capabilities.NewService(store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan, err := service.Scan(ctx, capabilities.ScanInput{ProjectID: "r-fixture", Repository: "owner/r-fixture", Revision: "abc123", Files: []capabilities.SourceFile{{Path: "DESCRIPTION", Content: []byte("Package: fixture\n")}, {Path: "renv.lock", Content: []byte(`{"R":{"Version":"4.4.1"}}`)}}}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proposal capabilities.Proposal
+	for _, candidate := range scan.Proposals {
+		if candidate.Key == "r-statistical-validation" {
+			proposal = candidate
+			break
+		}
+	}
+	manifest, _, err := service.Manifest("r-statistical-validation", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.Transition(ctx, capabilities.TransitionRequest{PackID: manifest.ID, Action: "install", TargetVersion: manifest.Version, ActorID: "admin", Reason: "install R validation"}, true); err != nil {
+		t.Fatal(err)
+	}
+	_, assignment, err := service.Review(ctx, capabilities.ReviewRequest{ProjectID: scan.ProjectID, ScanID: scan.ID, ProposalID: proposal.ID, ExpectedVersion: proposal.Version, Accept: true, ActorID: "operator", Reason: "accept R evidence", Config: json.RawMessage(`{"tolerance":{"absolute":0.01},"golden":{"dataset_reference":"tests/golden"}}`)})
+	if err != nil || assignment == nil || !strings.Contains(string(assignment.Config), `"relative":0.000001`) {
+		t.Fatalf("normalized assignment %#v error %v", assignment, err)
+	}
+	if _, err := service.PreviewAssignmentConfiguration(ctx, scan.ProjectID, manifest.ID, assignment.Revision, json.RawMessage(`{"unknown":true}`)); err == nil {
+		t.Fatal("unknown assignment configuration field was accepted")
+	}
+	updated, err := service.UpdateAssignmentConfiguration(ctx, capabilities.AssignmentConfigurationRequest{ProjectID: scan.ProjectID, PackID: manifest.ID, ExpectedRevision: assignment.Revision, Config: json.RawMessage(`{"tolerance":{"absolute":0.02},"golden":{"dataset_reference":"tests/golden"}}`), ActorID: "admin", Reason: "tighten reviewed tolerance"})
+	if err != nil || updated.Revision != assignment.Revision+1 || !strings.Contains(string(updated.Config), `"absolute":0.02`) {
+		t.Fatalf("updated assignment %#v error %v", updated, err)
+	}
+	if _, err := service.UpdateAssignmentConfiguration(ctx, capabilities.AssignmentConfigurationRequest{ProjectID: scan.ProjectID, PackID: manifest.ID, ExpectedRevision: assignment.Revision, Config: updated.Config, ActorID: "admin", Reason: "stale overwrite"}); !errors.Is(err, capabilities.ErrConfigurationConflict) {
+		t.Fatalf("stale assignment update error = %v", err)
+	}
+	events, err := store.ListAudit(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundAudit := false
+	for _, event := range events {
+		if event.Action == "capability_pack.configuration" && event.TargetID == "r-fixture:r-statistical-validation" {
+			foundAudit = true
+		}
+	}
+	if !foundAudit {
+		t.Fatal("capability configuration update was not audited")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := storesqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	assignments, err := reopened.ListCapabilityAssignments(ctx, "r-fixture", 10)
+	if err != nil || len(assignments) != 1 || assignments[0].Revision != updated.Revision || string(assignments[0].Config) != string(updated.Config) {
+		t.Fatalf("restart assignment %#v error %v", assignments, err)
 	}
 }

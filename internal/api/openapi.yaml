@@ -467,6 +467,34 @@ paths:
           description: Project assignments
           content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/CapabilityAssignment" } } } } } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/capability-packs/{packID}/actions/preview-configuration:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }
+    post:
+      summary: Validate and preview a typed project pack configuration without mutation
+      operationId: previewCapabilityAssignmentConfiguration
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CapabilityAssignmentConfigurationRequest" } } } }
+      responses:
+        "200": { description: Normalized effective configuration and workflow impact, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /projects/{projectID}/capability-packs/{packID}/configuration:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectID" }
+      - { name: packID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,127}$" } }
+    put:
+      summary: Apply an optimistic audited controller-validated project pack configuration
+      operationId: updateCapabilityAssignmentConfiguration
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CapabilityAssignmentConfigurationRequest" } } } }
+      responses:
+        "200": { description: Updated exact project pack assignment, content: { application/json: { schema: { $ref: "#/components/schemas/CapabilityAssignment" } } } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/repo-doctor/scans:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     get:
@@ -2320,6 +2348,8 @@ components:
         allowed: { type: array, items: { type: string } }
         minimum: { type: number }
         maximum: { type: number }
+        max_length: { type: integer, minimum: 1, maximum: 4096 }
+        format: { type: string, enum: [text, identifier, repository-reference, date-time] }
         help: { type: string }
         advanced: { type: boolean }
     RehearsalDefinition:
@@ -2417,6 +2447,14 @@ components:
         target_version: { type: string }
         expected_revision: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 1, maxLength: 1000 }
+    CapabilityAssignmentConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, reason, config]
+      properties:
+        expected_revision: { type: integer, minimum: 1 }
+        reason: { type: string, maxLength: 1000 }
+        config: { type: object, additionalProperties: true }
     WindowsJobType:
       type: string
       enum: [dotnet_restore_build_test, powershell_pester, windows_service_lifecycle, inno_installer_lifecycle, hamilton_discovery, vpn_workflow, release_consistency, installer_iq_evidence, equipment_simulation, signing_request]

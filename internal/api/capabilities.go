@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -129,6 +130,65 @@ func (s *Server) projectCapabilityAssignments(w http.ResponseWriter, r *http.Req
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
+
+type capabilityAssignmentConfigurationRequest struct {
+	ExpectedRevision int64           `json:"expected_revision"`
+	Reason           string          `json:"reason"`
+	Config           json.RawMessage `json:"config"`
+}
+
+func (s *Server) previewCapabilityAssignmentConfiguration(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireCapabilities(w)
+	if !ok {
+		return
+	}
+	var request capabilityAssignmentConfigurationRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	result, err := service.PreviewAssignmentConfiguration(r.Context(), r.PathValue("projectID"), r.PathValue("packID"), request.ExpectedRevision, request.Config)
+	if errors.Is(err, capabilities.ErrConfigurationConflict) {
+		writeError(w, http.StatusConflict, "stale_capability_configuration", err.Error())
+		return
+	}
+	if errors.Is(err, capabilities.ErrConfigurationNotFound) {
+		writeError(w, http.StatusNotFound, "capability_assignment_not_found", err.Error())
+		return
+	}
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) updateCapabilityAssignmentConfiguration(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.requireCapabilities(w)
+	if !ok {
+		return
+	}
+	var request capabilityAssignmentConfigurationRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	assignment, err := service.UpdateAssignmentConfiguration(r.Context(), capabilities.AssignmentConfigurationRequest{
+		ProjectID: r.PathValue("projectID"), PackID: r.PathValue("packID"), ExpectedRevision: request.ExpectedRevision,
+		Config: request.Config, ActorID: actorID(r), Reason: request.Reason,
+	})
+	if errors.Is(err, capabilities.ErrConfigurationConflict) {
+		writeError(w, http.StatusConflict, "stale_capability_configuration", err.Error())
+		return
+	}
+	if errors.Is(err, capabilities.ErrConfigurationNotFound) {
+		writeError(w, http.StatusNotFound, "capability_assignment_not_found", err.Error())
+		return
+	}
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, assignment)
+}
 func (s *Server) listRepoDoctorScans(w http.ResponseWriter, r *http.Request) {
 	service, ok := s.requireCapabilities(w)
 	if !ok {
@@ -231,7 +291,7 @@ func (s *Server) reviewRepoDoctorProposal(w http.ResponseWriter, r *http.Request
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
 	}
-	proposal, assignment, err := service.Review(r.Context(), capabilities.ReviewRequest{ScanID: r.PathValue("scanID"), ProposalID: r.PathValue("proposalID"), ExpectedVersion: request.ExpectedVersion, Accept: action == "accept", ActorID: actorID(r), Reason: request.Reason, Config: request.Config})
+	proposal, assignment, err := service.Review(r.Context(), capabilities.ReviewRequest{ProjectID: r.PathValue("projectID"), ScanID: r.PathValue("scanID"), ProposalID: r.PathValue("proposalID"), ExpectedVersion: request.ExpectedVersion, Accept: action == "accept", ActorID: actorID(r), Reason: request.Reason, Config: request.Config})
 	if err != nil {
 		s.storageError(w, r, err)
 		return

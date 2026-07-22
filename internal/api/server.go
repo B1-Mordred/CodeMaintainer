@@ -183,6 +183,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/capability-packs/{packID}/actions/preview", s.previewCapabilityTransition)
 	mux.HandleFunc("POST /api/v1/capability-packs/{packID}/actions/{action}", s.transitionCapability)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/capability-packs", s.projectCapabilityAssignments)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/capability-packs/{packID}/actions/preview-configuration", s.previewCapabilityAssignmentConfiguration)
+	mux.HandleFunc("PUT /api/v1/projects/{projectID}/capability-packs/{packID}/configuration", s.updateCapabilityAssignmentConfiguration)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/repo-doctor/scans", s.listRepoDoctorScans)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/repo-doctor/actions/scan", s.runRepoDoctor)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/repo-doctor/scans/{scanID}", s.getRepoDoctorScan)
@@ -1221,6 +1223,12 @@ func (s *Server) storageError(w http.ResponseWriter, r *http.Request, err error)
 		writeError(w, http.StatusConflict, "conflict", "resource changed; refresh and retry")
 	case errors.Is(err, storage.ErrInvalid), errors.Is(err, memory.ErrInvalid), errors.Is(err, memory.ErrScope), errors.Is(err, automation.ErrInvalid):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_transition", err.Error())
+	case errors.Is(err, capabilities.ErrConfigurationInvalid):
+		writeError(w, http.StatusUnprocessableEntity, "invalid_capability_configuration", err.Error())
+	case errors.Is(err, capabilities.ErrConfigurationConflict):
+		writeError(w, http.StatusConflict, "stale_capability_configuration", err.Error())
+	case errors.Is(err, capabilities.ErrConfigurationNotFound):
+		writeError(w, http.StatusNotFound, "capability_assignment_not_found", err.Error())
 	case errors.Is(err, storage.ErrBudgetExceeded):
 		writeError(w, http.StatusUnprocessableEntity, "budget_exceeded", "the job token or wall-time budget is exhausted")
 	default:

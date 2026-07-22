@@ -471,6 +471,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectID}/capability-packs/{packID}/actions/preview-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                packID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate and preview a typed project pack configuration without mutation */
+        post: operations["previewCapabilityAssignmentConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectID}/capability-packs/{packID}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                packID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Apply an optimistic audited controller-validated project pack configuration */
+        put: operations["updateCapabilityAssignmentConfiguration"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/repo-doctor/scans": {
         parameters: {
             query?: never;
@@ -2518,6 +2558,9 @@ export interface components {
             allowed?: string[];
             minimum?: number;
             maximum?: number;
+            max_length?: number;
+            /** @enum {string} */
+            format?: "text" | "identifier" | "repository-reference" | "date-time";
             help: string;
             advanced?: boolean;
         };
@@ -2600,6 +2643,13 @@ export interface components {
             target_version: string;
             expected_revision: number;
             reason: string;
+        };
+        CapabilityAssignmentConfigurationRequest: {
+            expected_revision: number;
+            reason: string;
+            config: {
+                [key: string]: unknown;
+            };
         };
         /** @enum {string} */
         WindowsJobType: "dotnet_restore_build_test" | "powershell_pester" | "windows_service_lifecycle" | "inno_installer_lifecycle" | "hamilton_discovery" | "vpn_workflow" | "release_consistency" | "installer_iq_evidence" | "equipment_simulation" | "signing_request";
@@ -4661,6 +4711,72 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    previewCapabilityAssignmentConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                packID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilityAssignmentConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Normalized effective configuration and workflow impact */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateCapabilityAssignmentConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                projectID: components["parameters"]["ProjectID"];
+                packID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapabilityAssignmentConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated exact project pack assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityAssignment"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
         };
     };
     listRepoDoctorScans: {

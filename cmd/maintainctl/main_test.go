@@ -191,3 +191,56 @@ func TestPackInstallUsesVersionRevisionAndAuditedReason(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPackConfigurationUsesTypedSharedAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/projects/project-one/capability-packs/r-statistical-validation/configuration" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		config, _ := body["config"].(map[string]any)
+		tolerance, _ := config["tolerance"].(map[string]any)
+		if body["expected_revision"] != float64(3) || body["reason"] != "reviewed statistical policy" || tolerance["absolute"] != 0.02 {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"project_id":"project-one","pack_id":"r-statistical-validation","pack_version":"1.0.0","enabled":true,"config":{},"revision":4,"updated_at":"2026-07-22T00:00:00Z"}`))
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "r-config.json")
+	if err := os.WriteFile(configPath, []byte(`{"tolerance":{"absolute":0.02}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.pack([]string{"configure", "--revision", "3", "--config", configPath, "--reason", "reviewed statistical policy", "project-one", "r-statistical-validation"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPackConfigurationPreservesDuplicateKeysForControllerRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if strings.Count(string(body), `"absolute"`) != 2 {
+			t.Errorf("CLI rewrote duplicate configuration keys before controller validation: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":{"code":"invalid_request","message":"duplicate configuration key"}}`))
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "duplicate-config.json")
+	if err := os.WriteFile(configPath, []byte(`{"tolerance":{"absolute":0.01,"absolute":0.02}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	err := client.pack([]string{"configure-preview", "--revision", "1", "--config", configPath, "--reason", "validate exact bytes", "project-one", "r-statistical-validation"})
+	if err == nil || !strings.Contains(err.Error(), "duplicate configuration key") {
+		t.Fatalf("controller rejection = %v", err)
+	}
+}

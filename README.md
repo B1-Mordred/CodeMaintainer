@@ -38,6 +38,8 @@ Run the full local gate with `./scripts/acceptance.sh`; run `./scripts/agent-ima
 - [Models](docs/models.md)
 - [Memory](docs/memory.md)
 - [Repository onboarding and capability packs](docs/capability-packs.md)
+- [R statistical validation capability pack](docs/r-statistical-pack.md)
+- [SBOM, FMEA, and security capability pack](docs/sbom-fmea-security-pack.md)
 - [Operations and updates](docs/operations.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Security](docs/security.md)

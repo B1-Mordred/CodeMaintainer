@@ -114,6 +114,27 @@ func ValidateManifest(manifest Manifest) TrustReport {
 			}
 		}
 	}
+	seenFields := map[string]struct{}{}
+	for _, field := range manifest.UISchema {
+		if !configurationKey.MatchString(field.Key) || strings.TrimSpace(field.Label) == "" || strings.TrimSpace(field.Help) == "" {
+			report.AuthoritySafe = false
+			report.Issues = append(report.Issues, "invalid capability UI field")
+			continue
+		}
+		if _, duplicate := seenFields[field.Key]; duplicate {
+			report.AuthoritySafe = false
+			report.Issues = append(report.Issues, "duplicate capability UI field")
+		}
+		seenFields[field.Key] = struct{}{}
+		if field.Kind != "boolean" && field.Kind != "enum" && field.Kind != "number" && field.Kind != "string" {
+			report.AuthoritySafe = false
+			report.Issues = append(report.Issues, "unsupported capability UI field kind")
+		}
+		if _, err := NormalizeConfiguration(Manifest{UISchema: []UIField{field}}, json.RawMessage(`{}`)); err != nil {
+			report.AuthoritySafe = false
+			report.Issues = append(report.Issues, "invalid capability UI field default")
+		}
+	}
 	return report
 }
 
@@ -165,6 +186,16 @@ func booleanField(key, label, help string, defaultValue bool) UIField {
 func enumField(key, label, help, fallback string, allowed ...string) UIField {
 	raw, _ := json.Marshal(fallback)
 	return UIField{Key: key, Label: label, Kind: "enum", Default: raw, Allowed: allowed, Help: help}
+}
+
+func numberField(key, label, help string, fallback, minimum, maximum float64) UIField {
+	raw, _ := json.Marshal(fallback)
+	return UIField{Key: key, Label: label, Kind: "number", Default: raw, Minimum: &minimum, Maximum: &maximum, Help: help}
+}
+
+func stringField(key, label, help, fallback, format string, maxLength int) UIField {
+	raw, _ := json.Marshal(fallback)
+	return UIField{Key: key, Label: label, Kind: "string", Default: raw, MaxLength: maxLength, Format: format, Help: help}
 }
 
 func php83Intranet() Manifest {
@@ -223,9 +254,76 @@ func windowsDotNetLabAutomation() Manifest {
 }
 
 func rStatistical() Manifest {
-	return Manifest{SchemaVersion: 1, ID: "r-statistical-validation", Name: "R statistical validation", Version: "1.0.0", Description: "Reproducible R checks and numerical golden comparisons.", Languages: []string{"r"}, Compatibility: Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"linux/amd64"}}, Prerequisites: []Prerequisite{{ID: "r-toolchain", Required: true, Help: "Pinned R verifier profile must be installed."}}, DetectionRules: []DetectionRule{{ID: "r-package", AnyPaths: []string{"DESCRIPTION"}, Confidence: 95, Explanation: "R package DESCRIPTION is present."}, {ID: "renv-lock", AnyPaths: []string{"renv.lock"}, Confidence: 95, Explanation: "renv lockfile enables deterministic restore."}}, RunnerProfileIDs: []string{"r-validation"}, OperationClasses: []string{"renv-restore", "r-cmd-check", "testthat", "lintr", "roxygen-check", "pkgdown-build", "r-golden-compare"}, ParserIDs: []string{"r-check-v1", "testthat-v1", "r-golden-v1"}, PolicyFragments: []string{"renv-lock-preferred", "golden-update-review"}, ContextSelectors: []string{"r-package-metadata", "tests", "vignettes", "reference-data"}, RiskRules: []string{"numerical-output-risk", "seed-change-risk"}, Documentation: []string{"roxygen-source", "pkgdown-site"}, WorkflowChanges: []WorkflowChange{{Stage: "verify", OperationID: "r-cmd-check", Required: true, Description: "Run R CMD check."}, {Stage: "rehearsal", OperationID: "r-golden-compare", Description: "Compare selected statistical outputs."}}, UISchema: []UIField{enumField("missing_values.policy", "Missing values", "Choose comparison behavior.", "exact", "exact", "ignore-paired", "reject"), enumField("environment.locale", "Locale", "Use a controller-trusted locale.", "C", "C", "en_US.UTF-8"), enumField("environment.timezone", "Time zone", "Use a controller-trusted time zone.", "UTC", "UTC"), booleanField("documentation.pkgdown", "pkgdown", "Build repository documentation.", false)}, Rehearsals: []RehearsalDefinition{{ID: "r-reference-results", Kind: "statistical", OperationID: "r-golden-compare", ArtifactKinds: []string{"table-diff", "model-diff", "chart-diff", "reproducibility-metadata"}, ComparisonClass: "numeric-tolerance", ApprovalPolicy: "review-required"}}}
+	return Manifest{
+		SchemaVersion: 1, ID: "r-statistical-validation", Name: "R statistical validation", Version: "1.0.0",
+		Description: "Reproducible R checks and numerical golden comparisons.", Languages: []string{"r"},
+		Compatibility:    Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"linux/amd64"}},
+		Prerequisites:    []Prerequisite{{ID: "r-toolchain", Required: true, Help: "Pinned R verifier profile must be installed."}},
+		DetectionRules:   []DetectionRule{{ID: "r-package", AnyPaths: []string{"DESCRIPTION"}, Confidence: 95, Explanation: "R package DESCRIPTION is present."}, {ID: "renv-lock", AnyPaths: []string{"renv.lock"}, Confidence: 95, Explanation: "renv lockfile enables deterministic restore."}},
+		RunnerProfileIDs: []string{"r-validation"}, OperationClasses: []string{"renv-restore", "r-cmd-check", "testthat", "lintr", "roxygen-check", "pkgdown-build", "r-golden-compare"},
+		ParserIDs: []string{"r-check-v1", "testthat-v1", "r-golden-v1"}, PolicyFragments: []string{"renv-lock-preferred", "golden-update-review"},
+		ContextSelectors: []string{"r-package-metadata", "tests", "vignettes", "reference-data"}, RiskRules: []string{"numerical-output-risk", "seed-change-risk"}, Documentation: []string{"roxygen-source", "pkgdown-site"},
+		WorkflowChanges: []WorkflowChange{{Stage: "verify", OperationID: "r-cmd-check", Required: true, Description: "Run R CMD check."}, {Stage: "rehearsal", OperationID: "r-golden-compare", Description: "Compare selected statistical outputs."}},
+		UISchema: []UIField{
+			enumField("renv.cache_policy", "renv restore/cache", "Choose the project-isolated restore and cache policy.", "project-isolated", "project-isolated", "locked-offline", "disabled"),
+			booleanField("checks.r_cmd", "R CMD check", "Run the pinned R CMD check profile.", true),
+			booleanField("checks.testthat", "testthat", "Parse testthat results from the pinned runner.", true),
+			booleanField("checks.lintr", "Lint", "Run the repository-selected lint profile.", true),
+			booleanField("documentation.roxygen2", "roxygen2", "Validate generated documentation against sources.", false),
+			booleanField("documentation.pkgdown", "pkgdown", "Build repository documentation in the isolated renderer.", false),
+			numberField("tolerance.absolute", "Absolute tolerance", "Maximum absolute numeric delta for selected golden comparisons.", 0.000001, 0, 1),
+			numberField("tolerance.relative", "Relative tolerance", "Maximum relative numeric delta for selected golden comparisons.", 0.000001, 0, 1),
+			enumField("missing_values.policy", "Missing values", "Choose comparison behavior for paired missing values.", "exact", "exact", "ignore-paired", "reject"),
+			stringField("golden.dataset_reference", "Golden dataset reference", "Repository-relative immutable reference used by the selected rehearsal.", "tests/golden", "repository-reference", 256),
+			enumField("golden.update_policy", "Golden baseline updates", "Golden changes remain proposals until an explicit evidence-bound approval.", "review-required", "review-required", "disabled"),
+			numberField("random.seed", "Random seed", "Pinned deterministic seed recorded in reproducibility metadata.", 1, 0, 2147483647),
+			enumField("environment.locale", "Locale", "Use a controller-trusted locale.", "C", "C", "en_US.UTF-8"),
+			enumField("environment.timezone", "Time zone", "Use a controller-trusted time zone.", "UTC", "UTC"),
+			booleanField("comparison.tables", "Compare tables", "Render bounded row/column and numeric deltas.", true),
+			booleanField("comparison.models", "Compare models", "Render registered model coefficient and metric deltas.", true),
+			booleanField("comparison.charts", "Compare charts", "Retain bounded visual and data-series comparison evidence.", true),
+			booleanField("comparison.serialized", "Compare serialized results", "Compare registered deterministic serialized result formats.", false),
+		},
+		Rehearsals: []RehearsalDefinition{{ID: "r-reference-results", Kind: "statistical", OperationID: "r-golden-compare", ArtifactKinds: []string{"table-diff", "model-diff", "chart-diff", "reproducibility-metadata"}, ComparisonClass: "numeric-tolerance", ApprovalPolicy: "review-required"}},
+	}
 }
 
 func sbomFMEA() Manifest {
-	return Manifest{SchemaVersion: 1, ID: "sbom-fmea-security", Name: "SBOM, FMEA, and security", Version: "1.0.0", Description: "Selectable pinned security evidence and FMEA correlation.", Languages: []string{"mixed"}, Compatibility: Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"linux/amd64"}}, Prerequisites: []Prerequisite{{ID: "scanner-database", Help: "Required only by scanners selected for the project."}}, DetectionRules: []DetectionRule{{ID: "dependency-manifest", AnyPaths: []string{"go.mod", "package-lock.json", "composer.lock", "renv.lock", "*.csproj", "Cargo.lock"}, Confidence: 80, Explanation: "A dependency lock or manifest can produce an SBOM."}}, RunnerProfileIDs: []string{"security-scan"}, OperationClasses: []string{"syft-sbom", "grype-scan", "trivy-scan", "codeql-analyze", "sbom-diff", "fmea-correlate"}, ParserIDs: []string{"cyclonedx-v1", "sarif-v2.1", "fmea-v1"}, PolicyFragments: []string{"scanner-selective", "suppression-expiry-required", "release-risk-gate"}, ContextSelectors: []string{"dependency-manifests", "public-interfaces", "security-config"}, RiskRules: []string{"new-critical-vulnerability", "new-privilege", "new-exposed-interface", "license-change"}, Documentation: []string{"security-evidence", "sbom-release-note", "fmea-record"}, WorkflowChanges: []WorkflowChange{{Stage: "verify", OperationID: "syft-sbom", Description: "Generate a selected SBOM."}, {Stage: "qc", OperationID: "sbom-diff", Description: "Compare dependencies, vulnerabilities, licenses, interfaces, and privileges."}}, UISchema: []UIField{enumField("scanner.primary", "Primary scanner", "Run only explicitly selected scanners.", "syft", "syft", "grype", "trivy", "codeql", "disabled"), enumField("threshold.severity", "Release severity", "Select release gate severity.", "high", "medium", "high", "critical"), booleanField("fmea.enabled", "FMEA correlation", "Correlate evidence with operator-maintained failure modes.", true)}, Rehearsals: []RehearsalDefinition{{ID: "sbom-release-diff", Kind: "security", OperationID: "sbom-diff", ArtifactKinds: []string{"sbom", "sbom-diff", "risk-matrix"}, ComparisonClass: "structured", ApprovalPolicy: "release-review"}}}
+	return Manifest{
+		SchemaVersion: 1, ID: "sbom-fmea-security", Name: "SBOM, FMEA, and security", Version: "1.0.0",
+		Description: "Selectable pinned security evidence and FMEA correlation.", Languages: []string{"mixed"},
+		Compatibility:    Compatibility{ControllerConstraint: ">=2.0.0", Platforms: []string{"linux/amd64"}},
+		Prerequisites:    []Prerequisite{{ID: "scanner-database", Help: "Required only by scanners selected for the project."}},
+		DetectionRules:   []DetectionRule{{ID: "dependency-manifest", AnyPaths: []string{"go.mod", "package-lock.json", "composer.lock", "renv.lock", "*.csproj", "Cargo.lock"}, Confidence: 80, Explanation: "A dependency lock or manifest can produce an SBOM."}},
+		RunnerProfileIDs: []string{"security-scan"}, OperationClasses: []string{"syft-sbom", "grype-scan", "trivy-scan", "codeql-analyze", "sbom-diff", "fmea-correlate"},
+		ParserIDs: []string{"cyclonedx-v1", "sarif-v2.1", "fmea-v1"}, PolicyFragments: []string{"scanner-selective", "suppression-expiry-required", "release-risk-gate"},
+		ContextSelectors: []string{"dependency-manifests", "public-interfaces", "security-config"}, RiskRules: []string{"new-critical-vulnerability", "new-privilege", "new-exposed-interface", "license-change"}, Documentation: []string{"security-evidence", "sbom-release-note", "fmea-record"},
+		WorkflowChanges: []WorkflowChange{{Stage: "verify", OperationID: "syft-sbom", Description: "Generate a selected SBOM."}, {Stage: "qc", OperationID: "sbom-diff", Description: "Compare dependencies, vulnerabilities, licenses, interfaces, and privileges."}},
+		UISchema: []UIField{
+			booleanField("scanner.syft", "Syft SBOM", "Generate a pinned CycloneDX SBOM with Syft.", true),
+			booleanField("scanner.grype", "Grype", "Scan the generated SBOM with the pinned Grype profile.", false),
+			booleanField("scanner.trivy", "Trivy", "Run the pinned Trivy profile only when selected.", false),
+			booleanField("scanner.codeql", "CodeQL", "Use the licensed registered CodeQL profile only when supported.", false),
+			stringField("database.profile", "Scanner database profile", "Opaque controller-registered vulnerability database snapshot profile.", "offline-current", "identifier", 128),
+			enumField("database.update_policy", "Database update policy", "Updates occur only in the explicit dependency-preparation phase.", "operator-refresh", "operator-refresh", "offline-pinned"),
+			stringField("database.snapshot_reference", "Database snapshot reference", "Opaque immutable database snapshot identity shown with job evidence.", "current", "identifier", 128),
+			enumField("threshold.severity", "Release severity", "Block a release at or above the selected new-finding severity.", "high", "medium", "high", "critical"),
+			numberField("threshold.confidence", "Minimum confidence", "Minimum normalized scanner confidence considered by release policy.", 0.8, 0, 1),
+			stringField("suppression.reference", "Suppression reference", "Opaque reviewed suppression record; leave empty for none.", "", "identifier", 128),
+			stringField("suppression.reason", "Suppression reason", "Required bounded operator rationale when a suppression reference is selected.", "", "text", 1000),
+			stringField("suppression.expires_at", "Suppression expiry", "Required RFC3339 expiry when a suppression reference is selected.", "", "date-time", 64),
+			stringField("risk.matrix_profile", "Risk matrix profile", "Opaque operator-maintained severity/occurrence/detectability matrix.", "default-fmea", "identifier", 128),
+			stringField("fmea.record_set", "FMEA record set", "Opaque reviewed failure-mode record set.", "project-fmea", "identifier", 128),
+			booleanField("fmea.enabled", "FMEA correlation", "Correlate evidence with operator-maintained failure modes.", true),
+			stringField("mapping.capec", "CAPEC mapping", "Optional reviewed reference mapping; never treated as exploitability proof.", "", "identifier", 128),
+			stringField("mapping.attack", "ATT&CK mapping", "Optional reviewed reference mapping; never treated as exploitability proof.", "", "identifier", 128),
+			stringField("evidence.reference", "Evidence link set", "Opaque project-scoped evidence-link collection.", "security-evidence", "identifier", 128),
+			stringField("sbom.baseline_reference", "SBOM baseline", "Opaque immutable approved baseline used for release diff.", "initial", "identifier", 128),
+			enumField("release.gate", "Release gate", "Select deterministic behavior for newly introduced evidence.", "block-new-high", "observe", "block-new-high", "block-new-critical"),
+			booleanField("diff.dependencies", "Dependency diff", "Compare added, removed, and changed dependencies.", true),
+			booleanField("diff.licenses", "License diff", "Compare normalized license evidence.", true),
+			booleanField("diff.interfaces", "Interface and privilege diff", "Compare exposed interfaces, privileges, and data-flow evidence.", true),
+		},
+		Rehearsals: []RehearsalDefinition{{ID: "sbom-release-diff", Kind: "security", OperationID: "sbom-diff", ArtifactKinds: []string{"sbom", "sbom-diff", "risk-matrix"}, ComparisonClass: "structured", ApprovalPolicy: "release-review"}},
+	}
 }

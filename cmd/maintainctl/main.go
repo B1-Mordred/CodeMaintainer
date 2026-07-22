@@ -430,7 +430,7 @@ func (c client) repo(arguments []string) error {
 
 func (c client) pack(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: maintainctl pack <catalog|installed|show|events|preview|install|enable|disable|upgrade|rollback|pin|unpin|assignments|proposal> ...")
+		return errors.New("usage: maintainctl pack <catalog|installed|show|events|preview|install|enable|disable|upgrade|rollback|pin|unpin|assignments|configure-preview|configure|proposal> ...")
 	}
 	switch arguments[0] {
 	case "catalog":
@@ -458,6 +458,31 @@ func (c client) pack(arguments []string) error {
 			return errors.New("usage: maintainctl pack assignments <project-id>")
 		}
 		return c.printJSON(http.MethodGet, "/api/v1/projects/"+url.PathEscape(arguments[1])+"/capability-packs", nil)
+	case "configure-preview", "configure":
+		action := arguments[0]
+		flags := flag.NewFlagSet("pack "+action, flag.ContinueOnError)
+		revision := flags.Int64("revision", 0, "current assignment revision")
+		reason := flags.String("reason", "preview typed pack configuration", "audited configuration reason")
+		configPath := flags.String("config", "", "typed JSON configuration file")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 2 || *revision < 1 || *configPath == "" || (action == "configure" && strings.TrimSpace(*reason) == "") {
+			return fmt.Errorf("usage: maintainctl pack %s --revision <n> --config <file> --reason <text> <project-id> <pack-id>", action)
+		}
+		raw, err := readJSONDocument(*configPath)
+		if err != nil {
+			return err
+		}
+		if !json.Valid(raw) {
+			return errors.New("configuration file must contain valid JSON")
+		}
+		projectID, packID := url.PathEscape(flags.Arg(0)), url.PathEscape(flags.Arg(1))
+		body := map[string]any{"expected_revision": *revision, "reason": *reason, "config": json.RawMessage(raw)}
+		if action == "configure-preview" {
+			return c.printJSON(http.MethodPost, "/api/v1/projects/"+projectID+"/capability-packs/"+packID+"/actions/preview-configuration", body)
+		}
+		return c.printJSON(http.MethodPut, "/api/v1/projects/"+projectID+"/capability-packs/"+packID+"/configuration", body)
 	case "preview", "install", "enable", "disable", "upgrade", "rollback", "pin", "unpin":
 		action := arguments[0]
 		flags := flag.NewFlagSet("pack "+action, flag.ContinueOnError)
@@ -498,11 +523,10 @@ func (c client) pack(arguments []string) error {
 			if err != nil {
 				return err
 			}
-			var config any
-			if err := json.Unmarshal(raw, &config); err != nil {
-				return err
+			if !json.Valid(raw) {
+				return errors.New("configuration file must contain valid JSON")
 			}
-			body["config"] = config
+			body["config"] = json.RawMessage(raw)
 		}
 		path := "/api/v1/projects/" + url.PathEscape(arguments[2]) + "/repo-doctor/scans/" + url.PathEscape(arguments[3]) + "/proposals/" + url.PathEscape(arguments[4]) + "/actions/" + action
 		return c.printJSON(http.MethodPost, path, body)
