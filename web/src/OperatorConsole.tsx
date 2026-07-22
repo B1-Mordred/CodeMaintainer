@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, Bell, BookOpen, Boxes, BrainCircuit, CheckCircle2, ChevronRight,
-  CircleDot, ClipboardCheck, CloudCog, Cpu, Database, FileClock, FolderGit2,
+  CircleDot, ClipboardCheck, Cpu, Database, FileClock, FolderGit2,
   Gauge, GitBranch, HardDrive, ListChecks, MemoryStick, RefreshCw, Settings,
   ShieldCheck, SlidersHorizontal, TerminalSquare, TimerReset, Users,
 } from "lucide-react";
@@ -10,6 +10,7 @@ import type { components } from "./api/schema";
 import { ConfigurationPage } from "./ConfigurationPage";
 import { IntelligencePage } from "./IntelligencePage";
 import { CapabilityPage } from "./CapabilityPage";
+import { ForgePage } from "./ForgePage";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
 type Job = components["schemas"]["Job"];
@@ -27,7 +28,7 @@ type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "github" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "forges" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -39,7 +40,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
-  { id: "github", label: "GitHub", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
+  { id: "forges", label: "Git forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
   { id: "automation", label: "Scheduling / Hermes", icon: <FileClock aria-hidden="true" />, group: "integrate" },
   { id: "configuration", label: "Configuration", icon: <SlidersHorizontal aria-hidden="true" />, group: "manage" },
   { id: "administration", label: "Administration", icon: <Settings aria-hidden="true" />, group: "manage" },
@@ -137,7 +138,7 @@ export function OperatorConsole({
       {page === "intelligence" && <IntelligencePage />}
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
       {page === "memory" && <MemoryPage />}
-      {page === "github" && <GitHubPage jobs={initialJobs} />}
+      {page === "forges" && <ForgePage />}
       {page === "automation" && <AutomationPage expert={expert} />}
       {page === "configuration" && <ConfigurationPage expert={expert} />}
       {page === "administration" && <AdministrationPage status={initialStatus} />}
@@ -173,7 +174,7 @@ function FirstRunPage({ status, jobs, navigate }: { status: SystemStatus | null;
     ["Administrator account", "Complete", "The authenticated local administrator is active.", "administration"],
     ["Host capacity", status ? "Detected" : "Check", "Review CPU, memory, storage, SMT and NUMA guidance.", "overview"],
     ["Model manifests", "Review", "Import a checksum-bound manifest or retain the CI fake model.", "models"],
-    ["Git provider", "Review", "Use a local bare remote or configure the narrow GitHub App boundary.", "github"],
+    ["Git provider", "Review", "Use local bare Git or configure the narrow GitHub or GitLab bridge boundary.", "forges"],
     ["Repository", "Required", "Register a repository and its exact default branch.", "projects"],
     ["Toolchains", "Per project", "Detection occurs during the isolated dependency and verification phases.", "projects"],
     ["OpenViking", "Optional", "Validate the scoped index before enabling semantic memory.", "memory"],
@@ -243,7 +244,7 @@ function ProjectsPage({ expert }: { expert: boolean }) {
   const [message, setMessage] = useState("");
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
-  const [provider, setProvider] = useState<"local" | "github">("local");
+  const [provider, setProvider] = useState<"local" | "github" | "gitlab">("local");
   const load = useCallback(async () => { setLoading(true); const result = await api.GET("/projects"); setProjects(result.data?.items ?? []); setLoading(false); }, []);
   useEffect(() => { void load(); }, [load]);
   const submit = async (event: FormEvent) => {
@@ -276,7 +277,7 @@ function ProjectsPage({ expert }: { expert: boolean }) {
     <Section title="Add repository" eyebrow="Registration">
       <form className="inline-form" onSubmit={(event) => void submit(event)}>
         <label>Repository<span>owner/repository</span><input required pattern="[A-Za-z0-9._-]+/[A-Za-z0-9._-]+" value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repository" /></label>
-        <label>Provider<select value={provider} onChange={(event) => setProvider(event.target.value as "local" | "github")}><option value="local">Local bare remote</option><option value="github">GitHub App</option></select></label>
+        <label>Provider<select value={provider} onChange={(event) => setProvider(event.target.value as "local" | "github" | "gitlab")}><option value="local">Local bare remote</option><option value="github">GitHub App</option><option value="gitlab">GitLab</option></select></label>
         <label>Default branch<input required value={branch} onChange={(event) => setBranch(event.target.value)} /></label>
         <button type="submit">Register project</button>
       </form>
@@ -409,23 +410,6 @@ function MemoryPage() {
       {message && <p className="inline-message" role="status">{message}</p>}
       {records.length === 0 ? <Empty title="No matching memory" detail="Verified cases, failed cases, patterns, and issue history will appear only within the selected project namespace." /> : <div className="memory-list">{records.map((record) => <article className="memory-card" key={record.id}><header><Badge value={record.status} /><span>{label(record.kind)}</span><code>v{record.version}</code></header><p>{record.content}</p><dl><div><dt>Provenance</dt><dd>{record.source_uri || "Controller candidate"}</dd></div><div><dt>Base commit</dt><dd><code>{shortSHA(record.base_commit)}</code></dd></div><div><dt>Hash</dt><dd><code>{record.content_hash.slice(0, 12)}</code></dd></div></dl><div className="card-actions"><button type="button" disabled={record.status !== "quarantine"} onClick={() => void lifecycle(record, "promote")}>Promote</button><button className="secondary-button" type="button" disabled={record.status === "deleted"} onClick={() => void lifecycle(record, "invalidate")}>Reject / invalidate</button><button className="danger-button" type="button" disabled={record.status === "deleted"} onClick={() => void lifecycle(record, "delete")}>Delete</button></div></article>)}</div>}
     </Section>
-  </>;
-}
-
-function GitHubPage({ jobs: initialJobs }: { jobs: Job[] }) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [jobs, setJobs] = useState(initialJobs);
-  const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
-  const [message, setMessage] = useState("");
-  useEffect(() => { void (async () => { const [projectResponse, jobResponse] = await Promise.all([api.GET("/projects"), api.GET("/jobs")]); setProjects(projectResponse.data?.items ?? []); setJobs(jobResponse.data?.items ?? initialJobs); })(); }, [initialJobs]);
-  const github = projects.filter((project) => project.provider === "github");
-  const drafts = jobs.filter((job) => ["draft_pr_created", "completed"].includes(job.state) && job.result_sha);
-  const diagnose = async (project: Project) => { const response = await api.GET("/projects/{projectID}/diagnostics", { params: { path: { projectID: project.id } } }); setDiagnostics(response.data ?? null); setMessage(response.data ? `Diagnostics loaded for ${project.repository}.` : `Diagnostics failed for ${project.repository}.`); };
-  return <>
-    <PageIntro>The GitHub App boundary owns installation tokens, webhook authentication, synchronization, and idempotent draft publication. Secrets are never returned here.</PageIntro>
-    <div className="metrics-grid"><Metric icon={<GitBranch aria-hidden="true" />} name="Repositories" value={String(github.length)} detail="GitHub App registrations" /><Metric icon={<CloudCog aria-hidden="true" />} name="Webhook" value={github.length ? "Configured" : "Disabled"} detail="HMAC and replay protected" /><Metric icon={<ShieldCheck aria-hidden="true" />} name="Permissions" value="Narrow" detail="Contents, metadata, pull requests" /><Metric icon={<Boxes aria-hidden="true" />} name="Draft PRs" value={String(drafts.length)} detail="Exact-result publications" /></div>
-    <Section title="GitHub repositories" eyebrow="Installation scope">{github.length === 0 ? <Empty title="GitHub provider is disabled" detail="Register a GitHub project only after configuring an App installation. Local bare remotes remain available without credentials." /> : <div className="card-grid">{github.map((project) => <article className="resource-card" key={project.id}><h3>{project.repository}</h3><dl><div><dt>Default branch</dt><dd>{project.default_branch}</dd></div><div><dt>Sync status</dt><dd><Badge value="configured" /></dd></div></dl><button className="secondary-button" type="button" onClick={() => void diagnose(project)}>Credential-safe diagnostics</button></article>)}</div>}{message && <p className="inline-message" role="status">{message}</p>}{diagnostics && <details><summary>Provider diagnostics (secrets excluded)</summary><pre>{JSON.stringify(diagnostics, null, 2)}</pre></details>}</Section>
-    <Section title="Publication audit" eyebrow="Draft-only boundary"><JobTable jobs={drafts} /></Section>
   </>;
 }
 

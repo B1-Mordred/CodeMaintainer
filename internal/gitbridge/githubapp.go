@@ -29,6 +29,7 @@ const (
 )
 
 var defaultGitHubPermissions = map[string]string{
+	"actions":       "read",
 	"checks":        "read",
 	"contents":      "write",
 	"issues":        "read",

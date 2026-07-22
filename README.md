@@ -33,6 +33,7 @@ Run the full local gate with `./scripts/acceptance.sh`; run `./scripts/agent-ima
 - [Architecture](docs/architecture.md)
 - [Deployment and remote access](docs/deployment.md)
 - [GitHub App](docs/github-app.md)
+- [Git forge profiles and normalized synchronization](docs/forges.md)
 - [Models](docs/models.md)
 - [Memory](docs/memory.md)
 - [Repository onboarding and capability packs](docs/capability-packs.md)

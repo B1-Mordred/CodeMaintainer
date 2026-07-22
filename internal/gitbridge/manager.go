@@ -467,10 +467,13 @@ func forgeCapabilities(provider string) []forges.Capability {
 			status = forges.Unsupported
 			reason = "local bare Git has no " + feature + " API"
 		}
-		if (provider == "github" || provider == "gitlab") &&
-			(feature == "discussion" || feature == "pipeline" || feature == "job" || feature == "artifact" || feature == "release") {
+		if provider == "github" && feature == "job" {
 			status = forges.OperatorOnly
-			reason = "available through the configured forge API; collection requires the corresponding permission and edition"
+			reason = "job collection requires walking each workflow run and is not enabled by the bounded repository inventory"
+		}
+		if provider == "gitlab" && feature == "discussion" {
+			status = forges.OperatorOnly
+			reason = "discussion collection requires per-issue and per-merge-request expansion and is not enabled by the bounded repository inventory"
 		}
 		items = append(items, forges.Capability{Feature: feature, Status: status, Reason: reason})
 	}
@@ -503,63 +506,110 @@ func (m *Manager) SyncForge(ctx context.Context, request forges.SyncRequest) (fo
 	if request.Cursor == synced.BaseSHA {
 		return page, nil
 	}
+	resume, resuming := decodeForgeCursor(request.Cursor)
+	if request.Cursor != "" && !resuming && !commit.MatchString(request.Cursor) {
+		return forges.SyncPage{}, ErrInvalid
+	}
+	if resuming && resume.BaseSHA != synced.BaseSHA {
+		resuming = false
+	}
 
-	metadata, _ := json.Marshal(map[string]any{
-		"default_branch": registration.DefaultBranch,
-		"repository":     registration.Repository,
-	})
-	page.Objects = append(page.Objects, forges.Object{
-		ProjectID:        request.ProjectID,
-		Provider:         registration.Provider,
-		Kind:             "repository",
-		ExternalID:       registration.Repository,
-		Title:            registration.Repository,
-		Ref:              registration.DefaultBranch,
-		SHA:              synced.BaseSHA,
-		ProviderMetadata: metadata,
-	})
+	if !resuming {
+		metadata, _ := json.Marshal(map[string]any{
+			"default_branch": registration.DefaultBranch,
+			"repository":     registration.Repository,
+		})
+		page.Objects = append(page.Objects, forges.Object{
+			ProjectID: request.ProjectID, Provider: registration.Provider, Kind: "repository",
+			ExternalID: registration.Repository, Title: registration.Repository,
+			Ref: registration.DefaultBranch, SHA: synced.BaseSHA, ProviderMetadata: metadata,
+		})
 
-	mirror := filepath.Join(m.mirrorsRoot, request.ProjectID+".git")
-	refs, err := m.git(ctx, "--git-dir="+mirror, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/heads", "refs/tags")
+		mirror := filepath.Join(m.mirrorsRoot, request.ProjectID+".git")
+		refs, refErr := m.git(ctx, "--git-dir="+mirror, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/heads", "refs/tags")
+		if refErr != nil {
+			return forges.SyncPage{}, refErr
+		}
+		for _, line := range strings.Split(strings.TrimSpace(refs), "\n") {
+			parts := strings.Split(line, "\x00")
+			if len(parts) != 2 || !commit.MatchString(parts[1]) {
+				continue
+			}
+			if len(page.Objects) >= request.Limit {
+				page.Unsupported = append(page.Unsupported, "git_refs: bounded sync page omitted additional refs")
+				break
+			}
+			kind := "branch"
+			name := strings.TrimPrefix(parts[0], "refs/heads/")
+			if strings.HasPrefix(parts[0], "refs/tags/") {
+				kind = "tag"
+				name = strings.TrimPrefix(parts[0], "refs/tags/")
+			}
+			raw, _ := json.Marshal(map[string]string{"refname": parts[0]})
+			page.Objects = append(page.Objects, forges.Object{
+				ProjectID: request.ProjectID, Provider: registration.Provider, Kind: kind,
+				ExternalID: name, Ref: name, SHA: parts[1], ProviderMetadata: raw,
+			})
+		}
+
+		content, readErr := m.git(ctx, "--git-dir="+mirror, "show", synced.BaseSHA+":.gitmodules")
+		if readErr == nil {
+			for index, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "path = ") {
+					continue
+				}
+				if len(page.Objects) >= request.Limit {
+					page.Unsupported = append(page.Unsupported, "submodule: bounded sync page omitted additional entries")
+					break
+				}
+				path := strings.TrimSpace(strings.TrimPrefix(line, "path = "))
+				raw, _ := json.Marshal(map[string]string{"path": path})
+				page.Objects = append(page.Objects, forges.Object{
+					ProjectID: request.ProjectID, Provider: registration.Provider, Kind: "submodule",
+					ExternalID: strconv.Itoa(index) + ":" + path, Ref: path, ProviderMetadata: raw,
+				})
+			}
+		}
+	}
+
+	if registration.Provider == "local" {
+		return page, nil
+	}
+	endpoint, inventoryPage := 0, 1
+	if resuming {
+		endpoint, inventoryPage = resume.Endpoint, resume.Page
+	}
+	remaining := request.Limit - len(page.Objects)
+	if remaining < 1 {
+		page.Partial = true
+		page.NextCursor = encodeForgeCursor(forgeCursor{BaseSHA: synced.BaseSHA, Endpoint: endpoint, Page: inventoryPage})
+		return page, nil
+	}
+	var inventory inventoryResult
+	if registration.Provider == "github" {
+		api, apiErr := m.github.api(registration.Repository)
+		if apiErr != nil {
+			return forges.SyncPage{}, apiErr
+		}
+		inventory, err = api.inventory(ctx, request.ProjectID, endpoint, inventoryPage, remaining)
+	} else {
+		api, apiErr := m.gitlab.api(registration.Repository)
+		if apiErr != nil {
+			return forges.SyncPage{}, apiErr
+		}
+		inventory, err = api.inventory(ctx, request.ProjectID, endpoint, inventoryPage, remaining)
+	}
 	if err != nil {
 		return forges.SyncPage{}, err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(refs), "\n") {
-		parts := strings.Split(line, "\x00")
-		if len(parts) != 2 || !commit.MatchString(parts[1]) {
-			continue
-		}
-		kind := "branch"
-		name := strings.TrimPrefix(parts[0], "refs/heads/")
-		if strings.HasPrefix(parts[0], "refs/tags/") {
-			kind = "tag"
-			name = strings.TrimPrefix(parts[0], "refs/tags/")
-		}
-		raw, _ := json.Marshal(map[string]string{"refname": parts[0]})
-		page.Objects = append(page.Objects, forges.Object{
-			ProjectID: request.ProjectID, Provider: registration.Provider, Kind: kind,
-			ExternalID: name, Ref: name, SHA: parts[1], ProviderMetadata: raw,
-		})
-		if request.Limit > 0 && len(page.Objects) >= request.Limit {
-			page.Partial = true
-			break
-		}
-	}
-
-	content, readErr := m.git(ctx, "--git-dir="+mirror, "show", synced.BaseSHA+":.gitmodules")
-	if readErr == nil {
-		for index, line := range strings.Split(content, "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "path = ") {
-				continue
-			}
-			path := strings.TrimSpace(strings.TrimPrefix(line, "path = "))
-			raw, _ := json.Marshal(map[string]string{"path": path})
-			page.Objects = append(page.Objects, forges.Object{
-				ProjectID: request.ProjectID, Provider: registration.Provider, Kind: "submodule",
-				ExternalID: strconv.Itoa(index) + ":" + path, Ref: path, ProviderMetadata: raw,
-			})
-		}
+	page.Objects = append(page.Objects, inventory.Objects...)
+	page.RateLimitRemaining = inventory.RateLimitRemaining
+	page.RetryAfterSeconds = inventory.RetryAfterSeconds
+	page.Unsupported = append(page.Unsupported, inventory.Unsupported...)
+	if !inventory.Done || inventory.RetryAfterSeconds > 0 {
+		page.Partial = true
+		page.NextCursor = encodeForgeCursor(forgeCursor{BaseSHA: synced.BaseSHA, Endpoint: inventory.Endpoint, Page: inventory.Page})
 	}
 	return page, nil
 }

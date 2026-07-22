@@ -46,6 +46,16 @@ func (s *Store) SaveForgeProfile(ctx context.Context, request forges.SaveProfile
 		return forges.Profile{}, err
 	}
 	defer tx.Rollback()
+	var projectProvider, projectRepository string
+	if err := tx.QueryRowContext(ctx, "SELECT provider,repository FROM projects WHERE id=?", request.Profile.ProjectID).Scan(&projectProvider, &projectRepository); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return forges.Profile{}, storage.ErrNotFound
+		}
+		return forges.Profile{}, err
+	}
+	if projectProvider != request.Profile.Provider || projectRepository != request.Profile.Repository {
+		return forges.Profile{}, storage.ErrConflict
+	}
 	var revision int64
 	var previousCredential string
 	err = tx.QueryRowContext(ctx, "SELECT revision,credential_reference FROM forge_profiles WHERE project_id=?", request.Profile.ProjectID).Scan(&revision, &previousCredential)

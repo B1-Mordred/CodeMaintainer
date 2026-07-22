@@ -114,9 +114,27 @@ func TestProviderOutputIsBoundedAndNamespaceChecked(t *testing.T) {
 	}
 }
 
+func TestProfileCannotChangeRegisteredProviderOrRepositoryIdentity(t *testing.T) {
+	ctx := context.Background()
+	store := openStore(t)
+	createProject(t, store, "identity-project", "gitlab")
+	service, _ := forges.NewService(store, fakeForge{page: forges.SyncPage{Provider: "gitlab"}})
+	profile := validProfile("identity-project", "github")
+	profile.CredentialReference = "gitbridge-secret:github-app"
+	if _, err := service.SaveProfile(ctx, forges.SaveProfileRequest{Profile: profile, Reason: "attempt provider swap", ActorID: "admin", Reauthenticated: true}); !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("provider swap error = %v", err)
+	}
+	profile = validProfile("identity-project", "gitlab")
+	profile.Repository = "attacker/other"
+	profile.CredentialReference = "gitbridge-secret:gitlab-main"
+	if _, err := service.SaveProfile(ctx, forges.SaveProfileRequest{Profile: profile, Reason: "attempt repository swap", ActorID: "admin", Reauthenticated: true}); !errors.Is(err, storage.ErrConflict) {
+		t.Fatalf("repository swap error = %v", err)
+	}
+}
+
 func validProfile(projectID, provider string) forges.Profile {
 	endpoint := "https://forge.example.test"
-	repository := "fixture/repository"
+	repository := "fixture/" + projectID
 	if provider == "local" {
 		endpoint = "local://bare-git"
 	}

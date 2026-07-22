@@ -80,6 +80,9 @@ func (s *Service) Sync(ctx context.Context, projectID, cursor, idempotencyKey, a
 	if !safeID.MatchString(idempotencyKey) {
 		return SyncRun{}, errors.New("a safe idempotency key is required")
 	}
+	if len(cursor) > 4096 {
+		return SyncRun{}, errors.New("forge sync cursor is oversized")
+	}
 	page, err := s.provider.SyncForge(ctx, SyncRequest{ProjectID: projectID, Cursor: cursor, Limit: 500, IdempotencyKey: idempotencyKey})
 	if err != nil {
 		return SyncRun{}, err
@@ -151,7 +154,7 @@ func validateEndpoint(raw, provider string) error {
 	return nil
 }
 func validatePage(profile Profile, page SyncPage) error {
-	if page.ProjectID != profile.ProjectID || page.Provider != profile.Provider || len(page.Objects) > 500 || page.RateLimitRemaining < 0 || page.RetryAfterSeconds < 0 {
+	if page.ProjectID != profile.ProjectID || page.Provider != profile.Provider || len(page.Cursor) > 4096 || len(page.NextCursor) > 4096 || len(page.Objects) > 500 || page.RateLimitRemaining < 0 || page.RetryAfterSeconds < 0 {
 		return errors.New("forge provider returned an invalid page")
 	}
 	for _, item := range page.Objects {
