@@ -124,6 +124,14 @@ func run(arguments []string) error {
 		return api.contract(arguments[1:])
 	case "risk":
 		return api.risk(arguments[1:])
+	case "agent-contracts":
+		if len(arguments) > 2 {
+			return errors.New("usage: maintainctl agent-contracts [job-id]")
+		}
+		if len(arguments) == 2 {
+			return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/agent-contract-validations", nil)
+		}
+		return api.printJSON(http.MethodGet, "/api/v1/agent-contracts", nil)
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
@@ -1166,6 +1174,7 @@ Commands:
   contract approve <job-id> --version <n> --reason <text>
   risk get <job-id>
   risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
+  agent-contracts [job-id]
   open [job-id]
   backup
   restore (--dry-run|--apply) <backup-id>

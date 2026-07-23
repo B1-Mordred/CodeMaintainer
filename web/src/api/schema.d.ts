@@ -1382,6 +1382,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List versioned JSON Schema contracts for agent-controller structured outputs */
+        get: operations["listAgentContracts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/task-contract": {
         parameters: {
             query?: never;
@@ -1415,6 +1432,25 @@ export interface paths {
         put?: never;
         /** Approve the exact task contract before implementation may continue */
         post: operations["approveTaskContract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/agent-contract-validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List schema validation evidence for one job's agent-controller packets and outputs */
+        get: operations["listJobAgentContractValidations"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3221,6 +3257,45 @@ export interface components {
         };
         /** @enum {string} */
         JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        /** @enum {string} */
+        AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
+        AgentContractRetryPolicy: {
+            max_attempts: number;
+            on_exhausted: string;
+            validation_feedback: boolean;
+        };
+        AgentContractDescriptor: {
+            kind: components["schemas"]["AgentContractKind"];
+            name: string;
+            /** @constant */
+            schema_version: 1;
+            schema_sha256: string;
+            json_schema: {
+                [key: string]: unknown;
+            };
+            retry_policy: components["schemas"]["AgentContractRetryPolicy"];
+            compatible_agent_roles: string[];
+            compatible_model_modes: ("json_schema" | "json_object")[];
+            /** @enum {string} */
+            migration_status: "current" | "migrating" | "retired";
+            structured_output_hints: string[];
+        };
+        AgentContractValidation: {
+            id: string;
+            job_id: string;
+            phase: string;
+            contract_kind: components["schemas"]["AgentContractKind"];
+            /** @constant */
+            schema_version: 1;
+            schema_sha256: string;
+            payload_sha256: string;
+            attempt: number;
+            valid: boolean;
+            error: string;
+            artifact_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         TaskContractCriterion: {
             id: string;
             statement: string;
@@ -6433,11 +6508,37 @@ export interface operations {
                         task_contract_events?: components["schemas"]["TaskContractEvent"][];
                         risk_assessments?: components["schemas"]["RiskAssessment"][];
                         risk_waivers?: components["schemas"]["RiskWaiver"][];
+                        agent_contract_validations?: components["schemas"]["AgentContractValidation"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listAgentContracts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registered schema-constrained agent contracts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        contracts: components["schemas"]["AgentContractDescriptor"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            500: components["responses"]["ErrorResponse"];
         };
     };
     getTaskContract: {
@@ -6533,6 +6634,33 @@ export interface operations {
             };
             409: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobAgentContractValidations: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Append-only validation evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        validations: components["schemas"]["AgentContractValidation"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
         };
     };
     getJobRisk: {

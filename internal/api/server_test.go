@@ -1477,6 +1477,62 @@ func TestJobArtifactsAreListedAndDownloadedWithIntegrityMetadata(t *testing.T) {
 	}
 }
 
+func TestAgentContractSchemasAndValidationEvidenceAreVisible(t *testing.T) {
+	server, store := testServer(t)
+	ctx := context.Background()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_agent_contract_api", ProjectID: "owner-repo", Repository: "owner/repo", Task: "verify contracts", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := agents.NewValidationRecord(job.ID, "implementation_result", agents.ContractImplementationResult, []byte(`{"schema_version":1}`), 1, true, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAgentContractValidation(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/agent-contracts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contracts struct {
+		Contracts []agents.ContractDescriptor `json:"contracts"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&contracts); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(contracts.Contracts) < 7 || contracts.Contracts[0].SchemaSHA256 == "" {
+		t.Fatalf("agent contracts response %d %#v", response.StatusCode, contracts)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/agent-contract-validations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var validations struct {
+		Validations []agents.ValidationRecord `json:"validations"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&validations); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(validations.Validations) != 1 ||
+		validations.Validations[0].ContractKind != agents.ContractImplementationResult {
+		t.Fatalf("validation response %d %#v", response.StatusCode, validations)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("agent_contract_validations")) {
+		t.Fatalf("job detail omitted agent validation evidence: %d %s", response.StatusCode, body)
+	}
+}
+
 func TestRequestBoundaryRejectsUnknownFieldsAndBadRepository(t *testing.T) {
 	server, _ := testServer(t)
 	for _, payload := range []string{

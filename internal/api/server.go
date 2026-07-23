@@ -255,12 +255,14 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/hermes/tools/projects/{projectID}/memory", s.hermesProjectMemory)
 	mux.HandleFunc("GET /api/v1/hermes/tools/schedules", s.hermesListSchedules)
 	mux.HandleFunc("POST /api/v1/hermes/tools/skill-proposals", s.hermesCreateSkillProposal)
+	mux.HandleFunc("GET /api/v1/agent-contracts", s.listAgentContracts)
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/task-contract", s.getTaskContract)
 	mux.HandleFunc("PUT /api/v1/jobs/{jobID}/task-contract", s.updateTaskContract)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/task-contract/actions/approve", s.approveTaskContract)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/agent-contract-validations", s.listJobAgentContractValidations)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
@@ -687,6 +689,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response["risk_waivers"] = waivers
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if validations, err := s.store.ListAgentContractValidations(r.Context(), job.ID, 100); err == nil {
+		response["agent_contract_validations"] = validations
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

@@ -192,6 +192,27 @@ func TestRiskWaiverUsesServerSideReauthenticationContract(t *testing.T) {
 	}
 }
 
+func TestAgentContractsCLIListsSchemasAndJobValidationEvidence(t *testing.T) {
+	paths := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"agent-contracts"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"agent-contracts", "job-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "/api/v1/agent-contracts" || paths[1] != "/api/v1/jobs/job-one/agent-contract-validations" {
+		t.Fatalf("unexpected paths %#v", paths)
+	}
+}
+
 func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/differentials/differential-one/actions/correct" {

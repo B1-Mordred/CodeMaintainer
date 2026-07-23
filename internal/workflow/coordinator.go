@@ -44,6 +44,7 @@ type coordinatorStore interface {
 	storage.ConfigStore
 	storage.FindingStore
 	storage.ProjectStore
+	agents.Store
 	taskcontract.Store
 	risk.Store
 	intelligence.Store
@@ -209,6 +210,9 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		}
 		implementation, err := c.execution.Implement(ctx, job, packet)
 		if err != nil {
+			return Outcome{}, err
+		}
+		if err := c.recordAgentValidation(ctx, job, "implementation_result", agents.ContractImplementationResult, implementation, 1); err != nil {
 			return Outcome{}, err
 		}
 		committed, err := c.git.Commit(ctx, gitbridge.CommitRequest{
@@ -542,6 +546,9 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 	if err != nil {
 		return Outcome{}, err
 	}
+	if err := c.recordAgentValidation(ctx, job, "qc_report", agents.ContractQCReport, report, job.ReviewCycle+1); err != nil {
+		return Outcome{}, err
+	}
 	records, err := c.store.ObserveFindings(ctx, job.ID, job.ReviewCycle, report.Findings)
 	if err != nil {
 		return Outcome{}, err
@@ -617,7 +624,11 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 	if err != nil {
 		return Outcome{}, err
 	}
-	if _, err := c.execution.Implement(ctx, job, packet); err != nil {
+	repairResult, err := c.execution.Implement(ctx, job, packet)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if err := c.recordAgentValidation(ctx, job, "repair_result", agents.ContractImplementationResult, repairResult, job.ReviewCycle+1); err != nil {
 		return Outcome{}, err
 	}
 	committed, err := c.git.Commit(ctx, gitbridge.CommitRequest{
@@ -780,9 +791,30 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	}
 	payload, _ := json.Marshal(packet)
 	if _, err := agents.DecodeTaskPacket(payload, mode); err != nil {
+		if record, recordErr := agents.NewValidationRecord(job.ID, mode+"_packet", agents.ContractTaskPacket, payload, job.ReviewCycle+1, false, err, ""); recordErr == nil {
+			_, _ = c.store.RecordAgentContractValidation(ctx, record)
+		}
+		return agents.TaskPacket{}, err
+	}
+	if record, err := agents.NewValidationRecord(job.ID, mode+"_packet", agents.ContractTaskPacket, payload, job.ReviewCycle+1, true, nil, ""); err != nil {
+		return agents.TaskPacket{}, err
+	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
 		return agents.TaskPacket{}, err
 	}
 	return packet, nil
+}
+
+func (c *Coordinator) recordAgentValidation(ctx context.Context, job jobs.Job, phase string, kind agents.ContractKind, value any, attempt int) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	record, err := agents.NewValidationRecord(job.ID, phase, kind, payload, attempt, true, nil, "")
+	if err != nil {
+		return err
+	}
+	_, err = c.store.RecordAgentContractValidation(ctx, record)
+	return err
 }
 
 func sourceLineRange(content string, startLine, endLine int) string {

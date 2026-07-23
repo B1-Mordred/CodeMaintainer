@@ -206,6 +206,7 @@ type Store interface {
 	GitHubEventStore
 	intelligence.Store
 	capabilities.Store
+	agents.Store
 	forges.Store
 	taskcontract.Store
 	risk.Store

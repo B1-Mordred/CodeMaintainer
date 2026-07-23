@@ -33,14 +33,18 @@ func NewModelClient(endpoint string) (*ModelClient, error) {
 	return &ModelClient{endpoint: strings.TrimSuffix(endpoint, "/"), client: &http.Client{Timeout: 30 * time.Minute}}, nil
 }
 
-func (c *ModelClient) Complete(ctx context.Context, systemPrompt string, packet TaskPacket) ([]byte, error) {
+func (c *ModelClient) Complete(ctx context.Context, systemPrompt string, packet TaskPacket, responseContract ContractKind) ([]byte, error) {
 	packetPayload, err := json.Marshal(packet)
+	if err != nil {
+		return nil, err
+	}
+	responseFormat, err := ResponseFormat(responseContract)
 	if err != nil {
 		return nil, err
 	}
 	requestPayload, err := json.Marshal(map[string]any{
 		"model": "active", "stream": false, "temperature": 0.1, "max_tokens": 16384,
-		"response_format": map[string]string{"type": "json_object"},
+		"response_format": responseFormat,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": "UNTRUSTED_TASK_PACKET_JSON\n" + string(packetPayload) + "\nEND_UNTRUSTED_TASK_PACKET_JSON"},
@@ -93,7 +97,7 @@ func RunImplementation(ctx context.Context, client *ModelClient, packetPayload [
 	if err != nil {
 		return nil, err
 	}
-	response, err := client.Complete(ctx, string(prompt), packet)
+	response, err := client.Complete(ctx, string(prompt), packet, ContractImplementationResult)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +120,7 @@ func RunQC(ctx context.Context, client *ModelClient, packetPayload []byte) ([]by
 	if err != nil {
 		return nil, err
 	}
-	response, err := client.Complete(ctx, string(prompt), packet)
+	response, err := client.Complete(ctx, string(prompt), packet, ContractQCReport)
 	if err != nil {
 		return nil, err
 	}

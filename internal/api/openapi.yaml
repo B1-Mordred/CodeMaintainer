@@ -1261,8 +1261,26 @@ paths:
                   task_contract_events: { type: array, items: { $ref: "#/components/schemas/TaskContractEvent" } }
                   risk_assessments: { type: array, items: { $ref: "#/components/schemas/RiskAssessment" } }
                   risk_waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
+                  agent_contract_validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /agent-contracts:
+    get:
+      summary: List versioned JSON Schema contracts for agent-controller structured outputs
+      operationId: listAgentContracts
+      responses:
+        "200":
+          description: Registered schema-constrained agent contracts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contracts]
+                properties:
+                  contracts: { type: array, items: { $ref: "#/components/schemas/AgentContractDescriptor" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "500": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/task-contract:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -1334,6 +1352,25 @@ paths:
                   risk_assessment: { $ref: "#/components/schemas/RiskAssessment" }
         "409": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/agent-contract-validations:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List schema validation evidence for one job's agent-controller packets and outputs
+      operationId: listJobAgentContractValidations
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Append-only validation evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [validations]
+                properties:
+                  validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/risk:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -3138,6 +3175,49 @@ components:
     JobState:
       type: string
       enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+    AgentContractKind:
+      type: string
+      enum: [task_packet, implementation_result, qc_report, test_proposal, documentation_manifest, risk_assessment, completion_summary]
+    AgentContractRetryPolicy:
+      type: object
+      additionalProperties: false
+      required: [max_attempts, on_exhausted, validation_feedback]
+      properties:
+        max_attempts: { type: integer, minimum: 1, maximum: 20 }
+        on_exhausted: { type: string }
+        validation_feedback: { type: boolean }
+    AgentContractDescriptor:
+      type: object
+      additionalProperties: false
+      required: [kind, name, schema_version, schema_sha256, json_schema, retry_policy, compatible_agent_roles, compatible_model_modes, migration_status, structured_output_hints]
+      properties:
+        kind: { $ref: "#/components/schemas/AgentContractKind" }
+        name: { type: string }
+        schema_version: { type: integer, const: 1 }
+        schema_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        json_schema: { type: object, additionalProperties: true }
+        retry_policy: { $ref: "#/components/schemas/AgentContractRetryPolicy" }
+        compatible_agent_roles: { type: array, items: { type: string } }
+        compatible_model_modes: { type: array, items: { type: string, enum: [json_schema, json_object] } }
+        migration_status: { type: string, enum: [current, migrating, retired] }
+        structured_output_hints: { type: array, items: { type: string } }
+    AgentContractValidation:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, phase, contract_kind, schema_version, schema_sha256, payload_sha256, attempt, valid, error, artifact_id, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        phase: { type: string }
+        contract_kind: { $ref: "#/components/schemas/AgentContractKind" }
+        schema_version: { type: integer, const: 1 }
+        schema_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        payload_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        attempt: { type: integer, minimum: 1, maximum: 20 }
+        valid: { type: boolean }
+        error: { type: string, maxLength: 4000 }
+        artifact_id: { type: string }
+        created_at: { type: string, format: date-time }
     TaskContractCriterion:
       type: object
       additionalProperties: false

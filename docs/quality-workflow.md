@@ -36,6 +36,19 @@ maintainctl risk waive <job-id> --assessment <id> --to <low|medium> --reason <te
 
 The API derives reauthentication from the session. It does not trust caller-supplied `reauthenticated` fields.
 
+## Agent contract registry
+
+Agent-controller packets and structured model outputs are registered as versioned JSON Schema contracts. The built-in catalogue currently covers task packets, implementation results, QC reports, Test Designer proposals, documentation manifests, risk assessments, and completion summaries. The controller advertises strict JSON Schema response formats to compatible model runtimes and still validates decoded output with bounded Go contracts before accepting it.
+
+Operators can inspect the active catalogue and job-level validation evidence:
+
+```sh
+maintainctl agent-contracts
+maintainctl agent-contracts <job-id>
+```
+
+Each validation record stores the phase, contract kind, schema version, schema hash, payload hash, attempt, validity, bounded error text, and artifact reference when present. The ledger is append-only and is also visible in the Jobs page under “Structured output contracts.” This provides the evidence base for retry policy and later Test Designer, Documentation Agent, and OPA gates.
+
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are the schema-constrained inter-agent contract registry, independent Test Designer execution and dispositions, policy-controlled golden/rehearsal artifacts, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, independent Test Designer execution and dispositions, policy-controlled golden/rehearsal artifacts, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.
