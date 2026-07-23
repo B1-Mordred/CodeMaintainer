@@ -265,6 +265,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/agent-contract-validations", s.listJobAgentContractValidations)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/test-designer", s.listJobTestDesignerReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/documentation", s.listJobDocumentationManifests)
 	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve", s.approveGoldenUpdate)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
@@ -716,6 +717,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response["golden_update_approvals"] = approvals
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if manifests, err := s.store.ListDocumentationManifests(r.Context(), job.ID, 100); err == nil {
+		response["documentation_manifests"] = manifests
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

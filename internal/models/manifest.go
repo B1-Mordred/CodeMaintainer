@@ -138,7 +138,7 @@ func decodeManifest(payload []byte) (Manifest, error) {
 }
 
 func (m Manifest) Validate() error {
-	roles := map[string]bool{"implementation": true, "test_designer": true, "qc": true, "alternate": true, "deep_critic": true}
+	roles := map[string]bool{"implementation": true, "test_designer": true, "documentation": true, "qc": true, "alternate": true, "deep_critic": true}
 	numa := map[string]bool{"disabled": true, "distribute": true, "isolate": true, "numactl": true}
 	parsedSource, err := url.Parse(m.SourceURI)
 	if m.SchemaVersion != ManifestSchemaVersion || !manifestID.MatchString(m.ID) || !roles[m.Role] ||

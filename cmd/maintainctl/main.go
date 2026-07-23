@@ -137,6 +137,11 @@ func run(arguments []string) error {
 			return errors.New("usage: maintainctl test-designer <job-id>")
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/test-designer", nil)
+	case "documentation":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl documentation <job-id>")
+		}
+		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/documentation", nil)
 	case "golden":
 		return api.golden(arguments[1:])
 	default:
@@ -1214,6 +1219,7 @@ Commands:
   risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
   agent-contracts [job-id]
   test-designer <job-id>
+  documentation <job-id>
   golden reports <job-id>
   golden approve|reject <report-id> <comparison-id> --reason text
   open [job-id]

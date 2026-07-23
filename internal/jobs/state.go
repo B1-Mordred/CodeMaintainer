@@ -21,6 +21,8 @@ const (
 	StateLoadingTestDesignerModel   State = "loading_test_designer_model"
 	StateTestDesignReview           State = "test_design_review"
 	StateGoldenRehearsalReview      State = "golden_rehearsal_review"
+	StateLoadingDocumentationModel  State = "loading_documentation_model"
+	StateDocumentationReview        State = "documentation_review"
 	StateLoadingQCModel             State = "loading_qc_model"
 	StateQCReview                   State = "qc_review"
 	StateAwaitingRepair             State = "awaiting_repair"
@@ -49,6 +51,8 @@ var allStates = []State{
 	StateLoadingTestDesignerModel,
 	StateTestDesignReview,
 	StateGoldenRehearsalReview,
+	StateLoadingDocumentationModel,
+	StateDocumentationReview,
 	StateLoadingQCModel,
 	StateQCReview,
 	StateAwaitingRepair,
@@ -73,15 +77,17 @@ var transitions = map[State]map[State]struct{}{
 	StateReproducing:                set(StateImplementing, StateCancelled, StateFailed),
 	StateImplementing:               set(StateVerifyingTargeted, StateCancelled, StateFailed),
 	StateVerifyingTargeted:          set(StateVerifyingFull, StateAwaitingRepair, StateCancelled, StateFailed),
-	StateVerifyingFull:              set(StateLoadingTestDesignerModel, StateGoldenRehearsalReview, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateVerifyingFull:              set(StateLoadingTestDesignerModel, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateLoadingTestDesignerModel:   set(StateTestDesignReview, StateCancelled, StateFailed),
-	StateTestDesignReview:           set(StateGoldenRehearsalReview, StateLoadingQCModel, StateCancelled, StateFailed),
-	StateGoldenRehearsalReview:      set(StateLoadingQCModel, StateCancelled, StateFailed),
+	StateTestDesignReview:           set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateGoldenRehearsalReview:      set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateLoadingDocumentationModel:  set(StateDocumentationReview, StateCancelled, StateFailed),
+	StateDocumentationReview:        set(StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingQCModel:             set(StateQCReview, StateCancelled, StateFailed),
 	StateQCReview:                   set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
 	StateAwaitingRepair:             set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
 	StateRepairing:                  set(StateFinalVerification, StateCancelled, StateFailed),
-	StateFinalVerification:          set(StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateFinalVerification:          set(StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateAwaitingOperator:           set(StatePublishingBranch, StateCompleted, StateCancelled, StateFailed),
 	StatePublishingBranch:           set(StateDraftPRCreated, StateAwaitingOperator, StateFailed),
 	StateDraftPRCreated:             set(StateCompleted, StateFailed),

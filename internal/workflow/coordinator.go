@@ -18,6 +18,7 @@ import (
 	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
 	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
 	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
@@ -53,6 +54,7 @@ type coordinatorStore interface {
 	risk.Store
 	testdesigner.Store
 	golden.Store
+	documentation.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -249,6 +251,14 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		return c.designTests(ctx, job)
 	case jobs.StateGoldenRehearsalReview:
 		return c.reviewGoldens(ctx, job)
+	case jobs.StateLoadingDocumentationModel:
+		status, err := c.loadRole(ctx, "documentation")
+		if err != nil {
+			return Outcome{}, err
+		}
+		return detailOutcome(map[string]any{"profile_id": status.ProfileID, "model_family": status.ModelFamily}), nil
+	case jobs.StateDocumentationReview:
+		return c.reviewDocumentation(ctx, job)
 	case jobs.StateLoadingQCModel:
 		if err := c.validateRoleSeparation(ctx); err != nil {
 			return Outcome{}, err
@@ -358,7 +368,11 @@ func (c *Coordinator) requiredVerification(ctx context.Context, job jobs.Job, cl
 			return Outcome{}, routeErr
 		} else if required {
 			outcome.NextState = jobs.StateGoldenRehearsalReview
+		} else {
+			outcome.NextState = jobs.StateLoadingDocumentationModel
 		}
+	} else if purpose == "final" {
+		outcome.NextState = jobs.StateLoadingDocumentationModel
 	}
 	return outcome, nil
 }
@@ -569,6 +583,7 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 		{Class: "targeted_tests", Passed: true, Summary: "allow-listed targeted verification passed for the exact result commit"},
 		{Class: "full_tests", Passed: true, Summary: "allow-listed full verification passed for the exact result commit"},
 		{Class: "diff_policy", Passed: true, Summary: "protected-path and secret policy scan passed for the exact result commit"},
+		{Class: "documentation_policy", Passed: true, Summary: "Documentation Agent manifest was retained and any documentation commit received fresh exact-commit verification"},
 	}
 	report, err := c.execution.Review(ctx, job, packet)
 	if err != nil {
@@ -722,6 +737,96 @@ func (c *Coordinator) reviewGoldens(ctx context.Context, job jobs.Job) (Outcome,
 	if report.Status == "approval_required" || report.Status == "failed" {
 		return Outcome{Details: mustJSON(details)}, errors.New("golden rehearsal gate requires explicit approval before QC")
 	}
+	outcome := detailOutcome(details)
+	outcome.NextState = jobs.StateLoadingDocumentationModel
+	return outcome, nil
+}
+
+func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Outcome, error) {
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, job.ID)
+	if err != nil {
+		return Outcome{}, err
+	}
+	diff, err := c.git.Diff(ctx, gitbridge.DiffRequest{
+		ProjectID: job.ProjectID, JobID: job.ID, BaseSHA: job.BaseSHA, ResultSHA: job.ResultSHA,
+	})
+	if err != nil {
+		return Outcome{}, err
+	}
+	packet, err := c.taskPacket(ctx, job, "documentation", nil)
+	if err != nil {
+		return Outcome{}, err
+	}
+	packet.Diff = diff.Patch
+	packet.ResultSHA = job.ResultSHA
+	packet.ContractSHA256 = assessment.ContractSHA256
+	packet.RiskLevel = string(assessment.Level)
+	packet.Verification = []agents.VerificationEvidence{
+		{Class: "targeted_tests", Passed: true, Summary: "allow-listed targeted verification passed for the exact result commit"},
+		{Class: "full_tests", Passed: true, Summary: "allow-listed full verification passed before documentation impact review"},
+		{Class: "documentation_policy", Passed: true, Summary: "controller-owned documentation policy selected required document evidence for the exact candidate"},
+	}
+	payload, _ := json.Marshal(packet)
+	if _, err := agents.DecodeTaskPacket(payload, "documentation"); err != nil {
+		if record, recordErr := agents.NewValidationRecord(job.ID, "documentation_packet", agents.ContractTaskPacket, payload, job.ReviewCycle+1, false, err, ""); recordErr == nil {
+			_, _ = c.store.RecordAgentContractValidation(ctx, record)
+		}
+		return Outcome{}, err
+	}
+	if record, err := agents.NewValidationRecord(job.ID, "documentation_packet", agents.ContractTaskPacket, payload, job.ReviewCycle+1, true, nil, ""); err != nil {
+		return Outcome{}, err
+	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
+		return Outcome{}, err
+	}
+	manifest, err := c.execution.Document(ctx, job, packet)
+	if err != nil {
+		return Outcome{}, err
+	}
+	rawManifest, _ := json.Marshal(manifest)
+	if record, err := agents.NewValidationRecord(job.ID, "documentation_manifest", agents.ContractDocumentationManifest, rawManifest, job.ReviewCycle+1, true, nil, ""); err != nil {
+		return Outcome{}, err
+	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
+		return Outcome{}, err
+	}
+	manifest, err = c.store.SaveDocumentationManifest(ctx, manifest)
+	if err != nil {
+		return Outcome{}, err
+	}
+	details := map[string]any{
+		"documentation": manifest.Status, "manifest_id": manifest.ID,
+		"requirements": len(manifest.Requirements), "changes": len(manifest.Changes),
+	}
+	if manifest.Status == "blocked" {
+		return Outcome{Details: mustJSON(details)}, errors.New("documentation policy blocked final QC until unsupported claims are resolved")
+	}
+	committed, err := c.git.Commit(ctx, gitbridge.CommitRequest{
+		ProjectID: job.ProjectID, JobID: job.ID, ExpectedHead: job.ResultSHA, OperationID: phaseKey(job),
+	})
+	if err != nil {
+		return Outcome{}, err
+	}
+	if committed.ResultSHA != job.ResultSHA {
+		if manifest.Status != "changes_applied" && manifest.Status != "passed" {
+			return Outcome{Details: mustJSON(details)}, errors.New("documentation worker changed the worktree without declaring source-controlled documentation changes")
+		}
+		verifiedJob := job
+		verifiedJob.ResultSHA = committed.ResultSHA
+		verificationOutcome, verifyErr := c.requiredVerification(ctx, verifiedJob, fullClasses(detectLanguage(c.worktree(job.ID))), "documentation")
+		if verifyErr != nil {
+			return Outcome{}, verifyErr
+		}
+		impact, impactErr := c.recordTestImpact(ctx, job, committed.ResultSHA)
+		if impactErr != nil {
+			return Outcome{}, impactErr
+		}
+		details["result_sha"] = committed.ResultSHA
+		details["test_impact_id"] = impact.ID
+		details["verification"] = json.RawMessage(verificationOutcome.Details)
+		return Outcome{Details: mustJSON(details), Metadata: storage.JobMetadataPatch{ResultSHA: &committed.ResultSHA}}, nil
+	}
+	if manifest.Status == "changes_applied" {
+		return Outcome{Details: mustJSON(details)}, errors.New("documentation manifest declared changes but no source-controlled documentation commit was produced")
+	}
 	return detailOutcome(details), nil
 }
 
@@ -862,6 +967,10 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
+	documentationManifests, err := c.store.ListDocumentationManifests(ctx, job.ID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
 	for _, evidence := range []struct {
 		id, source, reason string
 		value              any
@@ -871,6 +980,7 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		{id: "test-impact-evidence", source: "test_impact", reason: "recent changed-symbol test selection and full-suite policy", value: impacts},
 		{id: "test-designer-evidence", source: "independent_test_designer", reason: "independent test design proposals and dispositions for the exact candidate", value: testDesignReports},
 		{id: "golden-rehearsal-evidence", source: "golden_rehearsals", reason: "registered golden and rehearsal comparisons for the exact candidate", value: goldenReports},
+		{id: "documentation-evidence", source: "documentation_manifests", reason: "Documentation Agent impact, change, check, and unsupported-claim manifest for the exact candidate", value: documentationManifests},
 	} {
 		payload, _ := json.Marshal(evidence.value)
 		if string(payload) != "[]" && string(payload) != "null" {
@@ -944,11 +1054,11 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		return agents.TaskPacket{}, errors.New("context compiler selected no bounded repository files")
 	}
 	packet := agents.TaskPacket{
-		SchemaVersion: 1, Mode: mode, JobID: job.ID, OriginalTask: job.Task,
+		SchemaVersion: 1, Mode: mode, JobID: job.ID, ProjectID: job.ProjectID, OriginalTask: job.Task,
 		AcceptanceCriteria: criteria, BaseSHA: job.BaseSHA, ResultSHA: job.ResultSHA,
 		ReviewCycle: job.ReviewCycle, RelevantFiles: selectedFiles, BlockingFindings: blockers,
 	}
-	if mode == "test_designer" {
+	if mode == "test_designer" || mode == "documentation" {
 		return packet, nil
 	}
 	payload, _ := json.Marshal(packet)

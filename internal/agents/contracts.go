@@ -46,6 +46,7 @@ type TaskPacket struct {
 	SchemaVersion      int                    `json:"schema_version"`
 	Mode               string                 `json:"mode"`
 	JobID              string                 `json:"job_id"`
+	ProjectID          string                 `json:"project_id,omitempty"`
 	OriginalTask       string                 `json:"original_task"`
 	AcceptanceCriteria []Criterion            `json:"acceptance_criteria"`
 	BaseSHA            string                 `json:"base_sha"`
@@ -128,12 +129,18 @@ func DecodeTaskPacket(payload []byte, expectedMode string) (TaskPacket, error) {
 	if packet.ReviewCycle < 0 || packet.ReviewCycle > 10 {
 		return TaskPacket{}, errors.New("agent review cycle is out of bounds")
 	}
-	if (expectedMode == "qc" || expectedMode == "test_designer") && !gitSHA.MatchString(packet.ResultSHA) {
+	if expectedMode == "documentation" && !identifier.MatchString(packet.ProjectID) {
+		return TaskPacket{}, errors.New("documentation task requires a project identity")
+	}
+	if (expectedMode == "qc" || expectedMode == "test_designer" || expectedMode == "documentation") && !gitSHA.MatchString(packet.ResultSHA) {
 		return TaskPacket{}, errors.New("review task requires an exact result SHA")
 	}
-	if expectedMode == "test_designer" && (!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(packet.ContractSHA256) ||
-		(packet.RiskLevel != "medium" && packet.RiskLevel != "high")) {
-		return TaskPacket{}, errors.New("test designer task requires exact contract and risk bindings")
+	if (expectedMode == "test_designer" || expectedMode == "documentation") && (!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(packet.ContractSHA256) ||
+		(packet.RiskLevel != "low" && packet.RiskLevel != "medium" && packet.RiskLevel != "high")) {
+		return TaskPacket{}, errors.New("review task requires exact contract and risk bindings")
+	}
+	if expectedMode == "test_designer" && packet.RiskLevel == "low" {
+		return TaskPacket{}, errors.New("test designer task requires medium or high risk")
 	}
 	seenCriteria := make(map[string]struct{}, len(packet.AcceptanceCriteria))
 	for _, criterion := range packet.AcceptanceCriteria {
@@ -160,7 +167,7 @@ func DecodeTaskPacket(payload []byte, expectedMode string) (TaskPacket, error) {
 }
 
 func validTaskMode(mode string) bool {
-	return mode == "implementation" || mode == "repair" || mode == "qc" || mode == "test_designer"
+	return mode == "implementation" || mode == "repair" || mode == "qc" || mode == "test_designer" || mode == "documentation"
 }
 
 func DecodeImplementationResult(payload []byte) (ImplementationResult, error) {

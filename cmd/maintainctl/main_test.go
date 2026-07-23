@@ -229,6 +229,22 @@ func TestTestDesignerCLIListsJobReports(t *testing.T) {
 	}
 }
 
+func TestDocumentationCLIListsJobManifests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/jobs/job-one/documentation" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"manifests":[]}`))
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"documentation", "job-one"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGoldenCLIListsReportsAndApprovesUpdates(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

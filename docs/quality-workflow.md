@@ -78,6 +78,20 @@ maintainctl golden approve <report-id> <comparison-id> --reason <text>
 maintainctl golden reject <report-id> <comparison-id> --reason <text>
 ```
 
+## Documentation Agent
+
+After full verification and golden/rehearsal evidence, the workflow routes through `loading_documentation_model` and `documentation_review` before final QC. The Documentation Agent receives a fresh bounded packet with the approved task contract, deterministic risk level, candidate diff, verification evidence, context-manifest selections, Test Designer reports, and golden/rehearsal reports. Its output is validated against the registered `documentation_manifest` contract and exact job, project, contract hash, risk level, and result commit before storage.
+
+Documentation manifests are append-only. They record policy-selected required documents, source-of-truth mappings, source-controlled changes, render/check status, unsupported claims, and bounded edit declarations. If the agent creates or updates documentation, the controller commits those source-controlled changes, updates the job `result_sha`, records fresh test-impact evidence, and runs a fresh full verification differential for the documentation commit before QC can inspect it. If the manifest contains unsupported claims or declares changes without an exact documentation commit, the phase fails closed.
+
+The current policy foundation is controller-owned and deterministic. It establishes the durable Documentation Agent stage, schema validation, runner profile, exact-commit re-verification, API/CLI/browser visibility, and mock-profile behavior. Later slices still need the full declarative policy builder, renderer/tool profile management, documentation-specific finding lifecycle, screenshot/golden management, rich render previews, and independent documentation QC actions.
+
+Operators can inspect manifests through the Jobs page or CLI:
+
+```sh
+maintainctl documentation <job-id>
+```
+
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, and OPA-backed policy simulation/activation/rollback.

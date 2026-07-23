@@ -1495,6 +1495,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/documentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List Documentation Agent manifests for one job */
+        get: operations["listJobDocumentationManifests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve": {
         parameters: {
             query?: never;
@@ -3314,7 +3333,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -3379,6 +3398,64 @@ export interface components {
             dispositions_required: boolean;
             /** @enum {string} */
             status: "proposed" | "skipped";
+            /** Format: date-time */
+            created_at: string;
+        };
+        DocumentationRequirement: {
+            id: string;
+            document: string;
+            reason: string;
+            source: string;
+            render_targets: string[];
+            required: boolean;
+            /** @enum {string} */
+            status: "satisfied" | "pending" | "not_required" | "blocked";
+        };
+        DocumentationChange: {
+            path: string;
+            /** @enum {string} */
+            action: "created" | "updated" | "not_changed";
+            policy_rule: string;
+            source_of_truth: string;
+            linked_evidence_ids: string[];
+        };
+        DocumentationCheck: {
+            id: string;
+            kind: string;
+            target: string;
+            /** @enum {string} */
+            status: "passed" | "failed" | "not_run";
+            summary: string;
+        };
+        DocumentationUnsupportedClaim: {
+            claim: string;
+            location: string;
+            reason: string;
+        };
+        DocumentationEdit: {
+            path: string;
+            content: string;
+            expected_sha256?: string;
+        };
+        DocumentationManifest: {
+            id: string;
+            job_id: string;
+            /** @constant */
+            schema_version: 1;
+            project_id: string;
+            contract_sha256: string;
+            risk_level: components["schemas"]["RiskLevel"];
+            result_sha: string;
+            source_context: string;
+            policy_version: string;
+            requirements: components["schemas"]["DocumentationRequirement"][];
+            changes: components["schemas"]["DocumentationChange"][];
+            checks: components["schemas"]["DocumentationCheck"][];
+            unsupported_claims: components["schemas"]["DocumentationUnsupportedClaim"][];
+            edits: components["schemas"]["DocumentationEdit"][];
+            /** @enum {string} */
+            status: "passed" | "changes_applied" | "no_documentation_required" | "blocked";
+            policy_summary: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -6662,6 +6739,7 @@ export interface operations {
                         test_designer_reports?: components["schemas"]["TestDesignerReport"][];
                         golden_rehearsal_reports?: components["schemas"]["GoldenRehearsalReport"][];
                         golden_update_approvals?: components["schemas"]["GoldenUpdateApproval"][];
+                        documentation_manifests?: components["schemas"]["DocumentationManifest"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
@@ -6865,6 +6943,33 @@ export interface operations {
                     "application/json": {
                         reports: components["schemas"]["GoldenRehearsalReport"][];
                         approvals: components["schemas"]["GoldenUpdateApproval"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobDocumentationManifests: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documentation impact, change, validation, and unsupported-claim history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifests: components["schemas"]["DocumentationManifest"][];
                     };
                 };
             };

@@ -272,6 +272,7 @@ func newWorkflowEngine(store *storesqlite.Store, artifactStore *artifactfiles.St
 		modelManager = models.NewFake([]models.Profile{
 			{ID: "implementation", Role: "implementation", ModelFamily: "qwen-mock", Context: 32768},
 			{ID: "test_designer", Role: "test_designer", ModelFamily: "gemma-mock", Context: 32768},
+			{ID: "documentation", Role: "documentation", ModelFamily: "llama-mock", Context: 32768},
 			{ID: "qc", Role: "qc", ModelFamily: "mistral-mock", Context: 32768},
 		})
 		execution, err = workflow.NewDeterministicBackend(worktreesRoot)

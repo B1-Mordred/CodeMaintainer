@@ -22,6 +22,7 @@ import (
 	maintainerauth "github.com/B1-Mordred/CodeMaintainer/internal/auth"
 	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
 	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
@@ -1634,6 +1635,62 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("golden_rehearsal_reports")) || !bytes.Contains(body, []byte("golden_update_approvals")) {
 		t.Fatalf("job detail omitted golden evidence: %d %s", response.StatusCode, body)
+	}
+}
+
+func TestDocumentationManifestsAreVisibleOnJobDetailAndEndpoint(t *testing.T) {
+	server, store := testServer(t)
+	defer server.Close()
+	job, err := store.CreateJob(context.Background(), storage.CreateJobParams{
+		ID: "job_documentation_api", ProjectID: "owner-repo", Repository: "owner/repo", Task: "document cli change", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := documentation.Manifest{
+		JobID: job.ID, ProjectID: job.ProjectID, SchemaVersion: 1,
+		ContractSHA256: strings.Repeat("a", 64), RiskLevel: "medium", ResultSHA: strings.Repeat("b", 40),
+		SourceContext: "documentation_agent_context_v1", PolicyVersion: "documentation-policy-v1",
+		Requirements: []documentation.Requirement{{
+			ID: "DOC-CLI", Document: "docs/cli.md", Reason: "CLI command changed", Source: "candidate_diff",
+			RenderTargets: []string{"markdown"}, Required: true, Status: "satisfied",
+		}},
+		Changes: []documentation.Change{{
+			Path: "docs/cli.md", Action: "updated", PolicyRule: "cli-documentation",
+			SourceOfTruth: "cmd/maintainctl/main.go", LinkedEvidenceIDs: []string{"candidate_diff"},
+		}},
+		Checks: []documentation.Check{{
+			ID: "DOC-CHECK-CLI", Kind: "link", Target: "docs/cli.md", Status: "passed",
+			Summary: "CLI documentation links were checked by fixture policy",
+		}},
+		UnsupportedClaims: []documentation.UnsupportedClaim{}, Edits: []documentation.Edit{},
+		Status: "changes_applied", PolicySummary: "documentation policy required CLI reference evidence",
+	}
+	if _, err := store.SaveDocumentationManifest(context.Background(), manifest); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/documentation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var listed struct {
+		Manifests []documentation.Manifest `json:"manifests"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || len(listed.Manifests) != 1 || listed.Manifests[0].Changes[0].Path != "docs/cli.md" {
+		t.Fatalf("documentation manifests endpoint returned %d %#v", response.StatusCode, listed)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("documentation_manifests")) {
+		t.Fatalf("job detail omitted documentation evidence: %d %s", response.StatusCode, body)
 	}
 }
 

@@ -60,7 +60,8 @@ func TestLoadPolicyFileAcceptsOnlyACompletePrivateImmutableAllowList(t *testing.
 		`"dependencies":"example/dependencies@sha256:` + digest + `",` +
 		`"implementation":"example/implementation@sha256:` + digest + `",` +
 		`"verification":"example/verification@sha256:` + digest + `",` +
-		`"qc":"example/qc@sha256:` + digest + `"}}`
+		`"qc":"example/qc@sha256:` + digest + `",` +
+		`"documentation":"example/documentation@sha256:` + digest + `"}}`
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestPolicyRejectsTraversalMutableImagesAndUnknownKinds(t *testing.T) {
 
 func TestPolicyMakesAgentsInferenceOnlyVerificationOfflineAndDependenciesEgressOnly(t *testing.T) {
 	policy := testPolicy(t)
-	for _, kind := range []runners.Kind{runners.KindImplementation, runners.KindVerification, runners.KindQC} {
+	for _, kind := range []runners.Kind{runners.KindImplementation, runners.KindVerification, runners.KindQC, runners.KindDocumentation} {
 		spec, err := policy.Resolve(runners.JobRequest{JobID: "job", ProjectID: "project", Kind: kind}, runners.RunID("run_"+string(kind)))
 		if err != nil {
 			t.Fatal(err)
@@ -121,6 +122,9 @@ func TestPolicyMakesAgentsInferenceOnlyVerificationOfflineAndDependenciesEgressO
 		}
 		if kind == runners.KindQC && !spec.Mounts[0].ReadOnly {
 			t.Fatal("QC worktree is writable")
+		}
+		if kind == runners.KindDocumentation && spec.Mounts[0].ReadOnly {
+			t.Fatal("documentation agent cannot write source-controlled documentation")
 		}
 	}
 }
@@ -141,5 +145,6 @@ func testImages() map[runners.Kind]string {
 		runners.KindImplementation: "example/implementation@sha256:" + digest,
 		runners.KindVerification:   "example/verification@sha256:" + digest,
 		runners.KindQC:             "example/qc@sha256:" + digest,
+		runners.KindDocumentation:  "example/documentation@sha256:" + digest,
 	}
 }

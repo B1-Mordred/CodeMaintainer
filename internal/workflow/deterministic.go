@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
@@ -109,6 +110,54 @@ func (*DeterministicBackend) DesignTests(_ context.Context, job jobs.Job, packet
 		}},
 	}
 	return report, report.Validate()
+}
+
+func (b *DeterministicBackend) Document(_ context.Context, job jobs.Job, packet agents.TaskPacket) (documentation.Manifest, error) {
+	if packet.RiskLevel == "low" {
+		return documentation.NoDocumentationRequired(job.ID, job.ProjectID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
+	}
+	path := "docs/mock-maintenance-" + job.ID + ".md"
+	action := "created"
+	content := "# Mock maintenance documentation\n\n" +
+		"- Job: `" + job.ID + "`\n" +
+		"- Contract: `" + packet.ContractSHA256 + "`\n" +
+		"- Result: `" + packet.ResultSHA + "`\n" +
+		"- Policy: documentation-policy-v1\n"
+	if err := os.MkdirAll(filepath.Join(b.worktreesRoot, job.ID, "docs"), 0o700); err != nil {
+		return documentation.Manifest{}, err
+	}
+	target := filepath.Join(b.worktreesRoot, job.ID, path)
+	if existing, err := os.ReadFile(target); err == nil && string(existing) == content {
+		action = "not_changed"
+	} else {
+		if err := os.WriteFile(target, []byte(content), 0o600); err != nil {
+			return documentation.Manifest{}, err
+		}
+	}
+	status := "changes_applied"
+	if action == "not_changed" {
+		status = "passed"
+	}
+	manifest := documentation.Manifest{
+		JobID: job.ID, ProjectID: job.ProjectID, SchemaVersion: 1, ContractSHA256: packet.ContractSHA256,
+		RiskLevel: packet.RiskLevel, ResultSHA: packet.ResultSHA, SourceContext: "documentation_agent_context_v1",
+		PolicyVersion: "documentation-policy-v1",
+		Requirements: []documentation.Requirement{{
+			ID: "DOC-MOCK-MAINTENANCE", Document: path, Reason: "medium/high risk work requires operator-visible documentation evidence",
+			Source: "risk_router", RenderTargets: []string{"markdown"}, Required: true, Status: "satisfied",
+		}},
+		Changes: []documentation.Change{{
+			Path: path, Action: action, PolicyRule: "risk-documentation",
+			SourceOfTruth: "approved_task_contract", LinkedEvidenceIDs: []string{"task_contract", "candidate_diff"},
+		}},
+		Checks: []documentation.Check{{
+			ID: "DOC-CHECK-MOCK", Kind: "markdown", Target: path, Status: "passed",
+			Summary: "deterministic mock documentation was written from controller-bound evidence",
+		}},
+		UnsupportedClaims: []documentation.UnsupportedClaim{}, Edits: []documentation.Edit{}, Status: status,
+		PolicySummary: "medium/high risk documentation policy required source-controlled maintenance documentation evidence",
+	}
+	return manifest, manifest.Validate()
 }
 
 func (*DeterministicBackend) Review(_ context.Context, job jobs.Job, packet agents.TaskPacket) (agents.QCReport, error) {

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 )
 
@@ -151,6 +152,35 @@ func RunTestDesigner(ctx context.Context, client *ModelClient, packetPayload []b
 		return nil, err
 	}
 	return json.Marshal(report)
+}
+
+func RunDocumentation(ctx context.Context, client *ModelClient, packetPayload []byte, worktree string) ([]byte, error) {
+	packet, err := DecodeTaskPacket(packetPayload, "documentation")
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := promptFiles.ReadFile("prompts/documentation.txt")
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.Complete(ctx, string(prompt), packet, ContractDocumentationManifest)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := documentation.DecodeManifest(response, packet.JobID, packet.ProjectID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
+	if err != nil {
+		return nil, err
+	}
+	edits := make([]Edit, 0, len(manifest.Edits))
+	for _, edit := range manifest.Edits {
+		edits = append(edits, Edit{Path: edit.Path, Content: edit.Content, ExpectedSHA256: edit.ExpectedSHA256})
+	}
+	if len(edits) != 0 {
+		if err := ApplyEdits(worktree, edits); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(manifest)
 }
 
 func ApplyEdits(worktree string, edits []Edit) error {

@@ -12,6 +12,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
@@ -108,6 +109,53 @@ func (f fixtureExecution) DesignTests(_ context.Context, job jobs.Job, packet ag
 	return report, report.Validate()
 }
 
+func (f fixtureExecution) Document(_ context.Context, job jobs.Job, packet agents.TaskPacket) (documentation.Manifest, error) {
+	if packet.RiskLevel == "low" {
+		return documentation.NoDocumentationRequired(job.ID, job.ProjectID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
+	}
+	path := "docs/maintenance-" + job.ID + ".md"
+	action := "created"
+	target := filepath.Join(f.worktrees, job.ID, path)
+	content := "# Maintenance evidence\n\nExact documentation evidence for " + job.ID + "\n"
+	if err := os.MkdirAll(filepath.Join(f.worktrees, job.ID, "docs"), 0o700); err != nil {
+		return documentation.Manifest{}, err
+	}
+	if existing, err := os.ReadFile(target); err == nil && string(existing) == content {
+		action = "not_changed"
+	} else {
+		if _, err := os.Stat(target); err == nil {
+			action = "updated"
+		}
+		if err := os.WriteFile(target, []byte(content), 0o600); err != nil {
+			return documentation.Manifest{}, err
+		}
+	}
+	status := "changes_applied"
+	if action == "not_changed" {
+		status = "passed"
+	}
+	manifest := documentation.Manifest{
+		JobID: job.ID, ProjectID: job.ProjectID, SchemaVersion: 1, ContractSHA256: packet.ContractSHA256,
+		RiskLevel: packet.RiskLevel, ResultSHA: packet.ResultSHA, SourceContext: "documentation_agent_context_v1",
+		PolicyVersion: "documentation-policy-v1",
+		Requirements: []documentation.Requirement{{
+			ID: "DOC-FIXTURE-001", Document: path, Reason: "medium/high risk fixture requires documentation evidence",
+			Source: "risk_router", RenderTargets: []string{"markdown"}, Required: true, Status: "satisfied",
+		}},
+		Changes: []documentation.Change{{
+			Path: path, Action: action, PolicyRule: "risk-documentation",
+			SourceOfTruth: "approved_task_contract", LinkedEvidenceIDs: []string{"task_contract", "candidate_diff"},
+		}},
+		Checks: []documentation.Check{{
+			ID: "DOC-CHECK-FIXTURE", Kind: "markdown", Target: path, Status: "passed",
+			Summary: "fixture documentation was written",
+		}},
+		UnsupportedClaims: []documentation.UnsupportedClaim{}, Edits: []documentation.Edit{}, Status: status,
+		PolicySummary: "fixture documentation policy required source-controlled evidence",
+	}
+	return manifest, manifest.Validate()
+}
+
 func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -166,6 +214,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	modelManager := models.NewFake([]models.Profile{
 		{ID: "implementation", Role: "implementation", ModelFamily: "qwen", Context: 32768},
 		{ID: "test_designer", Role: "test_designer", ModelFamily: "gemma", Context: 32768},
+		{ID: "documentation", Role: "documentation", ModelFamily: "llama", Context: 32768},
 		{ID: "qc", Role: "qc", ModelFamily: "mistral", Context: 32768},
 	})
 	coordinator, err := NewCoordinator(store, git, modelManager, fixtureExecution{worktrees: filepath.Join(root, "worktrees")},
@@ -225,6 +274,16 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil || len(goldenReports) != 1 || goldenReports[0].Status != "no_rehearsals" {
 		t.Fatalf("golden rehearsal reports = %#v, %v", goldenReports, err)
 	}
+	docManifests, err := store.ListDocumentationManifests(ctx, job.ID, 10)
+	docChangesApplied := false
+	for _, manifest := range docManifests {
+		if manifest.Status == "changes_applied" && len(manifest.Changes) != 0 {
+			docChangesApplied = true
+		}
+	}
+	if err != nil || !docChangesApplied {
+		t.Fatalf("documentation manifests = %#v, %v", docManifests, err)
+	}
 	storedFindings, err := store.ListFindings(ctx, job.ID)
 	if err != nil || len(storedFindings) != 1 || storedFindings[0].Status != findings.StatusClosed {
 		t.Fatalf("finding lifecycle = %#v, %v", storedFindings, err)
@@ -249,7 +308,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		t.Fatalf("published SHA = %s, want %s", published, job.ResultSHA)
 	}
 	phaseRecords, err := store.ListPhaseRecords(ctx, job.ID, 100)
-	if err != nil || len(phaseRecords) < 19 {
+	if err != nil || len(phaseRecords) < 22 {
 		t.Fatalf("phase records = %d, %v", len(phaseRecords), err)
 	}
 	manifests, err := store.ListContextManifests(ctx, "fixture", 100)
@@ -268,7 +327,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 			}
 		}
 	}
-	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer", "golden_rehearsals"} {
+	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer", "golden_rehearsals", "documentation_manifests"} {
 		if !sources[required] {
 			t.Fatalf("context manifests omitted production source %q: %#v", required, sources)
 		}
@@ -289,11 +348,11 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	for _, differential := range differentials {
 		purposes[differential.Purpose] = true
 	}
-	if !purposes["targeted"] || !purposes["full"] || !purposes["final"] {
+	if !purposes["targeted"] || !purposes["full"] || !purposes["documentation"] || !purposes["final"] {
 		t.Fatalf("workflow differential purposes = %#v", purposes)
 	}
 	impacts, err := store.ListTestImpacts(ctx, "fixture", 10)
-	if err != nil || len(impacts) != 2 {
+	if err != nil || len(impacts) < 3 {
 		t.Fatalf("workflow test impacts = %#v, %v", impacts, err)
 	}
 	for _, impact := range impacts {

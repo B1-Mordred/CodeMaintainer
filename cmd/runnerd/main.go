@@ -40,6 +40,7 @@ func run(logger *slog.Logger) error {
 			runners.KindImplementation: "local/maintainer-implementation@sha256:" + digest,
 			runners.KindVerification:   "local/maintainer-verification@sha256:" + digest,
 			runners.KindQC:             "local/maintainer-qc@sha256:" + digest,
+			runners.KindDocumentation:  "local/maintainer-documentation@sha256:" + digest,
 		})
 		if err != nil {
 			return err

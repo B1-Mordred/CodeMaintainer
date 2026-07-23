@@ -328,7 +328,7 @@ func (e *DockerExecutor) containerRequest(spec WorkerSpec) (dockerCreateRequest,
 	if spec.Network == NetworkDependencyEgress && spec.Kind == runners.KindDependencies {
 		network = e.dependencyNetwork
 	} else if spec.Network == NetworkInferenceOnly &&
-		(spec.Kind == runners.KindImplementation || spec.Kind == runners.KindQC) {
+		(spec.Kind == runners.KindImplementation || spec.Kind == runners.KindQC || spec.Kind == runners.KindDocumentation) {
 		network = e.inferenceNetwork
 	} else if spec.Network != NetworkNone {
 		return dockerCreateRequest{}, fmt.Errorf("%w: network is not valid for worker kind", ErrPolicyDenied)

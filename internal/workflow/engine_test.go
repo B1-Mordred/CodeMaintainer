@@ -24,7 +24,8 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
@@ -32,8 +33,9 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
-			jobs.StateRepairing, jobs.StateFinalVerification,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
+			jobs.StateRepairing, jobs.StateFinalVerification, jobs.StateLoadingDocumentationModel,
 		},
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
@@ -41,7 +43,8 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 			jobs.StatePublishingBranch, jobs.StateDraftPRCreated,
 		},
 	}
@@ -109,6 +112,13 @@ func TestOutcomeCanRouteFullVerificationThroughGoldenRehearsal(t *testing.T) {
 	next, err := nextState(jobs.StateVerifyingFull, Outcome{NextState: jobs.StateGoldenRehearsalReview})
 	if err != nil || next != jobs.StateGoldenRehearsalReview {
 		t.Fatalf("golden route = %s, %v", next, err)
+	}
+}
+
+func TestOutcomeCanRouteFullVerificationThroughDocumentation(t *testing.T) {
+	next, err := nextState(jobs.StateVerifyingFull, Outcome{NextState: jobs.StateLoadingDocumentationModel})
+	if err != nil || next != jobs.StateLoadingDocumentationModel {
+		t.Fatalf("documentation route = %s, %v", next, err)
 	}
 }
 

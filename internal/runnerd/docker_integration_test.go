@@ -50,7 +50,7 @@ func TestDockerExecutorRunsOfflineGoFixture(t *testing.T) {
 	}
 	images := map[runners.Kind]string{
 		runners.KindDependencies: image, runners.KindImplementation: image,
-		runners.KindVerification: image, runners.KindQC: image,
+		runners.KindVerification: image, runners.KindQC: image, runners.KindDocumentation: image,
 	}
 	workerUser := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 	policy, err := newPolicy(root, workerUser, images)

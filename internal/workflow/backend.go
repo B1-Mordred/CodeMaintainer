@@ -19,6 +19,7 @@ import (
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
@@ -40,6 +41,7 @@ type ExecutionBackend interface {
 	Implement(context.Context, jobs.Job, agents.TaskPacket) (agents.ImplementationResult, error)
 	Verify(context.Context, jobs.Job, verification.Language, []verification.Class, string) (VerificationResult, error)
 	DesignTests(context.Context, jobs.Job, agents.TaskPacket) (testdesigner.Report, error)
+	Document(context.Context, jobs.Job, agents.TaskPacket) (documentation.Manifest, error)
 	Review(context.Context, jobs.Job, agents.TaskPacket) (agents.QCReport, error)
 }
 
@@ -155,6 +157,18 @@ func (b *ContainerBackend) DesignTests(ctx context.Context, job jobs.Job, packet
 		return testdesigner.Report{}, err
 	}
 	return testdesigner.DecodeReport(raw, job.ID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
+}
+
+func (b *ContainerBackend) Document(ctx context.Context, job jobs.Job, packet agents.TaskPacket) (documentation.Manifest, error) {
+	payload, err := json.Marshal(packet)
+	if err != nil {
+		return documentation.Manifest{}, err
+	}
+	raw, err := b.runWithPacket(ctx, job, runners.KindDocumentation, payload, phaseKey(job)+"_documentation_packet", "documentation_manifest")
+	if err != nil {
+		return documentation.Manifest{}, err
+	}
+	return documentation.DecodeManifest(raw, job.ID, job.ProjectID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
 }
 
 func (b *ContainerBackend) runWithPacket(ctx context.Context, job jobs.Job, kind runners.Kind, payload []byte, key, artifactID string) ([]byte, error) {

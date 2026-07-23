@@ -9,6 +9,7 @@ func TestAllRequiredStatesAreUniqueAndValid(t *testing.T) {
 		StateLoadingImplementationModel, StateReproducing,
 		StateImplementing, StateVerifyingTargeted, StateVerifyingFull,
 		StateLoadingTestDesignerModel, StateTestDesignReview, StateGoldenRehearsalReview,
+		StateLoadingDocumentationModel, StateDocumentationReview,
 		StateLoadingQCModel, StateQCReview, StateAwaitingRepair,
 		StateRepairing, StateFinalVerification, StateAwaitingOperator,
 		StatePublishingBranch, StateDraftPRCreated, StateCompleted,
@@ -39,12 +40,13 @@ func TestHappyPathAndRepairPathTransitions(t *testing.T) {
 			StateAwaitingTaskApproval, StateLoadingImplementationModel, StateReproducing,
 			StateImplementing, StateVerifyingTargeted, StateVerifyingFull,
 			StateLoadingTestDesignerModel, StateTestDesignReview,
-			StateGoldenRehearsalReview, StateLoadingQCModel, StateQCReview, StateAwaitingOperator,
+			StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateDocumentationReview,
+			StateLoadingQCModel, StateQCReview, StateAwaitingOperator,
 			StatePublishingBranch, StateDraftPRCreated, StateCompleted,
 		},
 		{
 			StateQCReview, StateAwaitingRepair, StateRepairing,
-			StateFinalVerification, StateLoadingQCModel, StateQCReview,
+			StateFinalVerification, StateLoadingDocumentationModel, StateDocumentationReview, StateLoadingQCModel, StateQCReview,
 			StateAwaitingOperator,
 		},
 	}

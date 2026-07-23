@@ -125,8 +125,8 @@ func LoadPolicyFile(path, dataRoot string) (*Policy, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: runner policy file must contain one JSON document", ErrPolicyDenied)
 	}
-	if document.SchemaVersion != 1 || len(document.Images) != 4 {
-		return nil, fmt.Errorf("%w: runner policy file must use schema version 1 and define exactly four images", ErrPolicyDenied)
+	if document.SchemaVersion != 1 || len(document.Images) != 5 {
+		return nil, fmt.Errorf("%w: runner policy file must use schema version 1 and define exactly five images", ErrPolicyDenied)
 	}
 	images := make(map[runners.Kind]string, 4)
 	for key, image := range document.Images {
@@ -151,7 +151,7 @@ func newPolicy(dataRoot, workerUser string, images map[runners.Kind]string) (*Po
 	root = filepath.Clean(root)
 	requiredKinds := []runners.Kind{
 		runners.KindDependencies, runners.KindImplementation,
-		runners.KindVerification, runners.KindQC,
+		runners.KindVerification, runners.KindQC, runners.KindDocumentation,
 	}
 	ownedImages := make(map[runners.Kind]string, len(requiredKinds))
 	for _, kind := range requiredKinds {
@@ -182,6 +182,11 @@ func newPolicy(dataRoot, workerUser string, images map[runners.Kind]string) (*Po
 			},
 			runners.KindQC: {
 				network: NetworkInferenceOnly, worktreeReadOnly: true, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
+				pidsLimit: 512, timeout: time.Hour, tmpfsBytes: 1 << 30,
+				maxLogBytes: 8 << 20, maxArtifactBytes: 1 << 30, maxDiskBytes: 4 << 30,
+			},
+			runners.KindDocumentation: {
+				network: NetworkInferenceOnly, memoryBytes: 16 << 30, nanoCPUs: 4_000_000_000,
 				pidsLimit: 512, timeout: time.Hour, tmpfsBytes: 1 << 30,
 				maxLogBytes: 8 << 20, maxArtifactBytes: 1 << 30, maxDiskBytes: 4 << 30,
 			},

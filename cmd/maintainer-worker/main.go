@@ -62,7 +62,7 @@ func run(arguments []string) error {
 	if len(arguments) == 1 && arguments[0] == "verification" {
 		return runVerification("/inputs/00", "/workspace", "/artifacts")
 	}
-	if len(arguments) == 1 && (arguments[0] == "implementation" || arguments[0] == "qc" || arguments[0] == "test_designer") {
+	if len(arguments) == 1 && (arguments[0] == "implementation" || arguments[0] == "qc" || arguments[0] == "test_designer" || arguments[0] == "documentation") {
 		return runAgent(arguments[0], "/inputs/00", "/workspace", "/artifacts")
 	}
 	if len(arguments) == 2 && arguments[0] == "verify" && arguments[1] == "go-format" {
@@ -186,6 +186,11 @@ func runAgent(mode, packetPath, worktree, artifactRoot string) error {
 		result, err = agents.RunTestDesigner(context.Background(), client, payload)
 		if err == nil {
 			err = publishArtifact(artifactRoot, "test_proposal", "test_proposal", result)
+		}
+	case "documentation":
+		result, err = agents.RunDocumentation(context.Background(), client, payload, worktree)
+		if err == nil {
+			err = publishArtifact(artifactRoot, "documentation_manifest", "documentation_manifest", result)
 		}
 	default:
 		err = errors.New("agent mode is not allow-listed")
