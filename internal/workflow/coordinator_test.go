@@ -20,6 +20,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -161,6 +162,37 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		job, err = engine.Step(ctx, job.ID)
 		if err != nil {
 			t.Fatalf("step %d from %s: %v", steps, job.State, err)
+		}
+		if job.State == jobs.StateAwaitingTaskApproval {
+			break
+		}
+	}
+	if job.State != jobs.StateAwaitingTaskApproval {
+		t.Fatalf("job did not pause for task contract approval: %#v", job)
+	}
+	contract, err := store.GetTaskContract(ctx, job.ID)
+	if err != nil || contract.Status != "draft" || contract.ContractSHA256 == "" {
+		t.Fatalf("task contract = %#v, %v", contract, err)
+	}
+	assessments, err := store.ListRiskAssessments(ctx, job.ID, 10)
+	if err != nil || len(assessments) == 0 {
+		t.Fatalf("risk assessments = %#v, %v", assessments, err)
+	}
+	contract, err = store.ApproveTaskContract(ctx, taskcontract.ApprovalRequest{
+		JobID: job.ID, ExpectedVersion: contract.Version, ActorID: "operator", ActorRole: "operator",
+		Reason: "approve exact bounded fixture contract",
+	})
+	if err != nil || contract.Status != "approved" {
+		t.Fatalf("approve contract = %#v, %v", contract, err)
+	}
+	job, err = store.GetJob(ctx, job.ID)
+	if err != nil || job.State != jobs.StateLoadingImplementationModel || job.AcceptanceCriteriaHash == "" {
+		t.Fatalf("approved job = %#v, %v", job, err)
+	}
+	for steps := 0; steps < 30; steps++ {
+		job, err = engine.Step(ctx, job.ID)
+		if err != nil {
+			t.Fatalf("post-approval step %d from %s: %v", steps, job.State, err)
 		}
 		if job.State == jobs.StateAwaitingOperator {
 			break

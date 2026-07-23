@@ -23,7 +23,9 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	projectmemory "github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
+	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -42,6 +44,8 @@ type coordinatorStore interface {
 	storage.ConfigStore
 	storage.FindingStore
 	storage.ProjectStore
+	taskcontract.Store
+	risk.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -128,22 +132,30 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		}
 		return detailOutcome(map[string]any{"network": "dependency-egress", "cache_scope": job.ProjectID}), nil
 	case jobs.StateLockingAcceptanceCriteria:
-		criteria := []agents.Criterion{
-			{ID: "AC-REPRODUCE", Statement: "The reported behavior is reproduced by an allow-listed targeted test before implementation.", VerificationMethod: "targeted_tests"},
-			{ID: "AC-VERIFY", Statement: "The exact committed repair passes allow-listed targeted and full verification.", VerificationMethod: "full_tests"},
-			{ID: "AC-POLICY", Statement: "The exact committed diff passes protected-path, secret, binary, symlink, submodule, and size policy scans.", VerificationMethod: "diff_policy"},
-		}
-		payload, err := json.Marshal(criteria)
+		request, err := taskcontract.DraftFromTask(job.ID, job.Task, job.IssueNumber)
 		if err != nil {
 			return Outcome{}, err
 		}
-		digest := sha256.Sum256(payload)
-		hash := hex.EncodeToString(digest[:])
-		raw := json.RawMessage(payload)
-		return Outcome{
-			Details:  mustJSON(map[string]any{"criteria_hash": hash, "criteria_count": len(criteria)}),
-			Metadata: storage.JobMetadataPatch{AcceptanceCriteria: &raw, AcceptanceCriteriaHash: &hash},
-		}, nil
+		request.ActorID = "clarifier"
+		request.ActorRole = "system"
+		request.Reason = "controller generated bounded draft from submitted task"
+		contract, err := c.store.EnsureTaskContract(ctx, request)
+		if err != nil {
+			return Outcome{}, err
+		}
+		assessment, err := risk.Assess(contract, nil, "")
+		if err != nil {
+			return Outcome{}, err
+		}
+		assessment, err = c.store.SaveRiskAssessment(ctx, assessment)
+		if err != nil {
+			return Outcome{}, err
+		}
+		return detailOutcome(map[string]any{
+			"contract_version": contract.Version, "contract_sha256": contract.ContractSHA256,
+			"risk_assessment_id": assessment.ID, "risk_level": assessment.Level,
+			"next_gate": "awaiting_task_approval",
+		}), nil
 	case jobs.StateLoadingImplementationModel:
 		status, err := c.loadRole(ctx, "implementation")
 		if err != nil {

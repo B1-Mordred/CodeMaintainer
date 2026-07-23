@@ -129,7 +129,7 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 		jobs.StateSyncing:                    jobs.StateCreatingWorktree,
 		jobs.StateCreatingWorktree:           jobs.StatePreparingDependencies,
 		jobs.StatePreparingDependencies:      jobs.StateLockingAcceptanceCriteria,
-		jobs.StateLockingAcceptanceCriteria:  jobs.StateLoadingImplementationModel,
+		jobs.StateLockingAcceptanceCriteria:  jobs.StateAwaitingTaskApproval,
 		jobs.StateLoadingImplementationModel: jobs.StateReproducing,
 		jobs.StateReproducing:                jobs.StateImplementing,
 		jobs.StateImplementing:               jobs.StateVerifyingTargeted,

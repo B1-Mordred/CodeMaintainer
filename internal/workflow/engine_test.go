@@ -21,14 +21,14 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
-			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
+			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
-			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
+			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
 			jobs.StateRepairing, jobs.StateFinalVerification,
@@ -36,7 +36,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
-			jobs.StateLoadingImplementationModel, jobs.StateReproducing,
+			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 			jobs.StatePublishingBranch, jobs.StateDraftPRCreated,
@@ -155,7 +155,7 @@ func TestModelPhaseCannotExceedDurableTokenBudget(t *testing.T) {
 	}
 	for _, state := range []jobs.State{
 		jobs.StateSyncing, jobs.StateCreatingWorktree, jobs.StatePreparingDependencies,
-		jobs.StateLockingAcceptanceCriteria, jobs.StateLoadingImplementationModel,
+		jobs.StateLockingAcceptanceCriteria, jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel,
 		jobs.StateReproducing, jobs.StateImplementing,
 	} {
 		job, err = store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{To: state, ActorID: "test", Reason: "seed", ExpectedVersion: job.Version})

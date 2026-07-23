@@ -12,6 +12,7 @@ const (
 	StatePreparingDependencies      State = "preparing_dependencies"
 	StateCreatingWorktree           State = "creating_worktree"
 	StateLockingAcceptanceCriteria  State = "locking_acceptance_criteria"
+	StateAwaitingTaskApproval       State = "awaiting_task_approval"
 	StateLoadingImplementationModel State = "loading_implementation_model"
 	StateReproducing                State = "reproducing"
 	StateImplementing               State = "implementing"
@@ -36,6 +37,7 @@ var allStates = []State{
 	StatePreparingDependencies,
 	StateCreatingWorktree,
 	StateLockingAcceptanceCriteria,
+	StateAwaitingTaskApproval,
 	StateLoadingImplementationModel,
 	StateReproducing,
 	StateImplementing,
@@ -59,7 +61,8 @@ var transitions = map[State]map[State]struct{}{
 	StateSyncing:                    set(StateCreatingWorktree, StateCancelled, StateFailed),
 	StateCreatingWorktree:           set(StatePreparingDependencies, StateCancelled, StateFailed),
 	StatePreparingDependencies:      set(StateLockingAcceptanceCriteria, StateCancelled, StateFailed),
-	StateLockingAcceptanceCriteria:  set(StateLoadingImplementationModel, StateCancelled, StateFailed),
+	StateLockingAcceptanceCriteria:  set(StateAwaitingTaskApproval, StateCancelled, StateFailed),
+	StateAwaitingTaskApproval:       set(StateLoadingImplementationModel, StateCancelled, StateFailed),
 	StateLoadingImplementationModel: set(StateReproducing, StateCancelled, StateFailed),
 	StateReproducing:                set(StateImplementing, StateCancelled, StateFailed),
 	StateImplementing:               set(StateVerifyingTargeted, StateCancelled, StateFailed),
@@ -106,7 +109,7 @@ func (s State) Terminal() bool {
 }
 
 func (s State) Resumable() bool {
-	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator
+	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval
 }
 
 func CanTransition(from, to State) bool {

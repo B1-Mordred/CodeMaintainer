@@ -111,7 +111,7 @@ func seedForgeEventFixture(t *testing.T, ctx context.Context, provider string) (
 	}
 	for _, state := range []jobs.State{
 		jobs.StateSyncing, jobs.StateCreatingWorktree, jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
-		jobs.StateLoadingImplementationModel, jobs.StateReproducing, jobs.StateImplementing, jobs.StateVerifyingTargeted,
+		jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing, jobs.StateImplementing, jobs.StateVerifyingTargeted,
 		jobs.StateVerifyingFull, jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 		jobs.StatePublishingBranch, jobs.StateDraftPRCreated, jobs.StateCompleted,
 	} {

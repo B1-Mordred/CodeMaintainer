@@ -258,6 +258,11 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/task-contract", s.getTaskContract)
+	mux.HandleFunc("PUT /api/v1/jobs/{jobID}/task-contract", s.updateTaskContract)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/task-contract/actions/approve", s.approveTaskContract)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts", s.listJobArtifacts)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts/{artifactID}", s.downloadJobArtifact)
@@ -661,6 +666,30 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	response := map[string]any{
 		"job": job, "transitions": transitions, "findings": findings, "approvals": approvals, "phases": phases,
+	}
+	if contract, err := s.store.GetTaskContract(r.Context(), job.ID); err == nil {
+		response["task_contract"] = contract
+		events, eventErr := s.store.ListTaskContractEvents(r.Context(), job.ID, 100)
+		if eventErr != nil {
+			s.internalError(w, r, eventErr)
+			return
+		}
+		response["task_contract_events"] = events
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if assessments, err := s.store.ListRiskAssessments(r.Context(), job.ID, 100); err == nil {
+		response["risk_assessments"] = assessments
+		waivers, waiverErr := s.store.ListRiskWaivers(r.Context(), job.ID, 100)
+		if waiverErr != nil {
+			s.internalError(w, r, waiverErr)
+			return
+		}
+		response["risk_waivers"] = waivers
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
 	}
 	configurationSnapshot, err := s.store.GetJobConfigSnapshot(r.Context(), job.ID)
 	if err == nil {

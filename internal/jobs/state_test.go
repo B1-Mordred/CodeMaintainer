@@ -35,7 +35,7 @@ func TestHappyPathAndRepairPathTransitions(t *testing.T) {
 		{
 			StateQueued, StateSyncing, StateCreatingWorktree,
 			StatePreparingDependencies, StateLockingAcceptanceCriteria,
-			StateLoadingImplementationModel, StateReproducing,
+			StateAwaitingTaskApproval, StateLoadingImplementationModel, StateReproducing,
 			StateImplementing, StateVerifyingTargeted, StateVerifyingFull,
 			StateLoadingQCModel, StateQCReview, StateAwaitingOperator,
 			StatePublishingBranch, StateDraftPRCreated, StateCompleted,
@@ -59,6 +59,7 @@ func TestDangerousShortcutsAreRejected(t *testing.T) {
 	for _, tc := range []struct{ from, to State }{
 		{StateQueued, StateCompleted},
 		{StateImplementing, StateAwaitingOperator},
+		{StateLockingAcceptanceCriteria, StateLoadingImplementationModel},
 		{StateQCReview, StatePublishingBranch},
 		{StateAwaitingRepair, StateCompleted},
 		{StateCompleted, StateQueued},

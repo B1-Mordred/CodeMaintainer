@@ -1257,8 +1257,126 @@ paths:
                   findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
                   approvals: { type: array, items: { $ref: "#/components/schemas/Approval" } }
                   phases: { type: array, items: { $ref: "#/components/schemas/PhaseRecord" } }
+                  task_contract: { $ref: "#/components/schemas/TaskContract" }
+                  task_contract_events: { type: array, items: { $ref: "#/components/schemas/TaskContractEvent" } }
+                  risk_assessments: { type: array, items: { $ref: "#/components/schemas/RiskAssessment" } }
+                  risk_waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/task-contract:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: Inspect the versioned task contract and question history for one job
+      operationId: getTaskContract
+      responses:
+        "200":
+          description: Task contract and append-only contract events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract, events]
+                properties:
+                  contract: { $ref: "#/components/schemas/TaskContract" }
+                  events: { type: array, items: { $ref: "#/components/schemas/TaskContractEvent" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+    put:
+      summary: Edit the draft task contract without broadening controller authority
+      operationId: updateTaskContract
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskContractUpdateRequest" }
+      responses:
+        "200":
+          description: Updated draft contract and deterministic risk assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract, risk_assessment]
+                properties:
+                  contract: { $ref: "#/components/schemas/TaskContract" }
+                  risk_assessment: { $ref: "#/components/schemas/RiskAssessment" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/task-contract/actions/approve:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    post:
+      summary: Approve the exact task contract before implementation may continue
+      operationId: approveTaskContract
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_version, reason]
+              properties:
+                expected_version: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "200":
+          description: Approved contract and latest risk assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract]
+                properties:
+                  contract: { $ref: "#/components/schemas/TaskContract" }
+                  risk_assessment: { $ref: "#/components/schemas/RiskAssessment" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/risk:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List deterministic risk assessments and waivers for one job
+      operationId: getJobRisk
+      responses:
+        "200":
+          description: Risk evidence history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assessments, waivers]
+                properties:
+                  assessments: { type: array, items: { $ref: "#/components/schemas/RiskAssessment" } }
+                  waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/risk/waivers:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    post:
+      summary: Lower risk only through an authorized, reasoned, expiring waiver
+      operationId: createRiskWaiver
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RiskWaiverRequest" }
+      responses:
+        "201":
+          description: Created risk waiver and resulting assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [waiver, risk_assessment]
+                properties:
+                  waiver: { $ref: "#/components/schemas/RiskWaiver" }
+                  risk_assessment: { $ref: "#/components/schemas/RiskAssessment" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/events:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -3019,7 +3137,153 @@ components:
         replay: { type: boolean }
     JobState:
       type: string
-      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+    TaskContractCriterion:
+      type: object
+      additionalProperties: false
+      required: [id, statement, verification_method]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        statement: { type: string, minLength: 1, maxLength: 8000 }
+        verification_method: { type: string, minLength: 1, maxLength: 8000 }
+    TaskContractQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, question]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        question: { type: string, minLength: 1, maxLength: 4000 }
+        answer: { type: string, maxLength: 8000 }
+        answered_by: { type: string, maxLength: 128 }
+    TaskContract:
+      type: object
+      additionalProperties: false
+      required: [job_id, schema_version, version, status, source_kind, requested_behavior, explicit_non_goals, affected_users, acceptance_criteria, constraints, likely_components, likely_risks, required_evidence, required_documentation, assumptions, questions, completion_checklist, contract_sha256, created_at, updated_at]
+      properties:
+        job_id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, approved] }
+        source_kind: { type: string, enum: [free_form, issue, forge_object] }
+        source_ref: { type: string, maxLength: 256 }
+        requested_behavior: { type: string, minLength: 1, maxLength: 131072 }
+        explicit_non_goals: { type: array, maxItems: 32, items: { type: string, maxLength: 4000 } }
+        affected_users: { type: array, maxItems: 32, items: { type: string, maxLength: 2000 } }
+        acceptance_criteria: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractCriterion" } }
+        constraints: { type: array, maxItems: 64, items: { type: string, maxLength: 4000 } }
+        likely_components: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        likely_risks: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        required_evidence: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        required_documentation: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        assumptions: { type: array, maxItems: 64, items: { type: string, maxLength: 4000 } }
+        questions: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractQuestion" } }
+        completion_checklist: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractCriterion" } }
+        contract_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        approved_by: { type: string }
+        approved_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TaskContractUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason, source_kind, requested_behavior, explicit_non_goals, affected_users, acceptance_criteria, constraints, likely_components, likely_risks, required_evidence, required_documentation, assumptions, questions, completion_checklist]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 4000 }
+        source_kind: { type: string, enum: [free_form, issue, forge_object] }
+        source_ref: { type: string, maxLength: 256 }
+        requested_behavior: { type: string, minLength: 1, maxLength: 131072 }
+        explicit_non_goals: { type: array, maxItems: 32, items: { type: string, maxLength: 4000 } }
+        affected_users: { type: array, maxItems: 32, items: { type: string, maxLength: 2000 } }
+        acceptance_criteria: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractCriterion" } }
+        constraints: { type: array, maxItems: 64, items: { type: string, maxLength: 4000 } }
+        likely_components: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        likely_risks: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        required_evidence: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        required_documentation: { type: array, maxItems: 64, items: { type: string, maxLength: 512 } }
+        assumptions: { type: array, maxItems: 64, items: { type: string, maxLength: 4000 } }
+        questions: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractQuestion" } }
+        completion_checklist: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/TaskContractCriterion" } }
+    TaskContractEvent:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, version, action, actor_id, actor_role, reason, details, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        version: { type: integer, minimum: 1 }
+        action: { type: string, enum: [upsert, approve] }
+        actor_id: { type: string }
+        actor_role: { type: string }
+        reason: { type: string }
+        details: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    RiskLevel:
+      type: string
+      enum: [low, medium, high]
+    RiskSignal:
+      type: object
+      additionalProperties: false
+      required: [id, weight, matched, explanation]
+      properties:
+        id: { type: string }
+        weight: { type: integer, minimum: 0, maximum: 100 }
+        matched: { type: boolean }
+        explanation: { type: string }
+    RiskRouting:
+      type: object
+      additionalProperties: false
+      required: [required_stages, manual_gates, full_verification, documentation_review, publish_allowed]
+      properties:
+        required_stages: { type: array, items: { type: string } }
+        manual_gates: { type: array, items: { type: string } }
+        full_verification: { type: boolean }
+        documentation_review: { type: boolean }
+        publish_allowed: { type: boolean }
+    RiskAssessment:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, schema_version, contract_version, contract_sha256, level, score, signals, routing, policy_decision, explanation, requested_by_operator, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        contract_version: { type: integer, minimum: 1 }
+        contract_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        level: { $ref: "#/components/schemas/RiskLevel" }
+        score: { type: integer, minimum: 0 }
+        signals: { type: array, items: { $ref: "#/components/schemas/RiskSignal" } }
+        routing: { $ref: "#/components/schemas/RiskRouting" }
+        policy_decision: { type: object, additionalProperties: true }
+        explanation: { type: string }
+        requested_by_operator: { type: boolean }
+        superseded_by: { type: string }
+        created_at: { type: string, format: date-time }
+    RiskWaiver:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, assessment_id, from_level, to_level, reason, actor_id, actor_role, reauthenticated, expires_at, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        assessment_id: { type: string }
+        from_level: { $ref: "#/components/schemas/RiskLevel" }
+        to_level: { $ref: "#/components/schemas/RiskLevel" }
+        reason: { type: string, minLength: 1, maxLength: 4000 }
+        actor_id: { type: string }
+        actor_role: { type: string, enum: [reviewer, administrator] }
+        reauthenticated: { type: boolean }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    RiskWaiverRequest:
+      type: object
+      additionalProperties: false
+      required: [assessment_id, to_level, reason, expires_at]
+      properties:
+        assessment_id: { type: string }
+        to_level: { $ref: "#/components/schemas/RiskLevel" }
+        reason: { type: string, minLength: 1, maxLength: 4000 }
+        expires_at: { type: string, format: date-time }
     CreateJobRequest:
       type: object
       additionalProperties: false

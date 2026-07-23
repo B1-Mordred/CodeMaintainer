@@ -120,9 +120,96 @@ func run(arguments []string) error {
 		return api.forge(arguments[1:])
 	case "windows-worker":
 		return api.windowsWorker(arguments[1:])
+	case "contract":
+		return api.contract(arguments[1:])
+	case "risk":
+		return api.risk(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) contract(arguments []string) error {
+	if len(arguments) < 2 {
+		return errors.New("usage: maintainctl contract <get|update|approve> <job-id> ...")
+	}
+	jobID := url.PathEscape(arguments[1])
+	base := "/api/v1/jobs/" + jobID + "/task-contract"
+	switch arguments[0] {
+	case "get":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl contract get <job-id>")
+		}
+		return c.printJSON(http.MethodGet, base, nil)
+	case "update":
+		flags := flag.NewFlagSet("contract update", flag.ContinueOnError)
+		version := flags.Int64("version", 0, "current task-contract version")
+		reason := flags.String("reason", "", "audited contract edit reason")
+		file := flags.String("file", "", "task-contract JSON document")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *version < 1 || strings.TrimSpace(*reason) == "" || *file == "" {
+			return errors.New("usage: maintainctl contract update <job-id> --version <n> --reason <text> --file <json>")
+		}
+		raw, err := readJSONDocument(*file)
+		if err != nil {
+			return err
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return err
+		}
+		body["expected_version"] = *version
+		body["reason"] = *reason
+		return c.printJSON(http.MethodPut, base, body)
+	case "approve":
+		flags := flag.NewFlagSet("contract approve", flag.ContinueOnError)
+		version := flags.Int64("version", 0, "current task-contract version")
+		reason := flags.String("reason", "", "audited approval reason")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *version < 1 || strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl contract approve <job-id> --version <n> --reason <text>")
+		}
+		return c.printJSON(http.MethodPost, base+"/actions/approve", map[string]any{"expected_version": *version, "reason": *reason})
+	default:
+		return fmt.Errorf("contract action %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) risk(arguments []string) error {
+	if len(arguments) < 2 {
+		return errors.New("usage: maintainctl risk <get|waive> <job-id> ...")
+	}
+	jobID := url.PathEscape(arguments[1])
+	base := "/api/v1/jobs/" + jobID + "/risk"
+	switch arguments[0] {
+	case "get":
+		if len(arguments) != 2 {
+			return errors.New("usage: maintainctl risk get <job-id>")
+		}
+		return c.printJSON(http.MethodGet, base, nil)
+	case "waive":
+		flags := flag.NewFlagSet("risk waive", flag.ContinueOnError)
+		assessmentID := flags.String("assessment", "", "current risk assessment ID")
+		toLevel := flags.String("to", "", "lower target level: low or medium")
+		reason := flags.String("reason", "", "audited risk-waiver reason")
+		expiresAt := flags.String("expires-at", "", "RFC3339 waiver expiry")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *assessmentID == "" || (*toLevel != "low" && *toLevel != "medium") || strings.TrimSpace(*reason) == "" || *expiresAt == "" {
+			return errors.New("usage: maintainctl risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>; reauthenticate first")
+		}
+		if _, err := time.Parse(time.RFC3339, *expiresAt); err != nil {
+			return fmt.Errorf("expires-at must be RFC3339: %w", err)
+		}
+		return c.printJSON(http.MethodPost, base+"/waivers", map[string]any{"assessment_id": *assessmentID, "to_level": *toLevel, "reason": *reason, "expires_at": *expiresAt})
+	default:
+		return fmt.Errorf("risk action %q is not implemented", arguments[0])
 	}
 }
 
@@ -1074,6 +1161,11 @@ Commands:
   verify <job-id>
   review <job-id>
   publish <job-id> --draft-pr [--rationale text]
+  contract get <job-id>
+  contract update <job-id> --version <n> --reason <text> --file <json>
+  contract approve <job-id> --version <n> --reason <text>
+  risk get <job-id>
+  risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
   open [job-id]
   backup
   restore (--dry-run|--apply) <backup-id>

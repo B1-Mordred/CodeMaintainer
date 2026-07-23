@@ -24,7 +24,7 @@ func TestPublicationApprovalRequiresReviewerReauthenticationAndBindsExactSHA(t *
 	}
 	path := []jobs.State{
 		jobs.StateSyncing, jobs.StateCreatingWorktree, jobs.StatePreparingDependencies,
-		jobs.StateLockingAcceptanceCriteria, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
+		jobs.StateLockingAcceptanceCriteria, jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 		jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 		jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 	}

@@ -19,6 +19,8 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
+	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 )
 
@@ -205,6 +207,8 @@ type Store interface {
 	intelligence.Store
 	capabilities.Store
 	forges.Store
+	taskcontract.Store
+	risk.Store
 	windowsworker.Store
 	Close() error
 }

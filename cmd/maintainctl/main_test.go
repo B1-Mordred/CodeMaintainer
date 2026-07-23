@@ -148,6 +148,50 @@ func TestIntelligenceCacheSimulationUsesTypedBoundedAPI(t *testing.T) {
 	}
 }
 
+func TestContractApprovalUsesExactVersionAndReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/jobs/job-one/task-contract/actions/approve" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["expected_version"] != float64(3) || body["reason"] != "scope reviewed" {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"contract":{"job_id":"job-one","schema_version":1,"version":3,"status":"approved","source_kind":"free_form","requested_behavior":"repair","explicit_non_goals":[],"affected_users":[],"acceptance_criteria":[{"id":"AC","statement":"ok","verification_method":"test"}],"constraints":[],"likely_components":[],"likely_risks":[],"required_evidence":[],"required_documentation":[],"assumptions":[],"questions":[],"completion_checklist":[{"id":"DONE","statement":"done","verification_method":"audit"}],"contract_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-07-23T00:00:00Z","updated_at":"2026-07-23T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.contract([]string{"approve", "job-one", "--version", "3", "--reason", "scope reviewed"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRiskWaiverUsesServerSideReauthenticationContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/jobs/job-one/risk/waivers" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["assessment_id"] != "risk-one" || body["to_level"] != "medium" || body["reason"] != "temporary fixture waiver" || body["reauthenticated"] != nil {
+			t.Errorf("unexpected body %#v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"waiver":{"id":"waiver-one","job_id":"job-one","assessment_id":"risk-one","from_level":"high","to_level":"medium","reason":"temporary fixture waiver","actor_id":"reviewer","actor_role":"reviewer","reauthenticated":true,"expires_at":"2026-07-24T00:00:00Z","created_at":"2026-07-23T00:00:00Z"},"risk_assessment":{"id":"risk-two","job_id":"job-one","schema_version":1,"contract_version":1,"contract_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","level":"medium","score":100,"signals":[],"routing":{"required_stages":[],"manual_gates":[],"full_verification":true,"documentation_review":true,"publish_allowed":true},"policy_decision":{},"explanation":"waived","requested_by_operator":false,"created_at":"2026-07-23T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	if err := client.risk([]string{"waive", "job-one", "--assessment", "risk-one", "--to", "medium", "--reason", "temporary fixture waiver", "--expires-at", "2026-07-24T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/differentials/differential-one/actions/correct" {

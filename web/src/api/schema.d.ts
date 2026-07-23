@@ -1382,6 +1382,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/task-contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** Inspect the versioned task contract and question history for one job */
+        get: operations["getTaskContract"];
+        /** Edit the draft task contract without broadening controller authority */
+        put: operations["updateTaskContract"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/task-contract/actions/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve the exact task contract before implementation may continue */
+        post: operations["approveTaskContract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/risk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List deterministic risk assessments and waivers for one job */
+        get: operations["getJobRisk"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/risk/waivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lower risk only through an authorized, reasoned, expiring waiver */
+        post: operations["createRiskWaiver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/events": {
         parameters: {
             query?: {
@@ -3143,7 +3220,141 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        TaskContractCriterion: {
+            id: string;
+            statement: string;
+            verification_method: string;
+        };
+        TaskContractQuestion: {
+            id: string;
+            question: string;
+            answer?: string;
+            answered_by?: string;
+        };
+        TaskContract: {
+            job_id: string;
+            /** @constant */
+            schema_version: 1;
+            version: number;
+            /** @enum {string} */
+            status: "draft" | "approved";
+            /** @enum {string} */
+            source_kind: "free_form" | "issue" | "forge_object";
+            source_ref?: string;
+            requested_behavior: string;
+            explicit_non_goals: string[];
+            affected_users: string[];
+            acceptance_criteria: components["schemas"]["TaskContractCriterion"][];
+            constraints: string[];
+            likely_components: string[];
+            likely_risks: string[];
+            required_evidence: string[];
+            required_documentation: string[];
+            assumptions: string[];
+            questions: components["schemas"]["TaskContractQuestion"][];
+            completion_checklist: components["schemas"]["TaskContractCriterion"][];
+            contract_sha256: string;
+            approved_by?: string;
+            /** Format: date-time */
+            approved_at?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        TaskContractUpdateRequest: {
+            expected_version: number;
+            reason: string;
+            /** @enum {string} */
+            source_kind: "free_form" | "issue" | "forge_object";
+            source_ref?: string;
+            requested_behavior: string;
+            explicit_non_goals: string[];
+            affected_users: string[];
+            acceptance_criteria: components["schemas"]["TaskContractCriterion"][];
+            constraints: string[];
+            likely_components: string[];
+            likely_risks: string[];
+            required_evidence: string[];
+            required_documentation: string[];
+            assumptions: string[];
+            questions: components["schemas"]["TaskContractQuestion"][];
+            completion_checklist: components["schemas"]["TaskContractCriterion"][];
+        };
+        TaskContractEvent: {
+            id: string;
+            job_id: string;
+            version: number;
+            /** @enum {string} */
+            action: "upsert" | "approve";
+            actor_id: string;
+            actor_role: string;
+            reason: string;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @enum {string} */
+        RiskLevel: "low" | "medium" | "high";
+        RiskSignal: {
+            id: string;
+            weight: number;
+            matched: boolean;
+            explanation: string;
+        };
+        RiskRouting: {
+            required_stages: string[];
+            manual_gates: string[];
+            full_verification: boolean;
+            documentation_review: boolean;
+            publish_allowed: boolean;
+        };
+        RiskAssessment: {
+            id: string;
+            job_id: string;
+            /** @constant */
+            schema_version: 1;
+            contract_version: number;
+            contract_sha256: string;
+            level: components["schemas"]["RiskLevel"];
+            score: number;
+            signals: components["schemas"]["RiskSignal"][];
+            routing: components["schemas"]["RiskRouting"];
+            policy_decision: {
+                [key: string]: unknown;
+            };
+            explanation: string;
+            requested_by_operator: boolean;
+            superseded_by?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RiskWaiver: {
+            id: string;
+            job_id: string;
+            assessment_id: string;
+            from_level: components["schemas"]["RiskLevel"];
+            to_level: components["schemas"]["RiskLevel"];
+            reason: string;
+            actor_id: string;
+            /** @enum {string} */
+            actor_role: "reviewer" | "administrator";
+            reauthenticated: boolean;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RiskWaiverRequest: {
+            assessment_id: string;
+            to_level: components["schemas"]["RiskLevel"];
+            reason: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
         CreateJobRequest: {
             project_id: string;
             repository: string;
@@ -6218,11 +6429,169 @@ export interface operations {
                         findings: components["schemas"]["Finding"][];
                         approvals: components["schemas"]["Approval"][];
                         phases: components["schemas"]["PhaseRecord"][];
+                        task_contract?: components["schemas"]["TaskContract"];
+                        task_contract_events?: components["schemas"]["TaskContractEvent"][];
+                        risk_assessments?: components["schemas"]["RiskAssessment"][];
+                        risk_waivers?: components["schemas"]["RiskWaiver"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    getTaskContract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task contract and append-only contract events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        contract: components["schemas"]["TaskContract"];
+                        events: components["schemas"]["TaskContractEvent"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateTaskContract: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskContractUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated draft contract and deterministic risk assessment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        contract: components["schemas"]["TaskContract"];
+                        risk_assessment: components["schemas"]["RiskAssessment"];
+                    };
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    approveTaskContract: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_version: number;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Approved contract and latest risk assessment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        contract: components["schemas"]["TaskContract"];
+                        risk_assessment?: components["schemas"]["RiskAssessment"];
+                    };
+                };
+            };
+            409: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    getJobRisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Risk evidence history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        assessments: components["schemas"]["RiskAssessment"][];
+                        waivers: components["schemas"]["RiskWaiver"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    createRiskWaiver: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskWaiverRequest"];
+            };
+        };
+        responses: {
+            /** @description Created risk waiver and resulting assessment */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        waiver: components["schemas"]["RiskWaiver"];
+                        risk_assessment: components["schemas"]["RiskAssessment"];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
         };
     };
     streamJobEvents: {
