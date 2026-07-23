@@ -21,6 +21,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -93,6 +94,20 @@ func (f fixtureExecution) Review(_ context.Context, job jobs.Job, packet agents.
 	return agents.DecodeQCReport(payload, packet)
 }
 
+func (f fixtureExecution) DesignTests(_ context.Context, job jobs.Job, packet agents.TaskPacket) (testdesigner.Report, error) {
+	report := testdesigner.Report{
+		JobID: job.ID, SchemaVersion: 1, ContractSHA256: packet.ContractSHA256,
+		RiskLevel: packet.RiskLevel, ResultSHA: packet.ResultSHA, SourceContext: "independent_test_designer_context_v1",
+		Status: "proposed", DispositionsRequired: true,
+		Proposals: []testdesigner.Proposal{{
+			ID: "TD-FIXTURE-001", Category: "boundary_case", Claim: "negative coverage is required",
+			Rationale: "candidate diff changes arithmetic behavior", EvidenceIDs: []string{"candidate_diff"},
+			SuggestedTests: []string{"TestAddNegative"}, GoldenRehearsals: []string{}, Disposition: "pending",
+		}},
+	}
+	return report, report.Validate()
+}
+
 func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -123,7 +138,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		t.Fatal(err)
 	}
 	job, err := store.CreateJob(ctx, storage.CreateJobParams{
-		ID: "job_e2e", ProjectID: "fixture", Repository: "fixture/arithmetic", Task: "repair Add", ActorID: "operator",
+		ID: "job_e2e", ProjectID: "fixture", Repository: "fixture/arithmetic", Task: "repair Add auth regression", ActorID: "operator",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +165,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	}
 	modelManager := models.NewFake([]models.Profile{
 		{ID: "implementation", Role: "implementation", ModelFamily: "qwen", Context: 32768},
+		{ID: "test_designer", Role: "test_designer", ModelFamily: "gemma", Context: 32768},
 		{ID: "qc", Role: "qc", ModelFamily: "mistral", Context: 32768},
 	})
 	coordinator, err := NewCoordinator(store, git, modelManager, fixtureExecution{worktrees: filepath.Join(root, "worktrees")},
@@ -201,6 +217,10 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if job.State != jobs.StateAwaitingOperator || job.ReviewCycle != 1 || job.BaseSHA == "" || job.ResultSHA == "" {
 		t.Fatalf("job did not reach reviewed approval gate: %#v", job)
 	}
+	testReports, err := store.ListTestDesignerReports(ctx, job.ID, 10)
+	if err != nil || len(testReports) != 1 || testReports[0].Status != "proposed" || testReports[0].Proposals[0].Disposition != "pending" {
+		t.Fatalf("test designer reports = %#v, %v", testReports, err)
+	}
 	storedFindings, err := store.ListFindings(ctx, job.ID)
 	if err != nil || len(storedFindings) != 1 || storedFindings[0].Status != findings.StatusClosed {
 		t.Fatalf("finding lifecycle = %#v, %v", storedFindings, err)
@@ -244,7 +264,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 			}
 		}
 	}
-	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings"} {
+	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer"} {
 		if !sources[required] {
 			t.Fatalf("context manifests omitted production source %q: %#v", required, sources)
 		}

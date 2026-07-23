@@ -21,6 +21,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 )
 
@@ -209,6 +210,7 @@ type Store interface {
 	agents.Store
 	forges.Store
 	taskcontract.Store
+	testdesigner.Store
 	risk.Store
 	windowsworker.Store
 	Close() error

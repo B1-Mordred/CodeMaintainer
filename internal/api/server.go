@@ -263,6 +263,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("PUT /api/v1/jobs/{jobID}/task-contract", s.updateTaskContract)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/task-contract/actions/approve", s.approveTaskContract)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/agent-contract-validations", s.listJobAgentContractValidations)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/test-designer", s.listJobTestDesignerReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
@@ -695,6 +696,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if validations, err := s.store.ListAgentContractValidations(r.Context(), job.ID, 100); err == nil {
 		response["agent_contract_validations"] = validations
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if reports, err := s.store.ListTestDesignerReports(r.Context(), job.ID, 100); err == nil {
+		response["test_designer_reports"] = reports
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

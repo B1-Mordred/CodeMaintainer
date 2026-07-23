@@ -13,6 +13,7 @@ import (
 
 type Outcome struct {
 	NeedsRepair bool                     `json:"needs_repair"`
+	NextState   jobs.State               `json:"next_state,omitempty"`
 	Details     json.RawMessage          `json:"details"`
 	Metadata    storage.JobMetadataPatch `json:"-"`
 }
@@ -91,7 +92,7 @@ func (e *Engine) fail(ctx context.Context, job jobs.Job, cause error, reason str
 
 func phaseTokenReservation(state jobs.State) int {
 	switch state {
-	case jobs.StateImplementing, jobs.StateQCReview, jobs.StateRepairing:
+	case jobs.StateImplementing, jobs.StateTestDesignReview, jobs.StateQCReview, jobs.StateRepairing:
 		return 16_384
 	default:
 		return 0
@@ -124,6 +125,12 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 		}
 		return "", fmt.Errorf("state %s cannot request repair", state)
 	}
+	if outcome.NextState != "" {
+		if jobs.CanTransition(state, outcome.NextState) {
+			return outcome.NextState, nil
+		}
+		return "", fmt.Errorf("state %s cannot route to %s", state, outcome.NextState)
+	}
 	next := map[jobs.State]jobs.State{
 		jobs.StateQueued:                     jobs.StateSyncing,
 		jobs.StateSyncing:                    jobs.StateCreatingWorktree,
@@ -135,6 +142,8 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 		jobs.StateImplementing:               jobs.StateVerifyingTargeted,
 		jobs.StateVerifyingTargeted:          jobs.StateVerifyingFull,
 		jobs.StateVerifyingFull:              jobs.StateLoadingQCModel,
+		jobs.StateLoadingTestDesignerModel:   jobs.StateTestDesignReview,
+		jobs.StateTestDesignReview:           jobs.StateLoadingQCModel,
 		jobs.StateLoadingQCModel:             jobs.StateQCReview,
 		jobs.StateQCReview:                   jobs.StateAwaitingOperator,
 		jobs.StateAwaitingRepair:             jobs.StateRepairing,

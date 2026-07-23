@@ -10,6 +10,7 @@ import (
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -92,6 +93,22 @@ func (b *DeterministicBackend) Verify(_ context.Context, job jobs.Job, _ verific
 		SchemaVersion: 1, Passed: passed,
 		Scan: &verification.ScanResult{HeadSHA: head, PatchSHA256: agents.HashContent(answer)}, Results: results,
 	}, nil
+}
+
+func (*DeterministicBackend) DesignTests(_ context.Context, job jobs.Job, packet agents.TaskPacket) (testdesigner.Report, error) {
+	report := testdesigner.Report{
+		JobID: job.ID, SchemaVersion: 1, ContractSHA256: packet.ContractSHA256,
+		RiskLevel: packet.RiskLevel, ResultSHA: packet.ResultSHA, SourceContext: "independent_test_designer_context_v1",
+		Status: "proposed", DispositionsRequired: true,
+		Proposals: []testdesigner.Proposal{{
+			ID: "TD-FIXTURE-001", Category: "regression_coverage",
+			Claim:       "Add or retain a boundary regression for the candidate change.",
+			Rationale:   "The independent Test Designer receives only the approved contract, bounded context, baseline evidence, and candidate diff.",
+			EvidenceIDs: []string{"candidate_diff", "baseline_evidence"}, SuggestedTests: []string{"boundary regression test"},
+			GoldenRehearsals: []string{}, Disposition: "pending",
+		}},
+	}
+	return report, report.Validate()
 }
 
 func (*DeterministicBackend) Review(_ context.Context, job jobs.Job, packet agents.TaskPacket) (agents.QCReport, error) {

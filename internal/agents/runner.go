@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 )
 
 //go:embed prompts/*.txt
@@ -125,6 +127,26 @@ func RunQC(ctx context.Context, client *ModelClient, packetPayload []byte) ([]by
 		return nil, err
 	}
 	report, err := DecodeQCReport(response, packet)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(report)
+}
+
+func RunTestDesigner(ctx context.Context, client *ModelClient, packetPayload []byte) ([]byte, error) {
+	packet, err := DecodeTaskPacket(packetPayload, "test_designer")
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := promptFiles.ReadFile("prompts/test_designer.txt")
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.Complete(ctx, string(prompt), packet, ContractTestProposal)
+	if err != nil {
+		return nil, err
+	}
+	report, err := testdesigner.DecodeReport(response, packet.JobID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
 	if err != nil {
 		return nil, err
 	}

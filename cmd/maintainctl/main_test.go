@@ -213,6 +213,22 @@ func TestAgentContractsCLIListsSchemasAndJobValidationEvidence(t *testing.T) {
 	}
 }
 
+func TestTestDesignerCLIListsJobReports(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/jobs/job-one/test-designer" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"reports":[]}`))
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"test-designer", "job-one"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/differentials/differential-one/actions/correct" {

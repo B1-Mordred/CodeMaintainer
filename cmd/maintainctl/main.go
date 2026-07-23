@@ -132,6 +132,11 @@ func run(arguments []string) error {
 			return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/agent-contract-validations", nil)
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/agent-contracts", nil)
+	case "test-designer":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl test-designer <job-id>")
+		}
+		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/test-designer", nil)
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
@@ -1175,6 +1180,7 @@ Commands:
   risk get <job-id>
   risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
   agent-contracts [job-id]
+  test-designer <job-id>
   open [job-id]
   backup
   restore (--dry-run|--apply) <backup-id>

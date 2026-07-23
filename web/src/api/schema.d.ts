@@ -1457,6 +1457,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/test-designer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List independent Test Designer proposals and dispositions for one job */
+        get: operations["listJobTestDesignerReports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/risk": {
         parameters: {
             query?: never;
@@ -3256,7 +3275,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -3293,6 +3312,34 @@ export interface components {
             valid: boolean;
             error: string;
             artifact_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TestDesignerProposal: {
+            id: string;
+            category: string;
+            claim: string;
+            rationale: string;
+            evidence_ids: string[];
+            suggested_tests: string[];
+            golden_rehearsals: string[];
+            /** @enum {string} */
+            disposition: "pending" | "accepted" | "rejected" | "not_applicable";
+            disposition_reason?: string;
+        };
+        TestDesignerReport: {
+            id: string;
+            job_id: string;
+            /** @constant */
+            schema_version: 1;
+            contract_sha256: string;
+            risk_level: components["schemas"]["RiskLevel"];
+            result_sha: string;
+            source_context: string;
+            proposals: components["schemas"]["TestDesignerProposal"][];
+            dispositions_required: boolean;
+            /** @enum {string} */
+            status: "proposed" | "skipped";
             /** Format: date-time */
             created_at: string;
         };
@@ -6509,6 +6556,7 @@ export interface operations {
                         risk_assessments?: components["schemas"]["RiskAssessment"][];
                         risk_waivers?: components["schemas"]["RiskWaiver"][];
                         agent_contract_validations?: components["schemas"]["AgentContractValidation"][];
+                        test_designer_reports?: components["schemas"]["TestDesignerReport"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
@@ -6657,6 +6705,33 @@ export interface operations {
                 content: {
                     "application/json": {
                         validations: components["schemas"]["AgentContractValidation"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobTestDesignerReports: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test Designer report history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reports: components["schemas"]["TestDesignerReport"][];
                     };
                 };
             };

@@ -16,6 +16,7 @@ const (
 	KindImplementation Kind = "implementation"
 	KindVerification   Kind = "verification"
 	KindQC             Kind = "qc"
+	KindTestDesigner   Kind = "test_designer"
 )
 
 type JobRequest struct {
@@ -123,5 +124,5 @@ func (f *Fake) Stop(_ context.Context, id RunID) error {
 func (f *Fake) Artifacts(context.Context, RunID) ([]Artifact, error) { return []Artifact{}, nil }
 
 func (k Kind) Valid() bool {
-	return k == KindDependencies || k == KindImplementation || k == KindVerification || k == KindQC
+	return k == KindDependencies || k == KindImplementation || k == KindVerification || k == KindQC || k == KindTestDesigner
 }

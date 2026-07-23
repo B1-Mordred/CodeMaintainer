@@ -23,6 +23,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
+			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
@@ -30,6 +31,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
+			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
 			jobs.StateRepairing, jobs.StateFinalVerification,
 		},
@@ -38,6 +40,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StatePreparingDependencies, jobs.StateLockingAcceptanceCriteria,
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
+			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 			jobs.StatePublishingBranch, jobs.StateDraftPRCreated,
 		},
@@ -175,6 +178,16 @@ func TestRepairOutcomeCannotBypassTransitionPolicy(t *testing.T) {
 	}
 	if next, err := nextState(jobs.StateQCReview, Outcome{NeedsRepair: true}); err != nil || next != jobs.StateAwaitingRepair {
 		t.Fatalf("QC repair outcome = %s, %v", next, err)
+	}
+}
+
+func TestOutcomeCanRouteFullVerificationThroughTestDesigner(t *testing.T) {
+	next, err := nextState(jobs.StateVerifyingFull, Outcome{NextState: jobs.StateLoadingTestDesignerModel})
+	if err != nil || next != jobs.StateLoadingTestDesignerModel {
+		t.Fatalf("test-designer route = %s, %v", next, err)
+	}
+	if _, err := nextState(jobs.StateQueued, Outcome{NextState: jobs.StateLoadingTestDesignerModel}); err == nil {
+		t.Fatal("invalid explicit route bypassed transition policy")
 	}
 }
 

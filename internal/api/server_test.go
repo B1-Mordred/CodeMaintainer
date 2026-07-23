@@ -30,6 +30,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
 	windowssimulator "github.com/B1-Mordred/CodeMaintainer/internal/windowsworker/simulator"
 )
@@ -1530,6 +1531,53 @@ func TestAgentContractSchemasAndValidationEvidenceAreVisible(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("agent_contract_validations")) {
 		t.Fatalf("job detail omitted agent validation evidence: %d %s", response.StatusCode, body)
+	}
+}
+
+func TestTestDesignerReportsAreVisibleOnJobDetailAndEndpoint(t *testing.T) {
+	server, store := testServer(t)
+	ctx := context.Background()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_test_designer_api", ProjectID: "owner-repo", Repository: "owner/repo", Task: "medium risk auth change", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := testdesigner.Report{
+		JobID: job.ID, SchemaVersion: 1, ContractSHA256: strings.Repeat("a", 64),
+		RiskLevel: "medium", ResultSHA: strings.Repeat("b", 40), SourceContext: "independent_test_designer_context_v1",
+		Status: "proposed", DispositionsRequired: true,
+		Proposals: []testdesigner.Proposal{{
+			ID: "TD-API-1", Category: "boundary_case", Claim: "add missing regression",
+			Rationale: "candidate diff touches auth boundary", EvidenceIDs: []string{"diff-1"},
+			SuggestedTests: []string{"TestAuthBoundary"}, GoldenRehearsals: []string{}, Disposition: "pending",
+		}},
+	}
+	if _, err := store.SaveTestDesignerReport(ctx, report); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/test-designer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Reports []testdesigner.Report `json:"reports"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(listed.Reports) != 1 || listed.Reports[0].Proposals[0].Disposition != "pending" {
+		t.Fatalf("test designer endpoint returned %d %#v", response.StatusCode, listed)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("test_designer_reports")) {
+		t.Fatalf("job detail omitted test designer reports: %d %s", response.StatusCode, body)
 	}
 }
 

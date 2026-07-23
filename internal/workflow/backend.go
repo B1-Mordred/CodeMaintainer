@@ -22,6 +22,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/runners"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -38,6 +39,7 @@ type ExecutionBackend interface {
 	PrepareDependencies(context.Context, jobs.Job) error
 	Implement(context.Context, jobs.Job, agents.TaskPacket) (agents.ImplementationResult, error)
 	Verify(context.Context, jobs.Job, verification.Language, []verification.Class, string) (VerificationResult, error)
+	DesignTests(context.Context, jobs.Job, agents.TaskPacket) (testdesigner.Report, error)
 	Review(context.Context, jobs.Job, agents.TaskPacket) (agents.QCReport, error)
 }
 
@@ -141,6 +143,18 @@ func (b *ContainerBackend) Review(ctx context.Context, job jobs.Job, packet agen
 		return agents.QCReport{}, err
 	}
 	return agents.DecodeQCReport(raw, packet)
+}
+
+func (b *ContainerBackend) DesignTests(ctx context.Context, job jobs.Job, packet agents.TaskPacket) (testdesigner.Report, error) {
+	payload, err := json.Marshal(packet)
+	if err != nil {
+		return testdesigner.Report{}, err
+	}
+	raw, err := b.runWithPacket(ctx, job, runners.KindTestDesigner, payload, phaseKey(job)+"_test_designer_packet", "test_proposal")
+	if err != nil {
+		return testdesigner.Report{}, err
+	}
+	return testdesigner.DecodeReport(raw, job.ID, packet.ContractSHA256, packet.RiskLevel, packet.ResultSHA)
 }
 
 func (b *ContainerBackend) runWithPacket(ctx context.Context, job jobs.Job, kind runners.Kind, payload []byte, key, artifactID string) ([]byte, error) {

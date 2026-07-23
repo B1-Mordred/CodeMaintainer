@@ -49,6 +49,20 @@ maintainctl agent-contracts <job-id>
 
 Each validation record stores the phase, contract kind, schema version, schema hash, payload hash, attempt, validity, bounded error text, and artifact reference when present. The ledger is append-only and is also visible in the Jobs page under “Structured output contracts.” This provides the evidence base for retry policy and later Test Designer, Documentation Agent, and OPA gates.
 
+## Independent Test Designer
+
+After full candidate verification, medium- and high-risk jobs route through `loading_test_designer_model` and `test_design_review` before normal QC. Low-risk jobs continue directly to QC; if a Test Designer phase is explicitly seeded for low risk, the controller stores a bounded `skipped` report instead of invoking a model.
+
+The Test Designer receives a fresh controller-built packet containing the approved contract, authoritative context, baseline/differential/test-impact evidence, and candidate diff. It does not receive the implementation agent's narrative. The report must match the registered `test_proposal` schema and is validated against the exact job, approved contract hash, risk level, and result commit before storage.
+
+Reports are append-only and include proposed missing tests, boundary cases, regression risks, suitable golden/rehearsal checks, evidence IDs, and dispositions. New reports default unresolved proposals to `pending`; later slices will add the full disposition action workflow and enforcement gates.
+
+Operators can inspect reports through the Jobs page or CLI:
+
+```sh
+maintainctl test-designer <job-id>
+```
+
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, independent Test Designer execution and dispositions, policy-controlled golden/rehearsal artifacts, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, policy-controlled golden/rehearsal artifacts, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.

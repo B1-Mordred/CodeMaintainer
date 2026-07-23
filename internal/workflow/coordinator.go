@@ -26,6 +26,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
+	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/verification"
 )
 
@@ -47,6 +48,7 @@ type coordinatorStore interface {
 	agents.Store
 	taskcontract.Store
 	risk.Store
+	testdesigner.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -233,6 +235,14 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		return c.requiredVerification(ctx, job, []verification.Class{verification.ClassTargetedTests}, "targeted")
 	case jobs.StateVerifyingFull:
 		return c.requiredVerification(ctx, job, fullClasses(detectLanguage(c.worktree(job.ID))), "full")
+	case jobs.StateLoadingTestDesignerModel:
+		status, err := c.loadRole(ctx, "test_designer")
+		if err != nil {
+			return Outcome{}, err
+		}
+		return detailOutcome(map[string]any{"profile_id": status.ProfileID, "model_family": status.ModelFamily}), nil
+	case jobs.StateTestDesignReview:
+		return c.designTests(ctx, job)
 	case jobs.StateLoadingQCModel:
 		if err := c.validateRoleSeparation(ctx); err != nil {
 			return Outcome{}, err
@@ -329,10 +339,18 @@ func (c *Coordinator) requiredVerification(ctx context.Context, job jobs.Job, cl
 	if !result.Passed {
 		return Outcome{}, fmt.Errorf("required verification did not pass for the exact result commit; differential %s retained", differential.ID)
 	}
-	return detailOutcome(map[string]any{
+	outcome := detailOutcome(map[string]any{
 		"passed": true, "head_sha": result.Scan.HeadSHA, "patch_sha256": result.Scan.PatchSHA256, "classes": classes,
 		"baseline_id": baseline.ID, "differential_id": differential.ID, "purpose": purpose, "clean_cache_required": cleanFinalCache,
-	}), nil
+	})
+	if purpose == "full" {
+		if required, routeErr := c.testDesignerRequired(ctx, job.ID); routeErr != nil {
+			return Outcome{}, routeErr
+		} else if required {
+			outcome.NextState = jobs.StateLoadingTestDesignerModel
+		}
+	}
+	return outcome, nil
 }
 
 func (c *Coordinator) baselineIdentity(ctx context.Context, job jobs.Job, language verification.Language) (string, string, error) {
@@ -576,6 +594,72 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 	return detailOutcome(map[string]any{"verdict": report.Verdict, "blocking_findings": 0, "review_cycle": job.ReviewCycle}), nil
 }
 
+func (c *Coordinator) testDesignerRequired(ctx context.Context, jobID string) (bool, error) {
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, jobID)
+	if err != nil {
+		return false, err
+	}
+	return assessment.Level == risk.LevelMedium || assessment.Level == risk.LevelHigh, nil
+}
+
+func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, error) {
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, job.ID)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if assessment.Level == risk.LevelLow {
+		report, err := testdesigner.NewSkipped(job.ID, assessment.ContractSHA256, string(assessment.Level), job.ResultSHA)
+		if err != nil {
+			return Outcome{}, err
+		}
+		report, err = c.store.SaveTestDesignerReport(ctx, report)
+		if err != nil {
+			return Outcome{}, err
+		}
+		return detailOutcome(map[string]any{"test_designer": "skipped", "risk_level": assessment.Level, "report_id": report.ID}), nil
+	}
+	diff, err := c.git.Diff(ctx, gitbridge.DiffRequest{
+		ProjectID: job.ProjectID, JobID: job.ID, BaseSHA: job.BaseSHA, ResultSHA: job.ResultSHA,
+	})
+	if err != nil {
+		return Outcome{}, err
+	}
+	packet, err := c.taskPacket(ctx, job, "test_designer", nil)
+	if err != nil {
+		return Outcome{}, err
+	}
+	packet.Diff = diff.Patch
+	packet.ResultSHA = job.ResultSHA
+	packet.ContractSHA256 = assessment.ContractSHA256
+	packet.RiskLevel = string(assessment.Level)
+	packet.Verification = []agents.VerificationEvidence{
+		{Class: "targeted_tests", Passed: true, Summary: "allow-listed targeted verification passed for the exact result commit"},
+		{Class: "full_tests", Passed: true, Summary: "allow-listed full verification passed before independent Test Designer review"},
+		{Class: "risk_routing", Passed: true, Summary: "medium/high deterministic risk requires independent Test Designer review"},
+	}
+	payload, _ := json.Marshal(packet)
+	if record, err := agents.NewValidationRecord(job.ID, "test_designer_packet", agents.ContractTaskPacket, payload, job.ReviewCycle+1, true, nil, ""); err != nil {
+		return Outcome{}, err
+	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
+		return Outcome{}, err
+	}
+	report, err := c.execution.DesignTests(ctx, job, packet)
+	if err != nil {
+		return Outcome{}, err
+	}
+	rawReport, _ := json.Marshal(report)
+	if record, err := agents.NewValidationRecord(job.ID, "test_proposal", agents.ContractTestProposal, rawReport, job.ReviewCycle+1, true, nil, ""); err != nil {
+		return Outcome{}, err
+	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
+		return Outcome{}, err
+	}
+	report, err = c.store.SaveTestDesignerReport(ctx, report)
+	if err != nil {
+		return Outcome{}, err
+	}
+	return detailOutcome(map[string]any{"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID, "proposals": len(report.Proposals)}), nil
+}
+
 func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error) {
 	records, err := c.store.ListFindings(ctx, job.ID)
 	if err != nil {
@@ -705,6 +789,10 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
+	testDesignReports, err := c.store.ListTestDesignerReports(ctx, job.ID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
 	for _, evidence := range []struct {
 		id, source, reason string
 		value              any
@@ -712,6 +800,7 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		{id: "baseline-evidence", source: "verification_baselines", reason: "recent exact-identity pre-change evidence", value: baselines},
 		{id: "differential-evidence", source: "verification_differentials", reason: "recent candidate comparison and unresolved classifications", value: differentials},
 		{id: "test-impact-evidence", source: "test_impact", reason: "recent changed-symbol test selection and full-suite policy", value: impacts},
+		{id: "test-designer-evidence", source: "independent_test_designer", reason: "independent test design proposals and dispositions for the exact candidate", value: testDesignReports},
 	} {
 		payload, _ := json.Marshal(evidence.value)
 		if string(payload) != "[]" && string(payload) != "null" {
@@ -788,6 +877,9 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		SchemaVersion: 1, Mode: mode, JobID: job.ID, OriginalTask: job.Task,
 		AcceptanceCriteria: criteria, BaseSHA: job.BaseSHA, ResultSHA: job.ResultSHA,
 		ReviewCycle: job.ReviewCycle, RelevantFiles: selectedFiles, BlockingFindings: blockers,
+	}
+	if mode == "test_designer" {
+		return packet, nil
 	}
 	payload, _ := json.Marshal(packet)
 	if _, err := agents.DecodeTaskPacket(payload, mode); err != nil {

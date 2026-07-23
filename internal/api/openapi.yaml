@@ -1262,6 +1262,7 @@ paths:
                   risk_assessments: { type: array, items: { $ref: "#/components/schemas/RiskAssessment" } }
                   risk_waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
                   agent_contract_validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
+                  test_designer_reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /agent-contracts:
@@ -1370,6 +1371,25 @@ paths:
                 required: [validations]
                 properties:
                   validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/test-designer:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List independent Test Designer proposals and dispositions for one job
+      operationId: listJobTestDesignerReports
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Test Designer report history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reports]
+                properties:
+                  reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/risk:
     parameters:
@@ -3174,7 +3194,7 @@ components:
         replay: { type: boolean }
     JobState:
       type: string
-      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
     AgentContractKind:
       type: string
       enum: [task_packet, implementation_result, qc_report, test_proposal, documentation_manifest, risk_assessment, completion_summary]
@@ -3217,6 +3237,36 @@ components:
         valid: { type: boolean }
         error: { type: string, maxLength: 4000 }
         artifact_id: { type: string }
+        created_at: { type: string, format: date-time }
+    TestDesignerProposal:
+      type: object
+      additionalProperties: false
+      required: [id, category, claim, rationale, evidence_ids, suggested_tests, golden_rehearsals, disposition]
+      properties:
+        id: { type: string }
+        category: { type: string }
+        claim: { type: string }
+        rationale: { type: string }
+        evidence_ids: { type: array, items: { type: string } }
+        suggested_tests: { type: array, items: { type: string } }
+        golden_rehearsals: { type: array, items: { type: string } }
+        disposition: { type: string, enum: [pending, accepted, rejected, not_applicable] }
+        disposition_reason: { type: string }
+    TestDesignerReport:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, schema_version, contract_sha256, risk_level, result_sha, source_context, proposals, dispositions_required, status, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        contract_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        result_sha: { type: string }
+        source_context: { type: string }
+        proposals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/TestDesignerProposal" } }
+        dispositions_required: { type: boolean }
+        status: { type: string, enum: [proposed, skipped] }
         created_at: { type: string, format: date-time }
     TaskContractCriterion:
       type: object

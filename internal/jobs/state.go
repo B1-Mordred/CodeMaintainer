@@ -18,6 +18,8 @@ const (
 	StateImplementing               State = "implementing"
 	StateVerifyingTargeted          State = "verifying_targeted"
 	StateVerifyingFull              State = "verifying_full"
+	StateLoadingTestDesignerModel   State = "loading_test_designer_model"
+	StateTestDesignReview           State = "test_design_review"
 	StateLoadingQCModel             State = "loading_qc_model"
 	StateQCReview                   State = "qc_review"
 	StateAwaitingRepair             State = "awaiting_repair"
@@ -43,6 +45,8 @@ var allStates = []State{
 	StateImplementing,
 	StateVerifyingTargeted,
 	StateVerifyingFull,
+	StateLoadingTestDesignerModel,
+	StateTestDesignReview,
 	StateLoadingQCModel,
 	StateQCReview,
 	StateAwaitingRepair,
@@ -67,7 +71,9 @@ var transitions = map[State]map[State]struct{}{
 	StateReproducing:                set(StateImplementing, StateCancelled, StateFailed),
 	StateImplementing:               set(StateVerifyingTargeted, StateCancelled, StateFailed),
 	StateVerifyingTargeted:          set(StateVerifyingFull, StateAwaitingRepair, StateCancelled, StateFailed),
-	StateVerifyingFull:              set(StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateVerifyingFull:              set(StateLoadingTestDesignerModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateLoadingTestDesignerModel:   set(StateTestDesignReview, StateCancelled, StateFailed),
+	StateTestDesignReview:           set(StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingQCModel:             set(StateQCReview, StateCancelled, StateFailed),
 	StateQCReview:                   set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
 	StateAwaitingRepair:             set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
