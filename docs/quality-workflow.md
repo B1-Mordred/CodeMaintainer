@@ -63,6 +63,21 @@ Operators can inspect reports through the Jobs page or CLI:
 maintainctl test-designer <job-id>
 ```
 
+## Golden and rehearsal gates
+
+After Test Designer review, or after full verification for low-risk jobs that have registered rehearsals from assigned capability packs, the workflow records a `golden_rehearsal_review` phase before QC. The phase selects only controller-registered rehearsal definitions from trusted capability manifests and cross-links matching Test Designer suggestions; it does not execute pack-supplied commands or accept browser-supplied runner inputs.
+
+The report stores candidate-vs-approved artifact identities, comparison class, tolerance and mask policy metadata, provenance, diff summary, and status. A matched report advances to QC. A job with no registered rehearsals records `no_rehearsals` evidence. A changed or missing approved golden stores `approval_required` and fails closed; it never updates the approved artifact automatically.
+
+Golden update approvals are append-only records with actor, role, reason, recent reauthentication, and the exact approved/candidate artifact hashes. Operators can inspect reports and append an approval or rejection through the Jobs page/API or CLI:
+
+```sh
+maintainctl golden reports <job-id>
+maintainctl reauthenticate --password-file <file|->
+maintainctl golden approve <report-id> <comparison-id> --reason <text>
+maintainctl golden reject <report-id> <comparison-id> --reason <text>
+```
+
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, policy-controlled golden/rehearsal artifacts, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, Documentation Agent and documentation QC, and OPA-backed policy simulation/activation/rollback.

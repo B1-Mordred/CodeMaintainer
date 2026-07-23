@@ -15,6 +15,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
 	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
@@ -211,6 +212,7 @@ type Store interface {
 	forges.Store
 	taskcontract.Store
 	testdesigner.Store
+	golden.Store
 	risk.Store
 	windowsworker.Store
 	Close() error

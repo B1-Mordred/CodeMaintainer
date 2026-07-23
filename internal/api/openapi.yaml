@@ -1263,6 +1263,8 @@ paths:
                   risk_waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
                   agent_contract_validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
                   test_designer_reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
+                  golden_rehearsal_reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
+                  golden_update_approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /agent-contracts:
@@ -1391,6 +1393,53 @@ paths:
                 properties:
                   reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/golden-rehearsals:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List golden-master and rehearsal reports for one job
+      operationId: listJobGoldenRehearsalReports
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Golden rehearsal report and approval history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reports, approvals]
+                properties:
+                  reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
+                  approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve:
+    parameters:
+      - { name: reportID, in: path, required: true, schema: { type: string } }
+      - { name: comparisonID, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Append an explicit approval or rejection for a proposed golden update
+      operationId: approveGoldenUpdate
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, approved]
+              properties:
+                reason: { type: string, minLength: 8, maxLength: 1000 }
+                approved: { type: boolean }
+      responses:
+        "201":
+          description: Append-only approval record
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenUpdateApproval" } } }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/risk:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -3194,7 +3243,7 @@ components:
         replay: { type: boolean }
     JobState:
       type: string
-      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, golden_rehearsal_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
     AgentContractKind:
       type: string
       enum: [task_packet, implementation_result, qc_report, test_proposal, documentation_manifest, risk_assessment, completion_summary]
@@ -3267,6 +3316,73 @@ components:
         proposals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/TestDesignerProposal" } }
         dispositions_required: { type: boolean }
         status: { type: string, enum: [proposed, skipped] }
+        created_at: { type: string, format: date-time }
+    GoldenRehearsalSource:
+      type: object
+      additionalProperties: false
+      required: [id, kind, operation_id, artifact_kinds, comparison_class, approval_policy, source]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        operation_id: { type: string }
+        artifact_kinds: { type: array, items: { type: string } }
+        comparison_class: { type: string }
+        approval_policy: { type: string }
+        source: { type: string }
+        pack_id: { type: string }
+        pack_version: { type: string }
+        proposal_id: { type: string }
+    GoldenComparison:
+      type: object
+      additionalProperties: false
+      required: [id, rehearsal_id, kind, comparison_class, approved_artifact_sha256, candidate_artifact_sha256, status, diff_summary, tolerance_policy, mask_policy, approval_required, update_proposed, provenance, source]
+      properties:
+        id: { type: string }
+        rehearsal_id: { type: string }
+        kind: { type: string }
+        comparison_class: { type: string }
+        approved_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        candidate_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        status: { type: string, enum: [matched, changed, missing_approved, skipped] }
+        diff_summary: { type: string }
+        tolerance_policy: { type: object, additionalProperties: true }
+        mask_policy: { type: object, additionalProperties: true }
+        approval_required: { type: boolean }
+        update_proposed: { type: boolean }
+        provenance: { type: array, items: { type: string } }
+        source: { $ref: "#/components/schemas/GoldenRehearsalSource" }
+    GoldenRehearsalReport:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, schema_version, project_id, contract_sha256, risk_level, result_sha, source_context, comparisons, status, policy_summary, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        project_id: { type: string }
+        contract_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        result_sha: { type: string }
+        source_context: { type: string }
+        comparisons: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/GoldenComparison" } }
+        status: { type: string, enum: [passed, no_rehearsals, approval_required, failed] }
+        policy_summary: { type: string }
+        created_at: { type: string, format: date-time }
+    GoldenUpdateApproval:
+      type: object
+      additionalProperties: false
+      required: [id, report_id, comparison_id, actor_id, actor_role, reason, approved, reauthenticated, approved_artifact_sha256, candidate_artifact_sha256, created_at]
+      properties:
+        id: { type: string }
+        report_id: { type: string }
+        comparison_id: { type: string }
+        actor_id: { type: string }
+        actor_role: { type: string }
+        reason: { type: string }
+        approved: { type: boolean }
+        reauthenticated: { type: boolean }
+        approved_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        candidate_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         created_at: { type: string, format: date-time }
     TaskContractCriterion:
       type: object

@@ -264,6 +264,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/task-contract/actions/approve", s.approveTaskContract)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/agent-contract-validations", s.listJobAgentContractValidations)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/test-designer", s.listJobTestDesignerReports)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
+	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve", s.approveGoldenUpdate)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
@@ -702,6 +704,18 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if reports, err := s.store.ListTestDesignerReports(r.Context(), job.ID, 100); err == nil {
 		response["test_designer_reports"] = reports
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if reports, err := s.store.ListGoldenReports(r.Context(), job.ID, 100); err == nil {
+		response["golden_rehearsal_reports"] = reports
+		approvals, approvalErr := s.store.ListGoldenApprovals(r.Context(), job.ID, 100)
+		if approvalErr != nil {
+			s.internalError(w, r, approvalErr)
+			return
+		}
+		response["golden_update_approvals"] = approvals
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

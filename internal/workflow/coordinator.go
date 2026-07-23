@@ -16,9 +16,11 @@ import (
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/agents"
 	artifactfiles "github.com/B1-Mordred/CodeMaintainer/internal/artifacts"
+	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
 	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	projectmemory "github.com/B1-Mordred/CodeMaintainer/internal/memory"
@@ -46,9 +48,11 @@ type coordinatorStore interface {
 	storage.FindingStore
 	storage.ProjectStore
 	agents.Store
+	capabilities.Store
 	taskcontract.Store
 	risk.Store
 	testdesigner.Store
+	golden.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -243,6 +247,8 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		return detailOutcome(map[string]any{"profile_id": status.ProfileID, "model_family": status.ModelFamily}), nil
 	case jobs.StateTestDesignReview:
 		return c.designTests(ctx, job)
+	case jobs.StateGoldenRehearsalReview:
+		return c.reviewGoldens(ctx, job)
 	case jobs.StateLoadingQCModel:
 		if err := c.validateRoleSeparation(ctx); err != nil {
 			return Outcome{}, err
@@ -348,6 +354,10 @@ func (c *Coordinator) requiredVerification(ctx context.Context, job jobs.Job, cl
 			return Outcome{}, routeErr
 		} else if required {
 			outcome.NextState = jobs.StateLoadingTestDesignerModel
+		} else if required, routeErr := c.goldenRehearsalRequired(ctx, job); routeErr != nil {
+			return Outcome{}, routeErr
+		} else if required {
+			outcome.NextState = jobs.StateGoldenRehearsalReview
 		}
 	}
 	return outcome, nil
@@ -657,7 +667,62 @@ func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, e
 	if err != nil {
 		return Outcome{}, err
 	}
-	return detailOutcome(map[string]any{"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID, "proposals": len(report.Proposals)}), nil
+	outcome := detailOutcome(map[string]any{"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID, "proposals": len(report.Proposals)})
+	outcome.NextState = jobs.StateGoldenRehearsalReview
+	return outcome, nil
+}
+
+func (c *Coordinator) goldenRehearsalRequired(ctx context.Context, job jobs.Job) (bool, error) {
+	assignments, err := c.store.ListCapabilityAssignments(ctx, job.ProjectID, 100)
+	if err != nil {
+		return false, err
+	}
+	for _, assignment := range assignments {
+		if !assignment.Enabled {
+			continue
+		}
+		catalog, catalogErr := capabilities.BuiltInCatalog()
+		if catalogErr != nil {
+			return false, catalogErr
+		}
+		manifest, manifestErr := catalog.Get(assignment.PackID, assignment.PackVersion)
+		if manifestErr == nil && len(manifest.Rehearsals) != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *Coordinator) reviewGoldens(ctx context.Context, job jobs.Job) (Outcome, error) {
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, job.ID)
+	if err != nil {
+		return Outcome{}, err
+	}
+	assignments, err := c.store.ListCapabilityAssignments(ctx, job.ProjectID, 100)
+	if err != nil {
+		return Outcome{}, err
+	}
+	catalog, err := capabilities.BuiltInCatalog()
+	if err != nil {
+		return Outcome{}, err
+	}
+	testReports, err := c.store.ListTestDesignerReports(ctx, job.ID, 100)
+	if err != nil {
+		return Outcome{}, err
+	}
+	report, err := golden.NewReport(job.ID, job.ProjectID, assessment.ContractSHA256, string(assessment.Level), job.ResultSHA, assignments, catalog, testReports)
+	if err != nil {
+		return Outcome{}, err
+	}
+	report, err = c.store.SaveGoldenReport(ctx, report)
+	if err != nil {
+		return Outcome{}, err
+	}
+	details := map[string]any{"golden_rehearsals": report.Status, "report_id": report.ID, "comparisons": len(report.Comparisons)}
+	if report.Status == "approval_required" || report.Status == "failed" {
+		return Outcome{Details: mustJSON(details)}, errors.New("golden rehearsal gate requires explicit approval before QC")
+	}
+	return detailOutcome(details), nil
 }
 
 func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error) {
@@ -793,6 +858,10 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
+	goldenReports, err := c.store.ListGoldenReports(ctx, job.ID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
 	for _, evidence := range []struct {
 		id, source, reason string
 		value              any
@@ -801,6 +870,7 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		{id: "differential-evidence", source: "verification_differentials", reason: "recent candidate comparison and unresolved classifications", value: differentials},
 		{id: "test-impact-evidence", source: "test_impact", reason: "recent changed-symbol test selection and full-suite policy", value: impacts},
 		{id: "test-designer-evidence", source: "independent_test_designer", reason: "independent test design proposals and dispositions for the exact candidate", value: testDesignReports},
+		{id: "golden-rehearsal-evidence", source: "golden_rehearsals", reason: "registered golden and rehearsal comparisons for the exact candidate", value: goldenReports},
 	} {
 		payload, _ := json.Marshal(evidence.value)
 		if string(payload) != "[]" && string(payload) != "null" {

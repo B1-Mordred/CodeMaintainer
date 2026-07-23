@@ -1476,6 +1476,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/golden-rehearsals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List golden-master and rehearsal reports for one job */
+        get: operations["listJobGoldenRehearsalReports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reportID: string;
+                comparisonID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append an explicit approval or rejection for a proposed golden update */
+        post: operations["approveGoldenUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/risk": {
         parameters: {
             query?: never;
@@ -3275,7 +3314,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -3340,6 +3379,70 @@ export interface components {
             dispositions_required: boolean;
             /** @enum {string} */
             status: "proposed" | "skipped";
+            /** Format: date-time */
+            created_at: string;
+        };
+        GoldenRehearsalSource: {
+            id: string;
+            kind: string;
+            operation_id: string;
+            artifact_kinds: string[];
+            comparison_class: string;
+            approval_policy: string;
+            source: string;
+            pack_id?: string;
+            pack_version?: string;
+            proposal_id?: string;
+        };
+        GoldenComparison: {
+            id: string;
+            rehearsal_id: string;
+            kind: string;
+            comparison_class: string;
+            approved_artifact_sha256: string;
+            candidate_artifact_sha256: string;
+            /** @enum {string} */
+            status: "matched" | "changed" | "missing_approved" | "skipped";
+            diff_summary: string;
+            tolerance_policy: {
+                [key: string]: unknown;
+            };
+            mask_policy: {
+                [key: string]: unknown;
+            };
+            approval_required: boolean;
+            update_proposed: boolean;
+            provenance: string[];
+            source: components["schemas"]["GoldenRehearsalSource"];
+        };
+        GoldenRehearsalReport: {
+            id: string;
+            job_id: string;
+            /** @constant */
+            schema_version: 1;
+            project_id: string;
+            contract_sha256: string;
+            risk_level: components["schemas"]["RiskLevel"];
+            result_sha: string;
+            source_context: string;
+            comparisons: components["schemas"]["GoldenComparison"][];
+            /** @enum {string} */
+            status: "passed" | "no_rehearsals" | "approval_required" | "failed";
+            policy_summary: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        GoldenUpdateApproval: {
+            id: string;
+            report_id: string;
+            comparison_id: string;
+            actor_id: string;
+            actor_role: string;
+            reason: string;
+            approved: boolean;
+            reauthenticated: boolean;
+            approved_artifact_sha256: string;
+            candidate_artifact_sha256: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -6557,6 +6660,8 @@ export interface operations {
                         risk_waivers?: components["schemas"]["RiskWaiver"][];
                         agent_contract_validations?: components["schemas"]["AgentContractValidation"][];
                         test_designer_reports?: components["schemas"]["TestDesignerReport"][];
+                        golden_rehearsal_reports?: components["schemas"]["GoldenRehearsalReport"][];
+                        golden_update_approvals?: components["schemas"]["GoldenUpdateApproval"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
@@ -6736,6 +6841,70 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobGoldenRehearsalReports: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Golden rehearsal report and approval history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reports: components["schemas"]["GoldenRehearsalReport"][];
+                        approvals: components["schemas"]["GoldenUpdateApproval"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    approveGoldenUpdate: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                reportID: string;
+                comparisonID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                    approved: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Append-only approval record */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenUpdateApproval"];
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
         };
     };
     getJobRisk: {

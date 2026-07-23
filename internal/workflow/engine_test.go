@@ -24,7 +24,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateLoadingQCModel, jobs.StateQCReview,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
 			jobs.StateQueued, jobs.StateSyncing, jobs.StateCreatingWorktree,
@@ -32,7 +32,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
 			jobs.StateRepairing, jobs.StateFinalVerification,
 		},
 		{
@@ -41,7 +41,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateAwaitingTaskApproval, jobs.StateLoadingImplementationModel, jobs.StateReproducing,
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
-			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
+			jobs.StateGoldenRehearsalReview, jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 			jobs.StatePublishingBranch, jobs.StateDraftPRCreated,
 		},
 	}
@@ -102,6 +102,13 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 		if state.Resumable() && !tested[state] {
 			t.Errorf("resumable state %s lacks restart coverage", state)
 		}
+	}
+}
+
+func TestOutcomeCanRouteFullVerificationThroughGoldenRehearsal(t *testing.T) {
+	next, err := nextState(jobs.StateVerifyingFull, Outcome{NextState: jobs.StateGoldenRehearsalReview})
+	if err != nil || next != jobs.StateGoldenRehearsalReview {
+		t.Fatalf("golden route = %s, %v", next, err)
 	}
 }
 

@@ -137,9 +137,42 @@ func run(arguments []string) error {
 			return errors.New("usage: maintainctl test-designer <job-id>")
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/test-designer", nil)
+	case "golden":
+		return api.golden(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) golden(arguments []string) error {
+	if len(arguments) < 2 {
+		return errors.New("usage: maintainctl golden <reports|approve|reject> ...")
+	}
+	switch arguments[0] {
+	case "reports":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl golden reports <job-id>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/golden-rehearsals", nil)
+	case "approve", "reject":
+		if len(arguments) < 3 {
+			return errors.New("usage: maintainctl golden approve|reject <report-id> <comparison-id> --reason text")
+		}
+		flags := flag.NewFlagSet("golden "+arguments[0], flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited reason")
+		if err := flags.Parse(arguments[3:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*reason) == "" {
+			return errors.New("usage: maintainctl golden approve|reject <report-id> <comparison-id> --reason text")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/golden-rehearsals/"+url.PathEscape(arguments[1])+"/comparisons/"+url.PathEscape(arguments[2])+"/actions/approve", map[string]any{
+			"approved": arguments[0] == "approve",
+			"reason":   *reason,
+		})
+	default:
+		return errors.New("usage: maintainctl golden <reports|approve|reject> ...")
 	}
 }
 
@@ -1181,6 +1214,8 @@ Commands:
   risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
   agent-contracts [job-id]
   test-designer <job-id>
+  golden reports <job-id>
+  golden approve|reject <report-id> <comparison-id> --reason text
   open [job-id]
   backup
   restore (--dry-run|--apply) <backup-id>

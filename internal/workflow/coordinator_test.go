@@ -221,6 +221,10 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil || len(testReports) != 1 || testReports[0].Status != "proposed" || testReports[0].Proposals[0].Disposition != "pending" {
 		t.Fatalf("test designer reports = %#v, %v", testReports, err)
 	}
+	goldenReports, err := store.ListGoldenReports(ctx, job.ID, 10)
+	if err != nil || len(goldenReports) != 1 || goldenReports[0].Status != "no_rehearsals" {
+		t.Fatalf("golden rehearsal reports = %#v, %v", goldenReports, err)
+	}
 	storedFindings, err := store.ListFindings(ctx, job.ID)
 	if err != nil || len(storedFindings) != 1 || storedFindings[0].Status != findings.StatusClosed {
 		t.Fatalf("finding lifecycle = %#v, %v", storedFindings, err)
@@ -245,7 +249,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		t.Fatalf("published SHA = %s, want %s", published, job.ResultSHA)
 	}
 	phaseRecords, err := store.ListPhaseRecords(ctx, job.ID, 100)
-	if err != nil || len(phaseRecords) < 18 {
+	if err != nil || len(phaseRecords) < 19 {
 		t.Fatalf("phase records = %d, %v", len(phaseRecords), err)
 	}
 	manifests, err := store.ListContextManifests(ctx, "fixture", 100)
@@ -264,7 +268,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 			}
 		}
 	}
-	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer"} {
+	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer", "golden_rehearsals"} {
 		if !sources[required] {
 			t.Fatalf("context manifests omitted production source %q: %#v", required, sources)
 		}

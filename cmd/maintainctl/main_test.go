@@ -229,6 +229,40 @@ func TestTestDesignerCLIListsJobReports(t *testing.T) {
 	}
 }
 
+func TestGoldenCLIListsReportsAndApprovesUpdates(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if body["approved"] != true || body["reason"] != "reviewed golden update" {
+				t.Errorf("unexpected body %#v", body)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"golden", "reports", "job-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"golden", "approve", "report-one", "cmp-one", "--reason", "reviewed golden update"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET /api/v1/jobs/job-one/golden-rehearsals",
+		"POST /api/v1/golden-rehearsals/report-one/comparisons/cmp-one/actions/approve",
+	}
+	if strings.Join(requests, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests = %#v", requests)
+	}
+}
+
 func TestIntelligenceCorrectionUsesTypedAuditedAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/projects/project-one/differentials/differential-one/actions/correct" {

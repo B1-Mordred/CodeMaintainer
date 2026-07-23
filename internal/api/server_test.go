@@ -23,6 +23,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
+	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
@@ -1578,6 +1579,61 @@ func TestTestDesignerReportsAreVisibleOnJobDetailAndEndpoint(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("test_designer_reports")) {
 		t.Fatalf("job detail omitted test designer reports: %d %s", response.StatusCode, body)
+	}
+}
+
+func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
+	server, store := testServer(t)
+	ctx := context.Background()
+	job, err := store.CreateJob(ctx, storage.CreateJobParams{
+		ID: "job_golden_api", ProjectID: "owner-repo", Repository: "owner/repo", Task: "medium risk golden change", ActorID: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := golden.ChangedReportForTest(job.ID, job.ProjectID, strings.Repeat("a", 64), "medium", strings.Repeat("b", 40))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err = store.SaveGoldenReport(ctx, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/golden-rehearsals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Reports   []golden.Report   `json:"reports"`
+		Approvals []golden.Approval `json:"approvals"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(listed.Reports) != 1 || listed.Reports[0].Status != "approval_required" {
+		t.Fatalf("golden reports endpoint returned %d %#v", response.StatusCode, listed)
+	}
+	response, err = http.Post(server.URL+"/api/v1/golden-rehearsals/"+report.ID+"/comparisons/"+report.Comparisons[0].ID+"/actions/approve", "application/json", strings.NewReader(`{"reason":"reviewed fixture golden update","approved":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var approval golden.Approval
+	if err := json.NewDecoder(response.Body).Decode(&approval); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || approval.ReportID != report.ID || !approval.Approved {
+		t.Fatalf("golden approval = %d %#v", response.StatusCode, approval)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("golden_rehearsal_reports")) || !bytes.Contains(body, []byte("golden_update_approvals")) {
+		t.Fatalf("job detail omitted golden evidence: %d %s", response.StatusCode, body)
 	}
 }
 
