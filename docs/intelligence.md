@@ -1,5 +1,7 @@
 # Code intelligence, context, differential verification, and caches
 
+The checked DOD-11 evidence matrix lives in `config/intelligence-coverage.json`; it ties the implementation, regression tests, browser/CLI/API surfaces, and operator documentation below to machine-verified proof snippets.
+
 The controller keeps derived intelligence project-separated and binds every index run to the registered repository, exact revision, parser identity, and content SHA-256. The browser and CLI can request refresh, but cannot upload source, choose a host path, or select an executable. Refresh first synchronizes the registered default branch through the credential-isolated Git bridge and requests a bounded snapshot of ordinary blobs at that exact commit. The bridge excludes oversized or unsupported objects and returns the excluded count.
 
 The controller remains a static non-CGO binary. It sends one bounded, hash-bound source blob at a time to the internal `code-intelligence` service, which runs non-root with a read-only root, no published port, no mounts, dropped capabilities, and only the internal control network. That service uses the Go standard-library AST for Go and pinned Tree-sitter grammars for Python, JavaScript/TypeScript/TSX, PHP, Rust, C/C++, C#, and R. Grammar identities and versions appear as tool provenance. Generated, vendor, and binary inputs are classified without parsing; syntax errors remain explicit partial evidence.

@@ -51,6 +51,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [ ] (2026-07-24 05:08Z) Increment 2 Milestone 6 typed evidence graph checkpoint: migration 38 stores append-only evidence nodes and edges; artifact indexing now retains job/artifact nodes and a typed `produced` edge in the same transaction as artifact metadata and audit. REST/OpenAPI/generated-client, `maintainctl evidence <job-id>`, Jobs-page traceability display, docs, and coverage evidence are current. Focused evidence/storage/API/CLI and frontend API/App/OpenAPI tests pass; request-through-publication/SBOM graph coverage remains open.
 - [ ] (2026-07-24 08:05Z) Increment 2 paused at the operator-requested sync point after the Milestone 7 configuration-parity checkpoint. Commits through `f6d25b6` are on `origin/dev` and GitHub Actions run `30076306125` passed; no partial redaction coverage work has started, and `I2-DOD-07` is the next implementation boundary.
 - [ ] (2026-07-24 08:25Z) Increment 2 Milestone 7 redaction coverage checkpoint: `config/redaction-coverage.json` now maps ten secret-bearing output surfaces across configuration, import/export, provider egress, observability events, support bundles, project memory, auth/session state, forge credentials, Windows-worker credentials, and policy inputs. `internal/config/redaction_coverage_test.go` verifies required coverage, evidence paths, and proof snippets; focused config validation passes while broader acceptance remains open.
+- [ ] (2026-07-24 08:45Z) Increment 2 Milestone 7 DOD-11 intelligence evidence checkpoint: `config/intelligence-coverage.json` now maps seven intelligence/context/verification/cache surfaces to implementation, regression tests, browser/CLI/API coverage, docs, and proof snippets. Focused config validation passes while full acceptance remains open.
 
 ## Surprises & Discoveries
 
@@ -126,6 +127,8 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: the tracked worktree matched `origin/dev` at `f6d25b6`, CI run `30076306125` passed, and the next `I2-DOD-07` slice spans configuration, provider egress, observability/support bundles, memory, auth, and Windows-worker credential handling.
 - Observation: redaction guarantees were distributed across package-specific tests but not tied to one DOD gate.
   Evidence: existing tests covered configuration secret state, forbidden provider data classes, observability/support-bundle redaction, memory secret rejection, auth token hashes, GitLab token-free remotes, Windows-worker credential references, and policy redacted inputs; `config/increment-2-coverage.json` still marked `I2-DOD-07` missing.
+- Observation: the DOD-11 intelligence acceptance boundary was implemented across Milestone 2 code but lacked a checked inventory.
+  Evidence: service, workflow, API, CLI, and browser regressions already covered indexing, context manifests, baselines, differentials, test impact, and cache operations; the Increment 2 coverage file still marked the row missing until the matrix was added.
 
 - Observation: the Windows worker capability pack needs domain types but must not import the simulator implementation.
   Evidence: the simulator now lives in `internal/windowsworker/simulator`; `internal/capabilities` imports only the pure closed contract and controller composition explicitly chooses the safe CI adapter.
@@ -175,6 +178,9 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-24 / Codex
 - Decision: make `config/redaction-coverage.json` the checked release artifact for write-only secret output coverage.
   Rationale: redaction spans multiple domains and cannot be safely reviewed as one broad prose claim. A matrix plus proof-snippet regression forces every named surface to keep implementation, UI, test, documentation, and forbidden-example evidence current.
+  Date/Author: 2026-07-24 / Codex
+- Decision: make DOD-11 intelligence evidence a checked matrix rather than relying on milestone prose.
+  Rationale: the acceptance row crosses intelligence service, workflow, API, CLI, UI, storage, and cache behavior. A single verified matrix captures the existing proof without expanding execution authority or weakening the final acceptance gate.
   Date/Author: 2026-07-24 / Codex
 - Decision: expose documentation impact simulation as a controller-owned typed policy profile before adding persistent editable profile storage.
   Rationale: operators need previewable change-to-document impact now, but policy editing is authority-bearing and should arrive with its own versioned persistence and activation semantics. A built-in typed profile gives API/CLI/browser parity without accepting raw commands, tool names, or repository-supplied policy code.
@@ -304,6 +310,8 @@ Increment 2 Milestone 7 has started but remains open. The operator console now u
 Current pause: implementation work is stopped after the green configuration-parity checkpoint. No partial redaction slice has been started; `I2-DOD-07` is the next safe implementation boundary when work resumes.
 
 The redaction coverage slice has resumed and produced the first checked cross-surface matrix. Full closure still requires broader package validation and final Increment 2 acceptance.
+
+The DOD-11 intelligence evidence boundary now has a checked matrix covering project-separated indexing, deterministic context manifests, baselines, differentials, impact analysis, cache controls, and operator parity. This records existing Milestone 2 proof for final reconciliation without claiming full Increment 2 completion.
 
 The deterministic local lifecycle and separate implementation/QC container boundary pass end to end. The final gate also passes full Go unit/integration/race/vet, frontend build/API drift/WCAG automation, all Compose views, authenticated live diagnostics, desktop/mobile pinned-Chromium interaction, hardened agent-image execution, Go/npm vulnerability checks, and source/package/image inventory generation. Real GitHub installation behavior, licensed GGUF inference, OpenViking embeddings, official Hermes runtime, remote OIDC/TLS, separate-host encrypted restore/update rollback, dedicated rootless worker topology, and OCI image scanning are intentionally not simulated as production proof; `docs/acceptance.md` gives their exact validation boundary.
 
@@ -680,3 +688,5 @@ Revision note (2026-07-24 07:55Z): added checked configuration operation parity 
 Revision note (2026-07-24 08:05Z): paused at the operator-requested sync point before starting the cross-surface secret-redaction coverage slice. `f6d25b6` was already pushed to `origin/dev` and GitHub Actions run `30076306125` passed; `I2-DOD-07` remains the next resumption boundary, and Increment 2 remains active and incomplete.
 
 Revision note (2026-07-24 08:25Z): added the checked write-only secret redaction inventory for `I2-DOD-07`. The matrix covers configuration secrets, import/export, provider egress manifests, observability events, support bundles, project memory, auth/session credentials, forge credentials, Windows-worker credentials, and policy decision inputs, and the config test verifies required coverage and proof snippets. Increment 2 remains active pending broader validation and final acceptance.
+
+Revision note (2026-07-24 08:45Z): added the checked DOD-11 intelligence evidence inventory. `config/intelligence-coverage.json` maps incremental indexing, context manifests, baseline capture, differential verification, test impact, cache integrity/quota/retention, and operator parity to existing implementation, UI, docs, and proof snippets. Increment 2 remains active pending final acceptance.

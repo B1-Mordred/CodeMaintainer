@@ -62,6 +62,7 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - [ ] (2026-07-24 07:55Z) Milestone 7 configuration parity coverage checkpoint: `config/configuration-parity.json` now maps routine typed-registry operations and legacy system-document compatibility operations to REST/OpenAPI routes, `maintainctl config` commands, the browser workbench, docs, and tests. `internal/config/configuration_parity_test.go` checks that each required operation exists in the matrix, that every REST path appears in OpenAPI, that CLI command strings remain present, and that UI/test/doc evidence paths exist. Focused validation is pending; full browser/keyboard E2E and final parity acceptance remain open.
 - [ ] (2026-07-24 08:05Z) Paused at the operator-requested sync point before starting the cross-surface secret-redaction coverage slice. Commit `f6d25b6` was already on `origin/dev` and GitHub Actions run `30076306125` passed; the next resumption boundary is `I2-DOD-07` write-only secret redaction coverage plus remaining Milestone 7 acceptance.
 - [ ] (2026-07-24 08:25Z) Milestone 7 redaction coverage checkpoint: `config/redaction-coverage.json` now maps ten secret-bearing output surfaces across configuration, provider egress, observability events, support bundles, memory, auth/session state, forge credentials, Windows-worker credentials, and policy inputs. `internal/config/redaction_coverage_test.go` checks required surface coverage, referenced implementation/UI/test/doc paths, and proof snippets for existing leak-prevention regressions. Focused config validation passes; broader redaction-adjacent packages and final E2E/security acceptance remain open.
+- [ ] (2026-07-24 08:45Z) Milestone 7 DOD-11 intelligence evidence checkpoint: `config/intelligence-coverage.json` now maps seven surfaces for project-separated incremental indexing, deterministic context manifests, workflow baselines, differential verification, test-impact records, cache integrity/quota/retention, and REST/CLI/browser parity. `internal/config/intelligence_coverage_test.go` verifies required surface coverage, referenced evidence paths, and proof snippets; full acceptance remains open.
 - [x] Milestone 1 — replace the single-document configuration surface with the complete typed registry, seven-scope effective-value resolver, immutable job snapshots, drafts/review/apply/rollback/import/export/dry-run/prerequisite APIs, CLI parity, and dedicated accessible workbench.
 - [x] Milestone 2 — add incremental code intelligence, deterministic Context Compiler, baseline/differential verification, test-impact analysis, isolated content-addressed caches, and their status/query/rebuild browser surfaces.
 - [x] Milestone 3 — add evidence-backed Repo Doctor onboarding, signed/checksummed capability-pack lifecycle, PHP/R/security packs, and catalog/assignment/upgrade/rollback UI.
@@ -142,6 +143,8 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: the tracked worktree matched `origin/dev` at `f6d25b6`, GitHub Actions run `30076306125` was green, and the next `I2-DOD-07` slice crosses configuration, provider egress, observability/support bundles, memory, auth, and Windows-worker credential handling.
 - Observation: redaction behavior existed in multiple isolated packages, but no checked artifact proved the surfaces moved together.
   Evidence: configuration, provider egress, observability, memory, auth, forge, Windows-worker, and policy tests already asserted local leak-prevention behavior; `I2-DOD-07` was still `missing` because no matrix connected those proofs to the DOD boundary.
+- Observation: Milestone 2 intelligence behavior was implemented but DOD-11 was still unclaimed at the final matrix layer.
+  Evidence: the service, workflow, API, CLI, and browser tests already covered indexing, context manifests, baselines, differentials, impact, and caches; `config/increment-2-coverage.json` still marked `I2-DOD-11` as `missing` before the checked intelligence matrix connected those proofs.
 
 ## Decision Log
 
@@ -181,6 +184,9 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - Decision: implement cache warming as an alias of the existing trusted exact-snapshot refresh path and make verification/simulation read-only typed operations.
   Rationale: warming must not introduce a second source-ingestion boundary, while verification must recompute controller-owned objects and simulation must not reserve capacity or evict unrelated project evidence.
   Date/Author: 2026-07-21 / Codex
+- Decision: make DOD-11 intelligence evidence a checked matrix rather than relying on milestone prose.
+  Rationale: indexing, context selection, baseline/differential review, impact analysis, and cache controls span multiple subsystems. A single machine-checked inventory keeps the final acceptance boundary explicit without reworking already-covered Milestone 2 implementation code.
+  Date/Author: 2026-07-24 / Codex
 - Decision: model evidence corrections, baseline updates, and targeted-test overrides as append-only review ledgers, with replacement baselines derived only from stored candidate observations.
   Rationale: original evidence stays reviewable; privileged changes are explicit, attributed, reasoned, and audited; and neither a correction nor an inner-loop override can weaken the newly-introduced-failure or fresh-full-suite safety invariants.
   Date/Author: 2026-07-21 / Codex
@@ -285,6 +291,8 @@ Milestone 7 has started but remains open. The browser information architecture n
 Current pause: implementation work is intentionally stopped after the green configuration-parity checkpoint. No partial redaction slice has been started; `I2-DOD-07` is the next safe implementation boundary when work resumes.
 
 The redaction slice is now active and partially validated. The new matrix covers all currently identified secret-bearing output paths and the config package gate passes; final closure still needs the broader redaction-adjacent package validation and full Increment 2 acceptance.
+
+DOD-11 intelligence acceptance evidence is now explicit but remains part of the broader open Milestone 7 final acceptance. The checked matrix covers incremental indexing, context manifests, workflow baselines, differential verification, impact records, cache integrity/quota/retention, and REST/CLI/browser parity without claiming full Increment 2 closure.
 
 ## Context and Orientation
 
@@ -471,3 +479,5 @@ Revision note (2026-07-24 07:55Z): added checked configuration operation parity 
 Revision note (2026-07-24 08:05Z): paused at the operator-requested sync point without starting the next redaction slice. `f6d25b6` was already pushed to `origin/dev` and CI run `30076306125` passed; this note records `I2-DOD-07` as the next resumption boundary and keeps Increment 2 active and incomplete.
 
 Revision note (2026-07-24 08:25Z): added the checked write-only secret redaction inventory for `I2-DOD-07`. `config/redaction-coverage.json` covers configuration secrets, import/export, provider egress manifests, observability events, support bundles, project memory, auth/session credentials, forge credentials, Windows-worker credentials, and policy decision inputs; the new config test verifies required coverage and proof snippets. Increment 2 remains active pending broader validation and final acceptance.
+
+Revision note (2026-07-24 08:45Z): added the checked DOD-11 intelligence evidence inventory. `config/intelligence-coverage.json` maps incremental indexing, deterministic context manifests, baseline capture, differential verification, test-impact records, cache integrity/quota/retention, and operator parity to existing implementation, UI, docs, and proof snippets; Increment 2 remains active pending final acceptance.
