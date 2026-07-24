@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "requirement_id": "I2-DOD-13",
+  "updated_at": "2026-07-24T09:05:00Z",
+  "surfaces": [
+    {
+      "id": "new-failure-non-waiver",
+      "claim": "A candidate observation classified as newly introduced cannot be corrected to pre-existing or resolved, and any safe reclassification remains append-only and audited.",
+      "implementation": ["internal/intelligence/service.go", "internal/storage/sqlite/intelligence.go", "internal/storage/sqlite/migrations/020_intelligence_reviews.sql"],
+      "tests": ["internal/intelligence/service_integration_test.go"],
+      "ui": ["web/src/IntelligencePage.tsx#baselines-and-differentials"],
+      "docs": ["docs/intelligence.md", "execplan/increment-2.md"],
+      "proof": [
+        {"path": "internal/intelligence/service.go", "contains": ["current == \"newly_introduced\"", "AfterClassification == \"pre_existing\"", "a newly introduced finding cannot be classified away as pre-existing or resolved"]},
+        {"path": "internal/intelligence/service_integration_test.go", "contains": ["newly introduced finding was classified away", "AfterClassification: \"pre_existing\"", "AfterClassification: \"indeterminate\""]}
+      ]
+    },
+    {
+      "id": "final-full-suite-non-waiver",
+      "claim": "Targeted test selections and overrides are inner-loop accelerators only; final verification must retain a full-suite impact record before the workflow can advance.",
+      "implementation": ["internal/intelligence/service.go", "internal/workflow/coordinator.go", "internal/storage/sqlite/migrations/020_intelligence_reviews.sql"],
+      "tests": ["internal/intelligence/service_integration_test.go", "internal/workflow/coordinator_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/IntelligencePage.tsx#test-impact"],
+      "docs": ["docs/intelligence.md", "docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator.go", "contains": ["purpose == \"final\"", "!impact.FullSuiteRequired", "final verification is missing mandatory full-suite impact policy evidence"]},
+        {"path": "internal/intelligence/service.go", "contains": ["Targeted tests accelerate inner loops", "requires a fresh full suite", "impact record lacks the immutable full-suite safety requirement"]},
+        {"path": "web/src/IntelligencePage.tsx", "contains": ["Targeted tests never replace the policy-required fresh full suite", "Recorded targeted-test override; the full-suite requirement remains"]}
+      ]
+    },
+    {
+      "id": "golden-update-explicit-approval",
+      "claim": "Changed or missing approved golden artifacts route to an operator approval wait and cannot validate as passed or continue to documentation/QC without the latest explicit append-only approval.",
+      "implementation": ["internal/golden/types.go", "internal/workflow/coordinator.go", "internal/api/golden.go", "internal/storage/sqlite/golden.go", "internal/storage/sqlite/migrations/028_golden_rehearsals.sql"],
+      "tests": ["internal/golden/types_test.go", "internal/workflow/engine_test.go", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#awaiting-golden-approval"],
+      "docs": ["docs/quality-workflow.md", "execplan/increment-2.md"],
+      "proof": [
+        {"path": "internal/golden/types_test.go", "contains": ["TestChangedGoldenRequiresApprovalStatus", "changed golden validated without approval_required status", "TestApprovalResolutionUsesLatestAppendOnlyDecision"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["report.Status == \"approval_required\"", "jobs.StateAwaitingGoldenApproval", "golden rehearsal gate requires explicit approval before QC"]},
+        {"path": "web/src/OperatorConsole.tsx", "contains": ["Changed or missing approved golden artifacts require explicit reviewer approval before documentation and QC continue", "approveGoldenComparison", "Golden update decisions require a rationale and current reviewer password"]}
+      ]
+    },
+    {
+      "id": "operator-surface-parity",
+      "claim": "REST, CLI, and browser surfaces expose the same safety decisions for baseline correction, targeted-test overrides, full-suite requirements, and golden approval.",
+      "implementation": ["internal/api/intelligence.go", "internal/api/golden.go", "internal/api/openapi.yaml", "cmd/maintainctl/main.go", "web/src/IntelligencePage.tsx", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/api/server_test.go", "cmd/maintainctl/main_test.go", "web/src/IntelligencePage.test.tsx", "web/src/App.test.tsx"],
+      "ui": ["web/src/IntelligencePage.tsx#test-impact", "web/src/OperatorConsole.tsx#golden-update-approval"],
+      "docs": ["docs/intelligence.md", "docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/api/openapi.yaml", "contains": ["Append an audited targeted-test override without changing full-suite policy", "Append an explicit approval or rejection for a proposed golden update"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["TestGoldenCLIListsReportsAndApprovesUpdates", "reviewed golden update"]},
+        {"path": "internal/api/server_test.go", "contains": ["override.Selected", "!impact.FullSuiteRequired"]}
+      ]
+    }
+  ]
+}

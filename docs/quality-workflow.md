@@ -1,5 +1,7 @@
 # Quality Workflow
 
+The checked DOD-13 safety matrix lives in `config/verification-safety-coverage.json`; it ties non-waivable new failures, mandatory final full-suite evidence, and explicit golden-update approval to implementation, UI, CLI/API, documentation, and regression-test proof snippets.
+
 Increment 2 Milestone 5 starts by making implementation wait for a controller-owned task contract and deterministic risk decision.
 
 ## Task contracts

@@ -52,6 +52,7 @@ The security boundary matters as much as the workflow. The controller is the sol
 - [ ] (2026-07-24 08:05Z) Increment 2 paused at the operator-requested sync point after the Milestone 7 configuration-parity checkpoint. Commits through `f6d25b6` are on `origin/dev` and GitHub Actions run `30076306125` passed; no partial redaction coverage work has started, and `I2-DOD-07` is the next implementation boundary.
 - [ ] (2026-07-24 08:25Z) Increment 2 Milestone 7 redaction coverage checkpoint: `config/redaction-coverage.json` now maps ten secret-bearing output surfaces across configuration, import/export, provider egress, observability events, support bundles, project memory, auth/session state, forge credentials, Windows-worker credentials, and policy inputs. `internal/config/redaction_coverage_test.go` verifies required coverage, evidence paths, and proof snippets; focused config validation passes while broader acceptance remains open.
 - [ ] (2026-07-24 08:45Z) Increment 2 Milestone 7 DOD-11 intelligence evidence checkpoint: `config/intelligence-coverage.json` now maps seven intelligence/context/verification/cache surfaces to implementation, regression tests, browser/CLI/API coverage, docs, and proof snippets. Focused config validation passes while full acceptance remains open.
+- [ ] (2026-07-24 09:05Z) Increment 2 Milestone 7 DOD-13 verification-safety checkpoint: `config/verification-safety-coverage.json` now maps non-waivable new failures, mandatory final full-suite evidence, explicit golden-update approval, and operator parity to implementation, tests, browser/CLI/API coverage, docs, and proof snippets.
 
 ## Surprises & Discoveries
 
@@ -129,6 +130,8 @@ The security boundary matters as much as the workflow. The controller is the sol
   Evidence: existing tests covered configuration secret state, forbidden provider data classes, observability/support-bundle redaction, memory secret rejection, auth token hashes, GitLab token-free remotes, Windows-worker credential references, and policy redacted inputs; `config/increment-2-coverage.json` still marked `I2-DOD-07` missing.
 - Observation: the DOD-11 intelligence acceptance boundary was implemented across Milestone 2 code but lacked a checked inventory.
   Evidence: service, workflow, API, CLI, and browser regressions already covered indexing, context manifests, baselines, differentials, test impact, and cache operations; the Increment 2 coverage file still marked the row missing until the matrix was added.
+- Observation: the DOD-13 safety boundary crossed multiple subsystems without a single checked inventory.
+  Evidence: intelligence tests rejected hiding new findings, workflow code required full-suite final impact evidence, golden tests required approval status, and operator surfaces existed; the Increment 2 coverage file still marked the row missing.
 
 - Observation: the Windows worker capability pack needs domain types but must not import the simulator implementation.
   Evidence: the simulator now lives in `internal/windowsworker/simulator`; `internal/capabilities` imports only the pure closed contract and controller composition explicitly chooses the safe CI adapter.
@@ -181,6 +184,9 @@ The security boundary matters as much as the workflow. The controller is the sol
   Date/Author: 2026-07-24 / Codex
 - Decision: make DOD-11 intelligence evidence a checked matrix rather than relying on milestone prose.
   Rationale: the acceptance row crosses intelligence service, workflow, API, CLI, UI, storage, and cache behavior. A single verified matrix captures the existing proof without expanding execution authority or weakening the final acceptance gate.
+  Date/Author: 2026-07-24 / Codex
+- Decision: make DOD-13 a checked safety matrix across differential, final verification, and golden approval gates.
+  Rationale: the requirement combines non-waiver guarantees from separate subsystems. A single proof inventory keeps future changes from weakening one gate while relying on unrelated green tests.
   Date/Author: 2026-07-24 / Codex
 - Decision: expose documentation impact simulation as a controller-owned typed policy profile before adding persistent editable profile storage.
   Rationale: operators need previewable change-to-document impact now, but policy editing is authority-bearing and should arrive with its own versioned persistence and activation semantics. A built-in typed profile gives API/CLI/browser parity without accepting raw commands, tool names, or repository-supplied policy code.
@@ -312,6 +318,8 @@ Current pause: implementation work is stopped after the green configuration-pari
 The redaction coverage slice has resumed and produced the first checked cross-surface matrix. Full closure still requires broader package validation and final Increment 2 acceptance.
 
 The DOD-11 intelligence evidence boundary now has a checked matrix covering project-separated indexing, deterministic context manifests, baselines, differentials, impact analysis, cache controls, and operator parity. This records existing Milestone 2 proof for final reconciliation without claiming full Increment 2 completion.
+
+The DOD-13 verification-safety boundary now has a checked matrix covering newly introduced finding non-waiver, immutable full-suite final verification policy, explicit golden-update approval, and REST/CLI/browser parity. This records existing safety proof without claiming full Increment 2 completion.
 
 The deterministic local lifecycle and separate implementation/QC container boundary pass end to end. The final gate also passes full Go unit/integration/race/vet, frontend build/API drift/WCAG automation, all Compose views, authenticated live diagnostics, desktop/mobile pinned-Chromium interaction, hardened agent-image execution, Go/npm vulnerability checks, and source/package/image inventory generation. Real GitHub installation behavior, licensed GGUF inference, OpenViking embeddings, official Hermes runtime, remote OIDC/TLS, separate-host encrypted restore/update rollback, dedicated rootless worker topology, and OCI image scanning are intentionally not simulated as production proof; `docs/acceptance.md` gives their exact validation boundary.
 
@@ -690,3 +698,5 @@ Revision note (2026-07-24 08:05Z): paused at the operator-requested sync point b
 Revision note (2026-07-24 08:25Z): added the checked write-only secret redaction inventory for `I2-DOD-07`. The matrix covers configuration secrets, import/export, provider egress manifests, observability events, support bundles, project memory, auth/session credentials, forge credentials, Windows-worker credentials, and policy decision inputs, and the config test verifies required coverage and proof snippets. Increment 2 remains active pending broader validation and final acceptance.
 
 Revision note (2026-07-24 08:45Z): added the checked DOD-11 intelligence evidence inventory. `config/intelligence-coverage.json` maps incremental indexing, context manifests, baseline capture, differential verification, test impact, cache integrity/quota/retention, and operator parity to existing implementation, UI, docs, and proof snippets. Increment 2 remains active pending final acceptance.
+
+Revision note (2026-07-24 09:05Z): added the checked DOD-13 verification-safety inventory. `config/verification-safety-coverage.json` maps new-failure non-waiver, final full-suite non-waiver, golden-update approval, and operator parity to existing implementation, UI, docs, and proof snippets. Increment 2 remains active pending final acceptance.
