@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T12:05:00Z",
+  "surfaces": [
+    {
+      "id": "ci-containerized-core-gate",
+      "status": "covered",
+      "title": "GitHub CI uses the containerized Go, frontend, Compose, and image gate",
+      "implementation": [".github/workflows/ci.yml", "compose.yaml", "compose.dev.yaml", "images/control-plane.Dockerfile"],
+      "tests": [".github/workflows/ci.yml", "docs/compose-acceptance.md"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/acceptance.md", "docs/compose-acceptance.md"],
+      "proof": [
+        {"path": ".github/workflows/ci.yml", "contains": ["go-version-file: go.mod", "go test -race ./...", "npm ci && npm run check:api && npm test && npm run build"]},
+        {"path": ".github/workflows/ci.yml", "contains": ["docker compose -f compose.yaml -f compose.dev.yaml config --quiet", "build controller maintainctl runnerd model-supervisor code-intelligence"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "local-acceptance-script",
+      "status": "in_progress",
+      "title": "Local acceptance script remains documented and bounded",
+      "implementation": ["scripts/acceptance.sh", "scripts/bootstrap.sh", "compose.yaml", "compose.dev.yaml", "images/browser-acceptance.Dockerfile"],
+      "tests": ["scripts/acceptance.sh", "docs/acceptance.md", "docs/compose-acceptance.md"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health", "web/src/OperatorConsole.tsx#jobs"],
+      "docs": ["docs/acceptance.md", "docs/compose-acceptance.md", "docs/troubleshooting.md"],
+      "proof": [
+        {"path": "scripts/acceptance.sh", "contains": ["./scripts/bootstrap.sh", "go test ./...", "npx tsc --noEmit", "browser-tool"]},
+        {"path": "docs/acceptance.md", "contains": ["./scripts/acceptance.sh", "Local-fake E2E coverage checks"]},
+        {"path": "docs/troubleshooting.md", "contains": ["docker compose config --quiet", "scripts/acceptance.sh"]}
+      ],
+      "remaining_work": ["Run and retain the full acceptance script after the remaining Increment 2 local-fake E2E, soak, and final acceptance rows are closed."]
+    },
+    {
+      "id": "documented-compose-views",
+      "status": "covered",
+      "title": "All documented Compose views have explicit validation commands",
+      "implementation": ["compose.yaml", "compose.dev.yaml", "compose.observability.yaml", "compose.remote.yaml", "compose.production.yaml"],
+      "tests": ["docs/acceptance.md", "docs/compose-acceptance.md"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/acceptance.md", "docs/deployment.md", "docs/operations.md", "docs/compose-acceptance.md"],
+      "proof": [
+        {"path": "docs/acceptance.md", "contains": ["docker compose --profile tools config --quiet", "compose.observability.yaml", "compose.remote.yaml", "compose.production.yaml"]},
+        {"path": "docs/deployment.md", "contains": ["compose.remote.yaml", "compose.production.yaml config"]},
+        {"path": "docs/operations.md", "contains": ["scripts/update.sh preflight", "scripts/update.sh rollback"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "mock-runtime-runnable-stack",
+      "status": "in_progress",
+      "title": "Mock runtime stack can bootstrap, start, health-check, authenticate diagnostics, and run browser acceptance",
+      "implementation": ["compose.yaml", "compose.dev.yaml", "cmd/controller", "cmd/maintainctl", "images/browser-acceptance.Dockerfile"],
+      "tests": ["scripts/acceptance.sh", ".github/workflows/ci.yml", "docs/compose-acceptance.md"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/acceptance.md", "docs/compose-acceptance.md"],
+      "proof": [
+        {"path": "scripts/acceptance.sh", "contains": ["up -d runnerd controller", "curl --fail --silent --show-error http://127.0.0.1:8080/healthz", "maintainctl doctor"]},
+        {"path": "compose.yaml", "contains": ["127.0.0.1:8080:8080", "condition: service_started", "healthcheck"]},
+        {"path": "web/src/OperatorConsole.tsx", "contains": ["Host capacity", "Smoke-test job", "Submit one deterministic maintenance task"]}
+      ],
+      "remaining_work": ["Run the full live mock stack acceptance script in a disposable data/port configuration after all final local acceptance rows are otherwise ready."]
+    },
+    {
+      "id": "operator-maintenance-scripts",
+      "status": "covered",
+      "title": "Maintenance, SBOM, vulnerability, and agent-image acceptance commands stay documented",
+      "implementation": ["scripts/update.sh", "scripts/sbom.sh", "scripts/vulnerability-scan.sh", "scripts/agent-image-acceptance.sh"],
+      "tests": ["scripts/update.sh", "scripts/sbom.sh", "scripts/vulnerability-scan.sh", "scripts/agent-image-acceptance.sh", "docs/compose-acceptance.md"],
+      "ui": ["web/src/OperatorConsole.tsx#security-sbom", "web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/operations.md", "docs/acceptance.md", "docs/compose-acceptance.md"],
+      "proof": [
+        {"path": "scripts/update.sh", "contains": ["preflight", "./scripts/acceptance.sh", "rollback"]},
+        {"path": "scripts/sbom.sh", "contains": ["go list -m -json all", "container-images.txt"]},
+        {"path": "scripts/vulnerability-scan.sh", "contains": ["govulncheck", "npm audit --audit-level=high"]},
+        {"path": "scripts/agent-image-acceptance.sh", "contains": ["Agent image acceptance passed.", "blocking_findings"]}
+      ],
+      "remaining_work": []
+    }
+  ]
+}

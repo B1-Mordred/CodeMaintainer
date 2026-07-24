@@ -2,6 +2,8 @@
 
 `project.md` is the authoritative contract. This page records the release gate and separates deterministic local evidence from checks that require operator infrastructure, credentials, or multi-gigabyte weights.
 
+The runnable Compose and acceptance runbook is maintained in `docs/compose-acceptance.md`. Its checked coverage matrix is `config/compose-acceptance-coverage.json`.
+
 ## Deterministic local gate
 
 Run from a clean checkout after `./maintainctl bootstrap`:
