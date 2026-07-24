@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,8 +89,19 @@ func (m *memoryStore) RecordCapabilityProbe(_ context.Context, probe CapabilityP
 	m.probes = append(m.probes, probe)
 	return probe, nil
 }
-func (m *memoryStore) ListCapabilityProbes(context.Context, string, int) ([]CapabilityProbe, error) {
-	return append([]CapabilityProbe(nil), m.probes...), nil
+func (m *memoryStore) ListCapabilityProbes(_ context.Context, modelProfileID string, limit int) ([]CapabilityProbe, error) {
+	items := []CapabilityProbe{}
+	for index := len(m.probes) - 1; index >= 0; index-- {
+		probe := m.probes[index]
+		if modelProfileID != "" && probe.ModelProfileID != modelProfileID {
+			continue
+		}
+		items = append(items, probe)
+		if limit > 0 && len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
 }
 
 func TestDefaultsKeepRemoteProvidersDisabledAndRouteLocal(t *testing.T) {
@@ -210,6 +222,9 @@ func TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests(t *testing
 			store.routes[index].MaxCostUSD = 0.0001
 		}
 	}
+	if _, err := service.ProbeModel(context.Background(), "fake-remote-json", "tester"); err != nil {
+		t.Fatal(err)
+	}
 	tooExpensive, err := service.SimulateRoute(context.Background(), RouteRequest{
 		ProjectID: "owner-repo", Role: "documentation", Purpose: "cost circuit integration fixture",
 		DataClasses: []string{"task_metadata"}, EstimatedBytes: 2048, EstimatedTokens: 2000,
@@ -246,6 +261,99 @@ func TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests(t *testing
 		if manifest.PolicyDecision != DecisionDenied || manifest.ManifestSHA256 == "" || len(manifest.Redactions) == 0 {
 			t.Fatalf("denied remote manifest lost safety evidence: %#v", manifest)
 		}
+	}
+}
+
+func TestRemoteRouteDeniesObservedModelDriftFromRetainedProbe(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	service.now = func() time.Time { return time.Date(2026, 7, 24, 12, 45, 0, 0, time.UTC) }
+	if _, err := service.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for index := range store.providers {
+		if store.providers[index].ID == "fake-openai-responses" {
+			store.providers[index].Enabled = true
+		}
+	}
+	for index := range store.routes {
+		if store.routes[index].ID == "remote-documentation-ci-preview" {
+			store.routes[index].Enabled = true
+			store.routes[index].MaxCostUSD = 10
+		}
+	}
+	probe, err := service.ProbeModel(context.Background(), "fake-remote-json", "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.probes[len(store.probes)-1].ObservedModelID = "unexpected-remote-model"
+
+	decision, err := service.SimulateRoute(context.Background(), RouteRequest{
+		ProjectID: "owner-repo", Role: "documentation", Purpose: "observed model drift must fail closed",
+		DataClasses: []string{"task_metadata"}, EstimatedBytes: 1024, EstimatedTokens: 512,
+		RequiresStructuredOutput: true,
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Status != DecisionDenied || !strings.Contains(decision.Reason, "observed model drift") || decision.EgressManifest.ManifestSHA256 == "" {
+		t.Fatalf("observed model drift was not denied from retained probe %#v: %#v", probe, decision)
+	}
+}
+
+func TestRemoteRouteRejectsLowerTrustFallbackWhenPrimaryIsUnavailable(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	service.now = func() time.Time { return time.Date(2026, 7, 24, 12, 50, 0, 0, time.UTC) }
+	if _, err := service.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	store.providers = append(store.providers, ProviderProfile{
+		ID: "public-hosted-json", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyOpenAIResponses,
+		DisplayName: "Public hosted fallback", TrustTier: TrustPublic, Remote: true, Enabled: true,
+		ApprovedDataClasses: []string{"task_metadata", "documentation_public_source"},
+		OperatorAssertions:  []string{"public fallback fixture must not receive approved-private route traffic"},
+		Version:             1,
+	})
+	store.endpoints = append(store.endpoints, EndpointProfile{
+		ID: "public-hosted-json-endpoint", ProviderID: "public-hosted-json",
+		BaseURL: "https://providers.invalid/public-hosted-json", NetworkZone: NetworkPublic,
+		TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000,
+		HealthCheckPath: "/healthz", Version: 1,
+	})
+	store.models = append(store.models, ModelProfile{
+		ID: "public-hosted-json-model", ProviderID: "public-hosted-json", EndpointID: "public-hosted-json-endpoint",
+		ModelID: "public-json-2026-07", DisplayName: "Public hosted JSON fallback",
+		RoleEligibility: []string{"documentation"},
+		Capabilities: CapabilitySet{
+			ResponsesAPI: true, StructuredOutputs: true, UsageAccounting: true, ImmutableModelIDs: true,
+		},
+		ContextLimit: 128000, OutputLimit: 16384, QualityStatus: "ci_fake_only", Version: 1,
+	})
+	for index := range store.routes {
+		if store.routes[index].ID == "remote-documentation-ci-preview" {
+			store.routes[index].Enabled = true
+			store.routes[index].MaxCostUSD = 10
+			store.routes[index].OrderedModelIDs = []string{"fake-remote-json", "public-hosted-json-model"}
+		}
+	}
+	if _, err := service.ProbeModel(context.Background(), "fake-remote-json", "tester"); err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := service.SimulateRoute(context.Background(), RouteRequest{
+		ProjectID: "owner-repo", Role: "documentation", Purpose: "public fallback must fail closed",
+		DataClasses: []string{"task_metadata"}, EstimatedBytes: 1024, EstimatedTokens: 512,
+		RequiresStructuredOutput: true,
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Status != DecisionDenied || decision.EgressManifest.ProviderID != "unselected" || len(store.manifests) != 1 {
+		t.Fatalf("lower-trust fallback was not denied with retained evidence: %#v manifests=%#v", decision, store.manifests)
+	}
+	if decision.EgressManifest.RouteID != "remote-documentation-ci-preview" || decision.EgressManifest.ManifestSHA256 == "" || !strings.Contains(decision.Reason, "lower-trust fallback") {
+		t.Fatalf("denied lower-trust fallback manifest lost route evidence: %#v", decision.EgressManifest)
 	}
 }
 

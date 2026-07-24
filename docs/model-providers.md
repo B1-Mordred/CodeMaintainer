@@ -70,6 +70,20 @@ The gateway records DNS policy, TLS mode, redirect behavior, timeout, region,
 and network zone as profile data. It does not accept arbitrary provider URLs or
 model arguments from a job submission or agent packet.
 
+## Capability probes and trust-preserving fallback
+
+Remote model profiles are usable only when the latest retained capability probe
+for that model passed and still matches the pinned provider, endpoint, interface
+family, observed model ID, and required capability set. A route therefore fails
+closed if a later probe observes a different model identifier or loses a
+capability that the profile or request depends on.
+
+Fallback never lowers the trust tier for routes declared as
+`same_trust_or_stricter` or `explicit_same_or_higher_trust_only`. If the first
+eligible model in the ordered route establishes an approved-private or stronger
+trust floor, a public-remote model later in the list cannot receive the request
+just because the preferred model is disabled, over budget, or has drifted.
+
 ## Egress manifests
 
 Before a provider route is treated as usable, the service creates a retained

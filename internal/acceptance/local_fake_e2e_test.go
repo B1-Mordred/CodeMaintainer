@@ -216,6 +216,10 @@ func runLocalFakeProviderGateway(t *testing.T, ctx context.Context, store *store
 			}
 		}
 	}
+	probe, err := providerService.ProbeModel(ctx, "fake-remote-json", "browser-operator")
+	if err != nil || probe.Status != "passed" || probe.ObservedModelID == "" {
+		t.Fatalf("browser pinned fake remote capabilities = %#v, %v", probe, err)
+	}
 	allowed, err := providerService.SimulateExecution(ctx, providers.ExecutionRequest{
 		Route: providers.RouteRequest{
 			JobID: "job_local_fake_e2e", ProjectID: "fixture", Role: "documentation", Purpose: "browser approved fake remote documentation route",

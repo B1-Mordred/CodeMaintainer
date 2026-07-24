@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T11:20:57Z",
+  "updated_at": "2026-07-24T12:45:00Z",
   "surfaces": [
     {
       "id": "fixtures-php83-composer-mysql-redis-vite-tailwind",
@@ -86,6 +86,7 @@
       "docs": ["docs/model-providers.md", "docs/observability.md", "docs/security.md"],
       "proof": [
         {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesObservedModelDriftFromRetainedProbe", "TestRemoteRouteRejectsLowerTrustFallbackWhenPrimaryIsUnavailable"]},
         {"path": "internal/providers/execution_test.go", "contains": ["TestProviderExecutionFakesTimeoutAndRateLimitRetryCircuits", "TestProviderExecutionFakeBatchPartialFailureRetainsPerItemEvidence", "TestProviderExecutionFakeRejectsCrossProjectBatchAndCapturesStreamInterruption"]},
         {"path": "internal/providers/stream_test.go", "contains": ["TestParseStreamEventsRejectsInterleavedToolDeltasCancellationAndTruncation", "truncated stream was accepted"]},
         {"path": "internal/storage/sqlite/providers_test.go", "contains": ["TestProviderEndpointRejectsUnsafeRemoteURL", "provider egress manifest update unexpectedly succeeded"]},

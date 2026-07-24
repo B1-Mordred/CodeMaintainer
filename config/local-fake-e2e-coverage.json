@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T12:20:00Z",
+  "updated_at": "2026-07-24T12:45:00Z",
   "steps": [
     {
       "step": 1,
@@ -205,7 +205,7 @@
     {
       "step": 13,
       "id": "remote-inference-fails-closed",
-      "status": "in_progress",
+      "status": "covered",
       "title": "Prove remote inference is default-off and forbidden data, unsafe endpoints, redirects, model drift, or lower-trust fallback fail closed",
       "fixtures": [],
       "implementation": ["internal/providers", "cmd/model-tool/main.go", "config/security-adversarial-coverage.json"],
@@ -214,11 +214,13 @@
       "docs": ["docs/model-providers.md", "docs/security.md"],
       "proof": [
         {"path": "internal/providers/service_test.go", "contains": ["RemoteEnabledByDefault", "forbidden data class", "capability drift"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesObservedModelDriftFromRetainedProbe", "observed model drift"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteRejectsLowerTrustFallbackWhenPrimaryIsUnavailable", "lower-trust fallback"]},
         {"path": "internal/storage/sqlite/providers_test.go", "contains": ["TestProviderEndpointRejectsUnsafeRemoteURL", "169.254.169.254"]},
         {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect"]},
         {"path": "internal/acceptance/local_fake_e2e_test.go", "contains": ["remote provider defaulted enabled", "forbidden remote data boundary", "ExecutionStatusDenied"]}
       ],
-      "remaining_work": ["Add a lower-trust fallback regression and bind model-drift denial to retained probe history once provider execution records observed model IDs at call time."]
+      "remaining_work": []
     },
     {
       "step": 14,

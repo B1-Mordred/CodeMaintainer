@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T09:45:00Z",
+  "updated_at": "2026-07-24T12:45:00Z",
   "surfaces": [
     {
       "id": "authorization-reauth-stale-edit",
@@ -47,7 +47,7 @@
     {
       "id": "provider-ssrf-egress-fallback-cost",
       "title": "Provider SSRF, egress, fallback, and budget controls fail closed",
-      "policy": "Provider routing rejects forbidden data classes, unsafe endpoints, disabled remotes, capability gaps, cost excess, and unsafe model download redirects before an external request can be made.",
+      "policy": "Provider routing rejects forbidden data classes, unsafe endpoints, disabled remotes, missing or drifted capability probes, lower-trust fallbacks, capability gaps, cost excess, and unsafe model download redirects before an external request can be made.",
       "implementation": ["internal/providers/service.go", "internal/providers/types.go", "cmd/model-tool/main.go"],
       "tests": ["internal/providers/service_test.go", "internal/api/server_test.go"],
       "ui": ["web/src/OperatorConsole.tsx#models-agents"],
@@ -55,6 +55,7 @@
       "proof": [
         {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "DataClasses: []string{\"secrets\"}"]},
         {"path": "internal/providers/service_test.go", "contains": ["TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt", "loopback"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesObservedModelDriftFromRetainedProbe", "TestRemoteRouteRejectsLowerTrustFallbackWhenPrimaryIsUnavailable"]},
         {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect", "parsed.User != nil"]}
       ]
     },

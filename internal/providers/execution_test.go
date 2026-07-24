@@ -124,6 +124,9 @@ func newRemoteExecutionService(t *testing.T) (*Service, *memoryStore) {
 			store.routes[index].BatchPolicy = "project_isolated"
 		}
 	}
+	if _, err := service.ProbeModel(context.Background(), "fake-remote-json", "tester"); err != nil {
+		t.Fatal(err)
+	}
 	return service, store
 }
 

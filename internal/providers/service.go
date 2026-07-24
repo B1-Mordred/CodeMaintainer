@@ -112,6 +112,7 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 	if len(candidates) == 0 {
 		return s.recordDenied(ctx, request, "", "no route profile is enabled for the requested role")
 	}
+	denyReason := "no enabled model satisfied route, data, capability, endpoint, cost, and trust constraints"
 	for _, route := range candidates {
 		if !dataClassesAllowed(request.DataClasses, route.AllowedDataClasses) {
 			continue
@@ -119,16 +120,15 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 		if request.EstimatedTokens > route.MaxTokensPerRequest {
 			continue
 		}
+		trustFloor := 0
+		trustFloorTier := ""
 		for _, modelID := range route.OrderedModelIDs {
 			model, ok := models[modelID]
 			if !ok || !roleAllowed(request.Role, model.RoleEligibility) {
 				continue
 			}
-			if request.RequiresStructuredOutput && !model.Capabilities.StructuredOutputs {
-				continue
-			}
 			provider, ok := providers[model.ProviderID]
-			if !ok || !provider.Enabled {
+			if !ok {
 				continue
 			}
 			if !dataClassesAllowed(request.DataClasses, provider.ApprovedDataClasses) {
@@ -141,8 +141,30 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 			if err := endpoint.Validate(provider); err != nil {
 				continue
 			}
+			candidateTrust := trustRank(provider.TrustTier)
+			if fallbackPreservesTrust(route.FallbackPolicy) && trustFloor == 0 {
+				trustFloor = candidateTrust
+				trustFloorTier = provider.TrustTier
+			}
+			if fallbackPreservesTrust(route.FallbackPolicy) && trustFloor > 0 && candidateTrust < trustFloor {
+				denyReason = fmt.Sprintf("route %s rejected lower-trust fallback from %s to %s", route.ID, trustFloorTier, provider.TrustTier)
+				continue
+			}
+			if provider.Remote {
+				if err := s.remoteProbeAllows(ctx, provider, endpoint, model, request); err != nil {
+					denyReason = err.Error()
+					continue
+				}
+			}
+			if !provider.Enabled {
+				continue
+			}
+			if request.RequiresStructuredOutput && !model.Capabilities.StructuredOutputs {
+				continue
+			}
 			estimatedCost := estimateCostUSD(request.EstimatedTokens, model)
 			if route.MaxCostUSD > 0 && estimatedCost > route.MaxCostUSD {
+				denyReason = fmt.Sprintf("route %s rejected estimated cost %.6f above maximum %.6f", route.ID, estimatedCost, route.MaxCostUSD)
 				continue
 			}
 			manifest := EgressManifest{
@@ -157,7 +179,7 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 			return s.recordAllowed(ctx, route, provider, endpoint, model, manifest)
 		}
 	}
-	return s.recordDenied(ctx, request, candidates[0].ID, "no enabled model satisfied route, data, capability, endpoint, cost, and trust constraints")
+	return s.recordDenied(ctx, request, candidates[0].ID, denyReason)
 }
 
 func (s *Service) ProbeModel(ctx context.Context, modelProfileID, actor string) (CapabilityProbe, error) {
@@ -317,6 +339,72 @@ func roleAllowed(role string, roles []string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) remoteProbeAllows(ctx context.Context, provider ProviderProfile, endpoint EndpointProfile, model ModelProfile, request RouteRequest) error {
+	probes, err := s.store.ListCapabilityProbes(ctx, model.ID, 1)
+	if err != nil {
+		return err
+	}
+	if len(probes) == 0 {
+		return fmt.Errorf("remote model %s has no retained successful capability probe", model.ID)
+	}
+	probe := probes[0]
+	if probe.Status != "passed" {
+		return fmt.Errorf("remote model %s latest capability probe failed", model.ID)
+	}
+	if probe.ProviderID != provider.ID || probe.EndpointID != endpoint.ID || probe.InterfaceFamily != provider.InterfaceFamily {
+		return fmt.Errorf("remote model %s latest capability probe no longer matches provider endpoint", model.ID)
+	}
+	if probe.ObservedModelID != model.ModelID {
+		return fmt.Errorf("remote model %s observed model drift: probe saw %s, profile pins %s", model.ID, probe.ObservedModelID, model.ModelID)
+	}
+	if request.RequiresStructuredOutput && !probe.Capabilities.StructuredOutputs {
+		return fmt.Errorf("remote model %s latest capability probe lacks structured output support", model.ID)
+	}
+	if !capabilitySetCovers(model.Capabilities, probe.Capabilities) {
+		return fmt.Errorf("remote model %s latest capability probe no longer covers pinned capability profile", model.ID)
+	}
+	return nil
+}
+
+func fallbackPreservesTrust(policy string) bool {
+	return policy == "same_trust_or_stricter" || policy == "explicit_same_or_higher_trust_only"
+}
+
+func trustRank(trust string) int {
+	switch trust {
+	case TrustLocal:
+		return 4
+	case TrustEnterprise:
+		return 3
+	case TrustPrivate:
+		return 2
+	case TrustPublic:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func capabilitySetCovers(required, observed CapabilitySet) bool {
+	return (!required.ResponsesAPI || observed.ResponsesAPI) &&
+		(!required.ChatCompletions || observed.ChatCompletions) &&
+		(!required.Streaming || observed.Streaming) &&
+		(!required.Cancellation || observed.Cancellation) &&
+		(!required.StructuredOutputs || observed.StructuredOutputs) &&
+		(!required.ToolCalls || observed.ToolCalls) &&
+		(!required.ParallelToolCalls || observed.ParallelToolCalls) &&
+		(!required.StableToolCallIDs || observed.StableToolCallIDs) &&
+		(!required.SystemMessages || observed.SystemMessages) &&
+		(!required.DeveloperMessages || observed.DeveloperMessages) &&
+		(!required.UsageAccounting || observed.UsageAccounting) &&
+		(!required.ReasoningControls || observed.ReasoningControls) &&
+		(!required.PromptCaching || observed.PromptCaching) &&
+		(!required.Batch || observed.Batch) &&
+		(!required.Asynchronous || observed.Asynchronous) &&
+		(!required.ModelListing || observed.ModelListing) &&
+		(!required.ImmutableModelIDs || observed.ImmutableModelIDs)
 }
 
 func estimateCostUSD(tokens int, model ModelProfile) float64 {
