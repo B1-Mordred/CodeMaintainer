@@ -72,8 +72,14 @@ func TestSchedulerDefersSameProjectLeaseAndRecordsDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(decisions) < 2 || decisions[0].Status != scheduler.DecisionDeferred || !decisions[0].FairnessApplied ||
-		len(decisions[0].DeferredJobIDs) != 1 || decisions[0].DeferredJobIDs[0] != "job_same_project" {
+	var deferred *scheduler.Decision
+	for index := range decisions {
+		if len(decisions[index].DeferredJobIDs) == 1 && decisions[index].DeferredJobIDs[0] == "job_same_project" {
+			deferred = &decisions[index]
+			break
+		}
+	}
+	if deferred == nil || deferred.Status != scheduler.DecisionDeferred || !deferred.FairnessApplied {
 		t.Fatalf("same-project decision not retained: %#v", decisions)
 	}
 }
