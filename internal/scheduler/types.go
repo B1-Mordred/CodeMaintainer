@@ -97,11 +97,71 @@ func DefaultTopology() Topology {
 func DefaultProfiles() []ResourceProfile {
 	return []ResourceProfile{
 		{ID: "controller_reserved", Kind: "controller", CPUCores: 2, MemoryBytes: 4 << 30, Network: "none"},
+		{ID: "controller_workflow", Kind: "controller", CPUCores: 2, MemoryBytes: 2 << 30, RunnerID: "controller", Network: "none"},
+		{ID: "dependency_preparation", Kind: "dependency_preparation", CPUCores: 4, MemoryBytes: 8 << 30, RunnerID: "dependency_preparation", Network: "dependency_egress"},
 		{ID: "verification_offline", Kind: "verification", CPUCores: 8, MemoryBytes: 16 << 30, RunnerID: "verification", Network: "offline"},
 		{ID: "implementation_inference", Kind: "implementation", CPUCores: 16, MemoryBytes: 48 << 30, ModelID: "implementation", RunnerID: "implementation", Network: "inference_only"},
 		{ID: "qc_inference", Kind: "qc", CPUCores: 16, MemoryBytes: 48 << 30, ModelID: "qc", RunnerID: "qc", Network: "inference_only"},
 		{ID: "documentation_inference", Kind: "documentation", CPUCores: 12, MemoryBytes: 32 << 30, ModelID: "documentation", RunnerID: "documentation", Network: "inference_only"},
 		{ID: "test_designer_inference", Kind: "test_designer", CPUCores: 12, MemoryBytes: 32 << 30, ModelID: "test_designer", RunnerID: "test_designer", Network: "inference_only"},
+	}
+}
+
+func ProfileIDForState(state string) string {
+	switch state {
+	case "preparing_dependencies":
+		return "dependency_preparation"
+	case "reproducing", "verifying_targeted", "verifying_full", "final_verification", "golden_rehearsal_review":
+		return "verification_offline"
+	case "loading_implementation_model", "implementing", "repairing":
+		return "implementation_inference"
+	case "loading_test_designer_model", "test_design_review":
+		return "test_designer_inference"
+	case "loading_documentation_model", "documentation_review":
+		return "documentation_inference"
+	case "loading_qc_model", "qc_review":
+		return "qc_inference"
+	default:
+		return "controller_workflow"
+	}
+}
+
+func ModelIDForProfile(profileID string) string {
+	for _, profile := range DefaultProfiles() {
+		if profile.ID == profileID {
+			return profile.ModelID
+		}
+	}
+	return ""
+}
+
+func RunnerIDForProfile(profileID string) string {
+	for _, profile := range DefaultProfiles() {
+		if profile.ID == profileID {
+			return profile.RunnerID
+		}
+	}
+	return ""
+}
+
+func PriorityForDeadline(now, deadline, created time.Time) int {
+	if deadline.IsZero() {
+		return 100
+	}
+	total := deadline.Sub(created)
+	if total <= 0 {
+		return 1000
+	}
+	remaining := deadline.Sub(now)
+	switch {
+	case remaining <= 0:
+		return 1000
+	case remaining <= total/10:
+		return 800
+	case remaining <= total/4:
+		return 500
+	default:
+		return 100
 	}
 }
 

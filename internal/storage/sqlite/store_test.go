@@ -507,7 +507,7 @@ func TestJobLeasesAreExclusiveRenewableAndRecoverAfterExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock = clock.Add(time.Second)
-	second, err := store.CreateJob(ctx, storage.CreateJobParams{ID: "job_second", ProjectID: "p", Repository: "o/r", Task: "second", ActorID: "test"})
+	second, err := store.CreateJob(ctx, storage.CreateJobParams{ID: "job_second", ProjectID: "p2", Repository: "o/r2", Task: "second", ActorID: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

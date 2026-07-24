@@ -653,63 +653,7 @@ func (s *Store) AcquireJobLease(ctx context.Context, ownerID string, ttl time.Du
 	if strings.TrimSpace(ownerID) == "" || ttl < time.Second || ttl > time.Hour {
 		return jobs.Job{}, storage.JobLease{}, storage.ErrInvalid
 	}
-	resumable := make([]jobs.State, 0)
-	for _, state := range jobs.AllStates() {
-		if state.Resumable() {
-			resumable = append(resumable, state)
-		}
-	}
-	placeholders := make([]string, len(resumable))
-	arguments := make([]any, 0, len(resumable)+2)
-	for index, state := range resumable {
-		placeholders[index] = "?"
-		arguments = append(arguments, state)
-	}
-	now := s.now()
-	arguments = append(arguments, now.Format(timestampFormat))
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("begin lease acquisition: %w", err)
-	}
-	defer tx.Rollback()
-	query := jobSelect + ` AS j LEFT JOIN job_leases AS l ON l.job_id = j.id
-		WHERE j.state IN (` + strings.Join(placeholders, ",") + `)
-		AND (l.job_id IS NULL OR l.expires_at <= ?)
-		ORDER BY j.created_at ASC LIMIT 1`
-	job, err := scanJob(tx.QueryRowContext(ctx, query, arguments...))
-	if errors.Is(err, storage.ErrNotFound) {
-		return jobs.Job{}, storage.JobLease{}, storage.ErrNoLeaseAvailable
-	}
-	if err != nil {
-		return jobs.Job{}, storage.JobLease{}, err
-	}
-	lease := storage.JobLease{
-		JobID: job.ID, OwnerID: ownerID, AcquiredAt: now,
-		HeartbeatAt: now, ExpiresAt: now.Add(ttl),
-	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO job_leases(
-		job_id, owner_id, acquired_at, heartbeat_at, expires_at) VALUES(?, ?, ?, ?, ?)
-		ON CONFLICT(job_id) DO UPDATE SET owner_id=excluded.owner_id,
-			acquired_at=excluded.acquired_at, heartbeat_at=excluded.heartbeat_at,
-			expires_at=excluded.expires_at
-		WHERE job_leases.expires_at <= ?`, lease.JobID, lease.OwnerID,
-		lease.AcquiredAt.Format(timestampFormat), lease.HeartbeatAt.Format(timestampFormat),
-		lease.ExpiresAt.Format(timestampFormat), now.Format(timestampFormat))
-	if err != nil {
-		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("acquire job lease: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("inspect lease acquisition: %w", err)
-	}
-	if changed != 1 {
-		return jobs.Job{}, storage.JobLease{}, storage.ErrNoLeaseAvailable
-	}
-	if err := tx.Commit(); err != nil {
-		return jobs.Job{}, storage.JobLease{}, fmt.Errorf("commit lease acquisition: %w", err)
-	}
-	return job, lease, nil
+	return s.acquireScheduledJobLease(ctx, ownerID, ttl)
 }
 
 func (s *Store) RenewJobLease(ctx context.Context, jobID, ownerID string, ttl time.Duration) (storage.JobLease, error) {

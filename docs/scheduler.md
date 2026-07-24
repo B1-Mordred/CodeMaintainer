@@ -1,6 +1,6 @@
 # Resource scheduler
 
-The resource scheduler is currently an advisory controller surface. It evaluates queued work against a bounded host topology and safe resource profiles, records the decision and reason append-only, and exposes the result through the API, CLI, and operator console. It does not yet replace the live durable lease dispatcher.
+The resource scheduler evaluates queued work against a bounded host topology and safe resource profiles, records the decision and reason append-only, exposes simulation through the API/CLI/operator console, and now gates durable live job lease acquisition. The controller remains the sole workflow-state authority.
 
 ## Inputs
 
@@ -14,11 +14,19 @@ Scheduler simulations accept:
 - `maintenance_window`: false defers all queued work.
 - `fairness_window`: when greater than zero, same-project queued work is deferred while that project already has active work.
 
-The default profiles cover controller reservation, offline verification, implementation inference, QC inference, documentation inference, and test-designer inference. They intentionally describe fixed envelopes rather than arbitrary commands, images, mounts, paths, networks, or model arguments.
+The default profiles cover controller reservation, controller workflow phases, dependency preparation, offline verification, implementation inference, QC inference, documentation inference, and test-designer inference. They intentionally describe fixed envelopes rather than arbitrary commands, images, mounts, paths, networks, or model arguments.
+
+Live lease acquisition derives profile IDs from durable workflow state:
+
+- controller-only phases use `controller_workflow`;
+- dependency preparation uses `dependency_preparation`;
+- reproduction, verification, final verification, and golden rehearsal use `verification_offline`;
+- implementation and repair use `implementation_inference`;
+- Test Designer, Documentation Agent, and QC phases use their matching inference profiles.
 
 ## Decisions
 
-Each simulation produces and retains a `scheduler_decisions` row with:
+Each simulation or live lease attempt with candidates produces and retains a `scheduler_decisions` row with:
 
 - selected job/project/profile when a workload is safe to schedule;
 - rejected and deferred job IDs;
@@ -28,6 +36,8 @@ Each simulation produces and retains a `scheduler_decisions` row with:
 - bounded human-readable resource summary and reason.
 
 Retained decisions are append-only. Simulations may use hypothetical job IDs, so decision rows do not foreign-key selected jobs.
+
+For live leases, the decision and `job_leases` write occur in the same SQLite transaction. A worker receives a lease only if the scheduler selected that exact job and the lease write won the expiry/ownership check. Same-project concurrent candidates are deferred by the fairness window, and candidates that would exceed available CPU or memory after active leases plus controller reservation are not leased.
 
 ## Operator surfaces
 
@@ -49,4 +59,4 @@ Browser:
 
 ## Current boundary
 
-This checkpoint proves safe co-residence rejection, fairness-aware selection, throughput model grouping, durable decision history, and API/CLI/UI parity. The next scheduler step is to bind the live queue lease path to these decisions so unsafe combinations cannot be leased outside simulation.
+This checkpoint proves safe co-residence rejection, fairness-aware live lease selection, throughput model grouping in simulations, durable decision history, and API/CLI/UI parity. Remaining scheduler work includes richer NUMA/disk/I/O/thermal/provider-health inputs, configurable limits and batching windows, benchmark-derived recommendations, and provider-aware routing.

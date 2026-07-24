@@ -62,3 +62,33 @@ func TestSimulateRejectsUnsafeInput(t *testing.T) {
 		t.Fatal("unsafe job ID accepted")
 	}
 }
+
+func TestWorkflowStatesMapToBoundedProfiles(t *testing.T) {
+	for state, profile := range map[string]string{
+		"queued":                   "controller_workflow",
+		"preparing_dependencies":   "dependency_preparation",
+		"verifying_full":           "verification_offline",
+		"implementing":             "implementation_inference",
+		"test_design_review":       "test_designer_inference",
+		"documentation_review":     "documentation_inference",
+		"qc_review":                "qc_inference",
+		"awaiting_task_approval":   "controller_workflow",
+		"awaiting_golden_approval": "controller_workflow",
+		"publishing_branch":        "controller_workflow",
+		"unexpected_future_state":  "controller_workflow",
+	} {
+		if got := ProfileIDForState(state); got != profile {
+			t.Fatalf("ProfileIDForState(%q) = %q, want %q", state, got, profile)
+		}
+		if profile != "controller_workflow" && RunnerIDForProfile(profile) == "" {
+			t.Fatalf("profile %q lacks runner ID", profile)
+		}
+	}
+	if ModelIDForProfile("implementation_inference") != "implementation" || ModelIDForProfile("verification_offline") != "" {
+		t.Fatal("model profile mapping is incorrect")
+	}
+	now := time.Date(2026, 7, 24, 3, 0, 0, 0, time.UTC)
+	if PriorityForDeadline(now, now.Add(time.Minute), now.Add(-time.Hour)) <= PriorityForDeadline(now, now.Add(12*time.Hour), now.Add(-time.Hour)) {
+		t.Fatal("urgent deadline did not receive higher priority")
+	}
+}

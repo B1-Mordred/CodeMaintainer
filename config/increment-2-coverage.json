@@ -2,7 +2,7 @@
   "schema_version": 1,
   "contract": "LOCAL_CODE_MAINTAINER_INCREMENT_2_GOAL.md",
   "base_contract": "project.md",
-  "updated_at": "2026-07-24T03:25:00Z",
+  "updated_at": "2026-07-24T03:55:00Z",
   "allowed_statuses": ["missing", "in_progress", "implemented", "operator_only"],
   "requirements": [
     {"id":"I2-05.1","title":"Configuration registry","milestone":1,"status":"implemented","implementation":["internal/config/registry.go","internal/config/builtin_registry.go"],"tests":["internal/config/registry_test.go"],"ui":["#configuration"],"docs":["docs/configuration.md","execplan/increment-2.md"]},
