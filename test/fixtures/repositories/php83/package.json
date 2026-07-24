@@ -1,0 +1,13 @@
+{
+  "name": "codemaintainer-php83-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.11",
+    "tailwindcss": "4.1.11",
+    "vite": "7.0.6"
+  }
+}

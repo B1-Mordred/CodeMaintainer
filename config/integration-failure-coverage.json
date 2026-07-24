@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T10:40:00Z",
+  "surfaces": [
+    {
+      "id": "fixtures-php83-composer-mysql-redis-vite-tailwind",
+      "status": "covered",
+      "title": "PHP 8.3 fixture with Composer, disposable service capability declarations, Vite, and Tailwind",
+      "fixtures": ["test/fixtures/repositories/php83/composer.json", "test/fixtures/repositories/php83/composer.lock", "test/fixtures/repositories/php83/phpunit.xml", "test/fixtures/repositories/php83/migrations/001_create_fixture.php", "test/fixtures/repositories/php83/package-lock.json", "test/fixtures/repositories/php83/vite.config.ts", "test/fixtures/repositories/php83/tailwind.config.js"],
+      "implementation": ["internal/capabilities/catalog.go", "internal/capabilities/service.go"],
+      "tests": ["internal/capabilities/heterogeneous_fixtures_test.go"],
+      "docs": ["docs/capability-packs.md"],
+      "proof": [
+        {"path": "internal/capabilities/catalog.go", "contains": ["mysql8-rehearsal", "redis-rehearsal", "vite-build", "tailwind.config.*"]},
+        {"path": "internal/capabilities/heterogeneous_fixtures_test.go", "contains": ["TestHeterogeneousRepositoryFixturesProduceEvidenceBackedDisabledPacks", "package_manager:npm"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "fixtures-dotnet-r-malformed",
+      "status": "covered",
+      "title": ".NET fake Windows worker, R statistical golden, and malformed mixed-language fixtures",
+      "fixtures": ["test/fixtures/repositories/dotnet-lab/LabAutomation.csproj", "test/fixtures/repositories/dotnet-lab/Lab.Tests.ps1", "test/fixtures/repositories/dotnet-lab/LabInstaller.iss", "test/fixtures/repositories/dotnet-lab/hamilton-sim-profile.json", "test/fixtures/repositories/r-statistical/DESCRIPTION", "test/fixtures/repositories/r-statistical/renv.lock", "test/fixtures/repositories/r-statistical/tests/testthat.R", "test/fixtures/repositories/mixed-malformed/go.mod", "test/fixtures/repositories/mixed-malformed/composer.lock", "test/fixtures/repositories/mixed-malformed/README.md"],
+      "implementation": ["internal/capabilities/catalog.go", "internal/windowsworker/simulator", "internal/capabilities/service.go"],
+      "tests": ["internal/capabilities/heterogeneous_fixtures_test.go", "internal/windowsworker/service_test.go"],
+      "docs": ["docs/windows-workers.md", "docs/r-statistical-pack.md"],
+      "proof": [
+        {"path": "internal/capabilities/heterogeneous_fixtures_test.go", "contains": ["dotnet-lab", "r-statistical", "mixed-malformed", "encoding:non-utf8"]},
+        {"path": "internal/windowsworker/service_test.go", "contains": ["RunWindowsJob", "windows-fixture-run"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "fixtures-forges-providers-localgit",
+      "status": "covered",
+      "title": "Recorded/fake forge adapters, all fake provider families, and local bare-Git sync/publish rehearsal",
+      "fixtures": ["test/fixtures/repositories/php83/.gitlab-ci.yml", "test/fixtures/agents/implementation-task.json"],
+      "implementation": ["internal/gitbridge", "internal/forges", "internal/providers", "cmd/fake-model-server", "internal/gitbridge/manager.go"],
+      "tests": ["internal/gitbridge/githubapp_test.go", "internal/gitbridge/gitlabapi_test.go", "internal/gitbridge/forge_inventory_test.go", "internal/gitbridge/manager_test.go", "internal/providers/service_test.go", "cmd/fake-model-server/main_test.go"],
+      "docs": ["docs/forges.md", "docs/model-providers.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/providers/service_test.go", "contains": ["TestEveryRequiredFamilyHasFakeAdapterAndRetainedProbe", "RequiredFamilies"]},
+        {"path": "internal/providers/types.go", "contains": ["FamilyAnthropicMessages", "FamilyBedrockResponsesCompat"]},
+        {"path": "internal/gitbridge/manager_test.go", "contains": ["clone\", \"--bare", "Publish"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "failure-baseline-index-config-restart",
+      "status": "covered",
+      "title": "Baseline/candidate classification, partial index failures, stale config edits, interrupted jobs, and restart/resume",
+      "fixtures": [],
+      "implementation": ["internal/intelligence", "internal/config", "internal/workflow", "internal/storage/sqlite"],
+      "tests": ["internal/intelligence/service_integration_test.go", "internal/intelligence/tree_sitter_test.go", "internal/storage/sqlite/config_drafts_test.go", "internal/workflow/engine_test.go", "internal/storage/sqlite/store_test.go"],
+      "docs": ["docs/intelligence.md", "docs/configuration.md", "docs/migrations.md"],
+      "proof": [
+        {"path": "internal/intelligence/service_integration_test.go", "contains": ["newly_introduced", "partial", "Failures != 1"]},
+        {"path": "internal/storage/sqlite/config_drafts_test.go", "contains": ["TestConfigDraftBecomesStaleWhenScopeChanges", "ErrConflict"]},
+        {"path": "internal/workflow/engine_test.go", "contains": ["TestRestartAdvancesEveryAutomaticallyResumablePhase", "StateFailed"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "failure-pack-policy-cache-memory-docs",
+      "status": "covered",
+      "title": "Pack upgrades, policy rollback, cache corruption/staleness, OpenViking staleness, and renderer/check failure blockers",
+      "fixtures": [],
+      "implementation": ["internal/capabilities", "internal/policy", "internal/intelligence", "internal/memory", "internal/docagent"],
+      "tests": ["internal/capabilities/service_integration_test.go", "internal/policy/service_test.go", "internal/storage/sqlite/policy_test.go", "internal/intelligence/service_integration_test.go", "internal/storage/sqlite/memory_test.go", "internal/docagent/types_test.go", "internal/storage/sqlite/documentation_test.go"],
+      "docs": ["docs/capability-packs.md", "docs/quality-workflow.md", "docs/memory.md"],
+      "proof": [
+        {"path": "internal/capabilities/service_integration_test.go", "contains": ["TestLifecyclePinUpgradeAndRollbackAreAuditedAndReversible", "pinned upgrade"]},
+        {"path": "internal/storage/sqlite/policy_test.go", "contains": ["TestPolicyLifecyclePersistsBundlesActivationsSimulationsAndDecisions", "ActivatePolicyBundle"]},
+        {"path": "internal/storage/sqlite/memory_test.go", "contains": ["FailMemoryIndexOperation", "retried.Attempts"]},
+        {"path": "internal/docagent/types_test.go", "contains": ["UnsupportedClaims", "no PDF renderer evidence was retained"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "failure-provider-egress-telemetry-security",
+      "status": "in_progress",
+      "title": "Remote-provider failure, redirect/DNS rejection, cross-trust fallback rejection, cost circuits, egress redaction, and telemetry redaction",
+      "fixtures": [],
+      "implementation": ["internal/providers", "internal/observability", "cmd/model-tool/main.go"],
+      "tests": ["internal/providers/service_test.go", "internal/storage/sqlite/providers_test.go", "internal/observability/types_test.go"],
+      "docs": ["docs/model-providers.md", "docs/observability.md", "docs/security.md"],
+      "proof": [
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt"]},
+        {"path": "internal/storage/sqlite/providers_test.go", "contains": ["TestProviderEndpointRejectsUnsafeRemoteURL", "provider egress manifest update unexpectedly succeeded"]},
+        {"path": "internal/observability/types_test.go", "contains": ["TestEventRedactsSecretsPromptsBodiesAndReasoningBeforeStorage", "ExternalExported"]},
+        {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect"]}
+      ],
+      "remaining_work": ["Add provider-gateway integration fakes for timeout, rate-limit retry, streamed interruption, and batch partial-failure handling once outbound request execution is implemented behind the provider gateway."]
+    }
+  ]
+}

@@ -191,6 +191,64 @@ func TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile(t *testing.T) 
 	}
 }
 
+func TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	service.now = func() time.Time { return time.Date(2026, 7, 24, 10, 40, 0, 0, time.UTC) }
+	if _, err := service.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for index := range store.providers {
+		if store.providers[index].ID == "fake-openai-responses" {
+			store.providers[index].Enabled = true
+		}
+	}
+	for index := range store.routes {
+		if store.routes[index].ID == "remote-documentation-ci-preview" {
+			store.routes[index].Enabled = true
+			store.routes[index].MaxTokensPerRequest = 128000
+			store.routes[index].MaxCostUSD = 0.0001
+		}
+	}
+	tooExpensive, err := service.SimulateRoute(context.Background(), RouteRequest{
+		ProjectID: "owner-repo", Role: "documentation", Purpose: "cost circuit integration fixture",
+		DataClasses: []string{"task_metadata"}, EstimatedBytes: 2048, EstimatedTokens: 2000,
+		RequiresStructuredOutput: true,
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tooExpensive.Status != DecisionDenied || tooExpensive.EgressManifest.RouteID != "remote-documentation-ci-preview" || tooExpensive.EgressManifest.PolicyDecision != DecisionDenied {
+		t.Fatalf("cost circuit did not fail closed with retained manifest: %#v", tooExpensive)
+	}
+	for index := range store.routes {
+		if store.routes[index].ID == "remote-documentation-ci-preview" {
+			store.routes[index].MaxCostUSD = 10
+		}
+	}
+	for index := range store.models {
+		if store.models[index].ID == "fake-remote-json" {
+			store.models[index].Capabilities.StructuredOutputs = false
+		}
+	}
+	capabilityDrift, err := service.SimulateRoute(context.Background(), RouteRequest{
+		ProjectID: "owner-repo", Role: "documentation", Purpose: "capability drift integration fixture",
+		DataClasses: []string{"task_metadata"}, EstimatedBytes: 2048, EstimatedTokens: 2000,
+		RequiresStructuredOutput: true,
+	}, "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capabilityDrift.Status != DecisionDenied || len(store.manifests) != 2 {
+		t.Fatalf("capability drift did not retain a denied manifest: %#v manifests=%d", capabilityDrift, len(store.manifests))
+	}
+	for _, manifest := range store.manifests {
+		if manifest.PolicyDecision != DecisionDenied || manifest.ManifestSHA256 == "" || len(manifest.Redactions) == 0 {
+			t.Fatalf("denied remote manifest lost safety evidence: %#v", manifest)
+		}
+	}
+}
+
 func TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt(t *testing.T) {
 	provider := ProviderProfile{ID: "public", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyOpenAIResponses, DisplayName: "Public", TrustTier: TrustPublic, Remote: true, Enabled: true, ApprovedDataClasses: []string{"task_metadata"}, Version: 1}
 	endpoint := EndpointProfile{ID: "endpoint", ProviderID: "public", BaseURL: "https://127.0.0.1/v1", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1}

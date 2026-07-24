@@ -18,7 +18,7 @@ func TestHeterogeneousRepositoryFixturesProduceEvidenceBackedDisabledPacks(t *te
 		packIDs  []string
 		findings []string
 	}{
-		{name: "php83", packIDs: []string{"php83-intranet", "sbom-fmea-security"}, findings: []string{"language:php", "framework:composer", "ci:gitlab-ci", "risk:migrations"}},
+		{name: "php83", packIDs: []string{"php83-intranet", "sbom-fmea-security"}, findings: []string{"language:php", "framework:composer", "package_manager:npm", "ci:gitlab-ci", "risk:migrations"}},
 		{name: "dotnet-lab", packIDs: []string{"windows-dotnet-labautomation", "sbom-fmea-security"}, findings: []string{"language:dotnet"}},
 		{name: "r-statistical", packIDs: []string{"r-statistical-validation", "sbom-fmea-security"}, findings: []string{"language:r", "package_manager:renv", "tool:testthat"}},
 		{name: "mixed-malformed", packIDs: []string{"sbom-fmea-security"}, findings: nil},
