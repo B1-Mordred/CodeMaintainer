@@ -117,6 +117,8 @@ func run(arguments []string) error {
 		return api.model(arguments[1:])
 	case "model-provider":
 		return api.modelProvider(arguments[1:])
+	case "evaluation":
+		return api.evaluation(arguments[1:])
 	case "config":
 		return api.config(arguments[1:])
 	case "intelligence":
@@ -1067,6 +1069,72 @@ func (c client) model(arguments []string) error {
 	return errors.New("usage: maintainctl model list | maintainctl model benchmark <profile> | maintainctl model benchmarks [--profile <profile>]")
 }
 
+func (c client) evaluation(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl evaluation <datasets|create-dataset|runs|launch> ...")
+	}
+	switch arguments[0] {
+	case "datasets":
+		flags := flag.NewFlagSet("evaluation datasets", flag.ContinueOnError)
+		projectID := flags.String("project", "", "optional project id")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl evaluation datasets [--project <project-id>]")
+		}
+		path := "/api/v1/evaluations/datasets"
+		if *projectID != "" {
+			path += "?project_id=" + url.QueryEscape(*projectID)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	case "create-dataset":
+		flags := flag.NewFlagSet("evaluation create-dataset", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "evaluation dataset JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl evaluation create-dataset --input <json-file|->")
+		}
+		input, err := readAnyJSON(*inputFile)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/evaluations/datasets", input)
+	case "runs":
+		flags := flag.NewFlagSet("evaluation runs", flag.ContinueOnError)
+		datasetID := flags.String("dataset", "", "optional evaluation dataset id")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl evaluation runs [--dataset <dataset-id>]")
+		}
+		path := "/api/v1/evaluations/runs"
+		if *datasetID != "" {
+			path += "?dataset_id=" + url.QueryEscape(*datasetID)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	case "launch":
+		flags := flag.NewFlagSet("evaluation launch", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "evaluation run launch JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl evaluation launch --input <json-file|->")
+		}
+		input, err := readAnyJSON(*inputFile)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/evaluations/runs", input)
+	default:
+		return fmt.Errorf("evaluation action %q is not implemented", arguments[0])
+	}
+}
+
 func (c client) config(arguments []string) error {
 	if len(arguments) == 0 {
 		return errors.New("usage: maintainctl config <descriptors|values|effective|registry-export|import-preview|import|draft|history|registry-rollback|export|validate|apply|rollback>")
@@ -1376,6 +1444,18 @@ func readJSONDocument(path string) (json.RawMessage, error) {
 		source = file
 	}
 	return readJSON(source)
+}
+
+func readAnyJSON(path string) (any, error) {
+	raw, err := readJSONDocument(path)
+	if err != nil {
+		return nil, err
+	}
+	var input any
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return nil, err
+	}
+	return input, nil
 }
 
 func readTextDocument(path string, limit int64) (string, error) {

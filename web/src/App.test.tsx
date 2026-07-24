@@ -77,6 +77,34 @@ const evidenceGraph = {
     { id: "evidence_edge_fixture", job_id: "job_fixture", project_id: "owner-repo", from_node_id: "evidence_node_job_job_fixture", to_node_id: "evidence_node_artifact_artifact_fixture", relationship: "produced", reason: "artifact retained for job evidence", actor_id: "verifier", metadata: { source: "artifact_index" }, created_at: "2026-07-24T05:00:00Z" },
   ],
 };
+const projects = {
+  items: [{ id: "owner-repo", provider: "local", repository: "owner/repo", default_branch: "main", local_remote_name: "fixture.git", enabled: true, created_at: "2026-07-20T09:00:00Z", updated_at: "2026-07-20T09:00:00Z" }],
+};
+const evaluationDatasets = {
+  items: [{
+    id: "evaldataset_fixture", schema_version: 1, project_id: "owner-repo", name: "Historical fixture sample",
+    source_kind: "historical_range", repository: "owner/repo",
+    base_revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", target_revision: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    known_patch_sha256: "c".repeat(64), hidden_patch_sha256: "d".repeat(64), exclusions: ["vendor/**"],
+    scoring_profile: "quality_default_v1", retention_days: 30, reproducibility_key: "e".repeat(64), metadata: {},
+    actor_id: "operator-console", created_at: "2026-07-24T05:30:00Z",
+  }],
+};
+const evaluationRuns = {
+  items: [{
+    id: "evalrun_fixture", schema_version: 1, dataset_id: "evaldataset_fixture", project_id: "owner-repo", status: "completed",
+    profile_matrix: ["local-default", "remote-fake"],
+    isolated_memory_namespace: "eval://memory/owner-repo/evaldataset_fixture/evalrun_fixture",
+    isolated_cache_namespace: "eval://cache/owner-repo/evaldataset_fixture/evalrun_fixture",
+    budget_seconds: 3600, concurrency: 1, scoring_profile: "quality_default_v1",
+    results: [
+      { profile_id: "local-default", task_completion: 0.9, test_success: 0.85, regression_rate: 0, diff_churn: 0.4, finding_precision: 0.8, finding_recall: 0.75, context_tokens: 12000, context_bytes: 48000, irrelevant_context_ratio: 0.12, wall_time_millis: 60000, cpu_time_millis: 54000, memory_bytes: 536870912, cache_effect: "isolated-cold-cache", documentation_compliance: 0.9, operator_interventions: 1, unresolved_uncertainty: 1, known_patch_hidden: true, promotion_allowed: false, promotion_blocked_reason: "historical evaluation is review-only and cannot automatically promote a model, policy, or route" },
+    ],
+    report_sha256: "f".repeat(64), promotion_recommendation: "review_only",
+    reason: "offline deterministic evaluation simulator hid the known patch and used isolated memory/cache namespaces",
+    actor_id: "operator-console", created_at: "2026-07-24T05:35:00Z",
+  }],
+};
 
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
   status: 200,
@@ -90,13 +118,15 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/auth/session") return jsonResponse(session);
   if (path === "/api/v1/system/status") return jsonResponse(status);
   if (path === "/api/v1/jobs") return jsonResponse(jobs);
-  if (path === "/api/v1/projects") return jsonResponse({ items: [] });
+  if (path === "/api/v1/projects") return jsonResponse(projects);
   if (path === "/api/v1/models") return jsonResponse({ items: [], status: { state: "unloaded", profile_id: "", memory_bytes: 0, prompt_tokens_second: 0, decode_tokens_second: 0 } });
   if (path === "/api/v1/models/runtime-benchmarks") return jsonResponse(runtimeBenchmarks);
   if (path === "/api/v1/model-providers/status") return jsonResponse(providerStatus);
   if (path === "/api/v1/model-providers/routes/simulations") return jsonResponse(routeDecision);
   if (path === "/api/v1/model-providers/models/fake-remote-json/actions/probe") return new Response(JSON.stringify(capabilityProbe), { status: 201, headers: { "Content-Type": "application/json" } });
   if (path === "/api/v1/model-providers/capability-probes") return jsonResponse({ probes: [capabilityProbe.probe] });
+  if (path === "/api/v1/evaluations/datasets") return request.method === "POST" ? new Response(JSON.stringify({ dataset: evaluationDatasets.items[0] }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse(evaluationDatasets);
+  if (path === "/api/v1/evaluations/runs") return request.method === "POST" ? new Response(JSON.stringify({ run: evaluationRuns.items[0] }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse(evaluationRuns);
   if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
   if (path === "/api/v1/jobs/job_fixture/artifacts") return jsonResponse({ items: [{ id: "artifact_fixture", job_id: "job_fixture", project_id: "owner-repo", sha256: "3".repeat(64), bytes: 16, kind: "command_result", media_type: "application/json", producer: "verifier", metadata: {}, created_at: "2026-07-24T05:00:00Z" }] });
   if (path === "/api/v1/jobs/job_fixture/evidence-graph") return jsonResponse(evidenceGraph);
@@ -153,5 +183,17 @@ describe("App", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "job_fixture" }))[0]);
     expect(await screen.findByRole("heading", { name: "Evidence traceability graph" })).toBeInTheDocument();
     expect(await screen.findByText(/artifact retained for job evidence/)).toBeInTheDocument();
+  });
+
+  it("shows isolated historical evaluation reports", async () => {
+    const { container } = render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Evaluation" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Historical patch evaluation lab" })).toBeInTheDocument();
+    expect((await screen.findAllByText(/eval:\/\/memory\/owner-repo/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/review-only/i)).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Launch evaluation run" }));
+    expect(await screen.findByText(/isolated namespaces/)).toBeInTheDocument();
+    const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
+    expect(result.violations).toEqual([]);
   });
 });

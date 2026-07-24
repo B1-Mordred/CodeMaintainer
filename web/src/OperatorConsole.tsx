@@ -38,6 +38,10 @@ type ProviderGatewayStatus = components["schemas"]["ProviderGatewayStatus"];
 type ProviderRouteDecision = components["schemas"]["ProviderRouteDecision"];
 type ProviderRouteRequest = components["schemas"]["ProviderRouteRequest"];
 type ProviderCapabilityProbe = components["schemas"]["ProviderCapabilityProbe"];
+type EvaluationDataset = components["schemas"]["EvaluationDataset"];
+type EvaluationRun = components["schemas"]["EvaluationRun"];
+type EvaluationCreateDatasetRequest = components["schemas"]["EvaluationCreateDatasetRequest"];
+type EvaluationLaunchRunRequest = components["schemas"]["EvaluationLaunchRunRequest"];
 type PolicyBundle = components["schemas"]["PolicyBundle"];
 type PolicyActivation = components["schemas"]["PolicyActivation"];
 type PolicySimulation = components["schemas"]["PolicySimulation"];
@@ -47,7 +51,7 @@ type TestDesignerReport = components["schemas"]["TestDesignerReport"];
 type DocumentationPolicyProfile = components["schemas"]["DocumentationPolicyProfile"];
 type DocumentationPolicySimulationResult = components["schemas"]["DocumentationPolicySimulationResult"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "evaluation" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -59,6 +63,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "policy", label: "Policy", icon: <ShieldCheck aria-hidden="true" />, group: "operate" },
   { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
+  { id: "evaluation", label: "Evaluation", icon: <ClipboardCheck aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
   { id: "forges", label: "Git forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
   { id: "windows-workers", label: "Windows workers", icon: <MonitorCog aria-hidden="true" />, group: "integrate" },
@@ -163,6 +168,7 @@ export function OperatorConsole({
       {page === "policy" && <PolicyPage expert={expert} />}
       {page === "intelligence" && <IntelligencePage />}
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
+      {page === "evaluation" && <EvaluationPage expert={expert} />}
       {page === "memory" && <MemoryPage />}
       {page === "forges" && <ForgePage />}
       {page === "windows-workers" && <WindowsWorkersPage />}
@@ -693,6 +699,108 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
       <details><summary>Recent egress manifests</summary>{(providerStatus?.recent_egress_manifests.length ?? 0) === 0 ? <p>No provider egress manifests retained.</p> : <div className="audit-list">{providerStatus!.recent_egress_manifests.map((manifest) => <div key={manifest.id}><time>{date(manifest.created_at)}</time><strong>{manifest.policy_decision} · {manifest.model_profile_id}</strong><span>{manifest.project_id} · {manifest.data_classes.join(", ")} · {manifest.decision_reason}</span></div>)}</div>}</details>
     </Section>
     <Section title="Safe model actions" eyebrow="Supervisor"><div className="action-strip"><button type="button" disabled title="Use the documented checksum-bound maintainctl import workflow">Import via manifest</button><button className="tertiary-button" type="button" disabled={modelStatus?.state !== "loaded"} onClick={() => void unload()}>Unload resident model</button></div>{expert && <p className="expert-note">Threads, batch, NUMA, context, and sampling remain manifest-bound. Arbitrary model paths and llama.cpp arguments are never accepted.</p>}</Section>
+  </>;
+}
+
+function EvaluationPage({ expert }: { expert: boolean }) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [datasets, setDatasets] = useState<EvaluationDataset[]>([]);
+  const [runs, setRuns] = useState<EvaluationRun[]>([]);
+  const [projectID, setProjectID] = useState("");
+  const [datasetID, setDatasetID] = useState("");
+  const [name, setName] = useState("Historical fixture sample");
+  const [sourceKind, setSourceKind] = useState<"curated_fixtures" | "historical_range">("historical_range");
+  const [repository, setRepository] = useState("owner/repo");
+  const [baseRevision, setBaseRevision] = useState("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  const [targetRevision, setTargetRevision] = useState("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  const [knownPatch, setKnownPatch] = useState("c".repeat(64));
+  const [exclusions, setExclusions] = useState("vendor/**, dist/**");
+  const [profiles, setProfiles] = useState("local-default, remote-fake");
+  const [budgetSeconds, setBudgetSeconds] = useState(3600);
+  const [concurrency, setConcurrency] = useState(1);
+  const [message, setMessage] = useState("");
+  const load = useCallback(async () => {
+    const [projectsResponse, datasetsResponse, runsResponse] = await Promise.all([api.GET("/projects"), api.GET("/evaluations/datasets"), api.GET("/evaluations/runs")]);
+    const projectItems = projectsResponse.data?.items ?? [];
+    const datasetItems = datasetsResponse.data?.items ?? [];
+    setProjects(projectItems);
+    setDatasets(datasetItems);
+    setRuns(runsResponse.data?.items ?? []);
+    setProjectID((current) => current || projectItems[0]?.id || "");
+    setDatasetID((current) => current || datasetItems[0]?.id || "");
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const createDataset = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!projectID) {
+      setMessage("Register a project before creating evaluation datasets.");
+      return;
+    }
+    const body: EvaluationCreateDatasetRequest = {
+      project_id: projectID, name, source_kind: sourceKind, repository,
+      base_revision: baseRevision, target_revision: targetRevision, known_patch_sha256: knownPatch,
+      exclusions: exclusions.split(",").map((item) => item.trim()).filter(Boolean),
+      scoring_profile: "quality_default_v1", retention_days: 30,
+      metadata: { source: "operator_console_offline_fixture" },
+    };
+    const response = await api.POST("/evaluations/datasets", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body });
+    setMessage(response.data ? `Evaluation dataset ${response.data.dataset.id} retained.` : "Evaluation dataset creation failed.");
+    if (response.data) {
+      setDatasetID(response.data.dataset.id);
+      await load();
+    }
+  };
+  const launchRun = async () => {
+    const selected = datasetID || datasets[0]?.id || "";
+    if (!selected) {
+      setMessage("Create or select an evaluation dataset before launching a run.");
+      return;
+    }
+    const body: EvaluationLaunchRunRequest = {
+      dataset_id: selected,
+      profile_matrix: profiles.split(",").map((item) => item.trim()).filter(Boolean),
+      budget_seconds: budgetSeconds,
+      concurrency,
+    };
+    const response = await api.POST("/evaluations/runs", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body });
+    setMessage(response.data ? `Evaluation run ${response.data.run.id} retained with isolated namespaces.` : "Evaluation run failed.");
+    if (response.data) await load();
+  };
+  const latestRun = runs[0];
+  return <>
+    <PageIntro>Historical evaluation runs compare workflow profiles offline. Known patches are hidden, memory and cache use isolated evaluation namespaces, and every recommendation is review-only.</PageIntro>
+    <div className="metrics-grid"><Metric icon={<ClipboardCheck aria-hidden="true" />} name="Datasets" value={String(datasets.length)} detail="Immutable historical samples" /><Metric icon={<Gauge aria-hidden="true" />} name="Runs" value={String(runs.length)} detail="Retained comparison reports" /><Metric icon={<Database aria-hidden="true" />} name="Memory namespace" value={latestRun?.isolated_memory_namespace ? "Isolated" : "Pending"} detail={latestRun?.isolated_memory_namespace ?? "eval://memory/..."} /><Metric icon={<HardDrive aria-hidden="true" />} name="Cache namespace" value={latestRun?.isolated_cache_namespace ? "Isolated" : "Pending"} detail={latestRun?.isolated_cache_namespace ?? "eval://cache/..."} /></div>
+    {message && <p className="inline-message" role="status">{message}</p>}
+    <Section title="Historical patch evaluation lab" eyebrow="Dataset setup" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      <form className="inline-form" onSubmit={(event) => void createDataset(event)}>
+        <label>Project<select required value={projectID} onChange={(event) => setProjectID(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.repository}</option>)}</select></label>
+        <label>Name<input required maxLength={256} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Source<select value={sourceKind} onChange={(event) => setSourceKind(event.target.value as typeof sourceKind)}><option value="historical_range">Historical range</option><option value="curated_fixtures">Curated fixtures</option></select></label>
+        <label>Repository<input required value={repository} onChange={(event) => setRepository(event.target.value)} /></label>
+        <label>Base revision<input required value={baseRevision} onChange={(event) => setBaseRevision(event.target.value)} /></label>
+        <label>Target revision<input required value={targetRevision} onChange={(event) => setTargetRevision(event.target.value)} /></label>
+        <label>Known patch SHA-256<input required pattern="[a-f0-9]{64}" value={knownPatch} onChange={(event) => setKnownPatch(event.target.value)} /></label>
+        <label>Exclusions<input value={exclusions} onChange={(event) => setExclusions(event.target.value)} /></label>
+        <button type="submit" disabled={!projectID}>Create dataset</button>
+      </form>
+    </Section>
+    <Section title="Launch isolated comparison" eyebrow="Offline simulator">
+      <div className="two-column">
+        <div className="resource-card">
+          <label>Dataset<select value={datasetID} onChange={(event) => setDatasetID(event.target.value)}>{datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label>
+          <label>Profile matrix<input value={profiles} onChange={(event) => setProfiles(event.target.value)} /></label>
+          <label>Budget seconds<input type="number" min={60} max={604800} value={budgetSeconds} onChange={(event) => setBudgetSeconds(Number(event.target.value))} /></label>
+          <label>Concurrency<input type="number" min={1} max={8} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} /></label>
+          <button type="button" onClick={() => void launchRun()} disabled={datasets.length === 0}>Launch evaluation run</button>
+          <p className="expert-note">This simulator produces reproducible comparison reports and never promotes a model, policy, cache, or route.</p>
+        </div>
+        <div>{latestRun ? <article className="resource-card"><div className="resource-title"><ClipboardCheck aria-hidden="true" /><div><h3>{latestRun.id}</h3><p>{latestRun.reason}</p></div><Badge value={latestRun.promotion_recommendation} /></div><dl><div><dt>Report</dt><dd><code>{latestRun.report_sha256.slice(0, 16)}</code></dd></div><div><dt>Memory</dt><dd><code>{latestRun.isolated_memory_namespace}</code></dd></div><div><dt>Cache</dt><dd><code>{latestRun.isolated_cache_namespace}</code></dd></div><div><dt>Profiles</dt><dd>{latestRun.profile_matrix.join(", ")}</dd></div></dl></article> : <Empty title="No evaluation run retained" detail="Launch a run to compare profiles with isolated memory and cache namespaces." />}</div>
+      </div>
+    </Section>
+    <Section title="Comparison reports" eyebrow="Review-only">
+      {runs.length === 0 ? <Empty title="No reports yet" detail="Retained reports will show task completion, test success, regressions, diff churn, precision/recall, context, runtime, memory, cache effect, docs compliance, interventions, and uncertainty." /> : <div className="card-grid">{runs.slice(0, 12).map((run) => <article className="resource-card" key={run.id}><div className="resource-title"><Gauge aria-hidden="true" /><div><h3>{run.id}</h3><p>{date(run.created_at)}</p></div><Badge value={run.status} /></div><dl><div><dt>Dataset</dt><dd>{run.dataset_id}</dd></div><div><dt>Budget</dt><dd>{run.budget_seconds}s · {run.concurrency} concurrent</dd></div><div><dt>Promotion</dt><dd>{label(run.promotion_recommendation)}</dd></div><div><dt>Report hash</dt><dd><code>{run.report_sha256.slice(0, 16)}</code></dd></div></dl><details open><summary>Profile metrics</summary><div className="audit-list">{run.results.map((result) => <div key={result.profile_id}><time>{result.profile_id}</time><strong>{Math.round(result.task_completion * 100)}% task · {Math.round(result.test_success * 100)}% tests · {label(result.cache_effect)}</strong><span>{result.promotion_blocked_reason}</span></div>)}</div></details>{expert && <details><summary>Full evaluation run</summary><pre>{JSON.stringify(run, null, 2)}</pre></details>}</article>)}</div>}
+    </Section>
+    <Section title="Isolation guarantees" eyebrow="Leakage controls"><p className="expert-note">Dataset records retain only a hidden hash for the known patch and a deterministic reproducibility key. Run records must use `eval://memory/...` and `eval://cache/...`; storage rejects project-memory namespace leakage. Reports are append-only and promotion is blocked by construction.</p></Section>
   </>;
 }
 

@@ -1212,6 +1212,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evaluations/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List immutable historical evaluation datasets */
+        get: operations["listEvaluationDatasets"];
+        put?: never;
+        /** Create an immutable historical evaluation dataset */
+        post: operations["createEvaluationDataset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evaluations/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained isolated historical evaluation runs */
+        get: operations["listEvaluationRuns"];
+        put?: never;
+        /** Launch a deterministic offline historical evaluation run */
+        post: operations["launchEvaluationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skill-proposals": {
         parameters: {
             query?: never;
@@ -3890,6 +3926,99 @@ export interface components {
             recent_egress_manifests: components["schemas"]["ProviderEgressManifest"][];
             recent_capability_probes: components["schemas"]["ProviderCapabilityProbe"][];
             remote_enabled_by_default: boolean;
+        };
+        EvaluationCreateDatasetRequest: {
+            project_id: string;
+            name: string;
+            /** @enum {string} */
+            source_kind: "curated_fixtures" | "historical_range";
+            repository: string;
+            base_revision: string;
+            target_revision: string;
+            known_patch_sha256: string;
+            exclusions?: string[];
+            scoring_profile?: string;
+            retention_days?: number;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        EvaluationDataset: {
+            id: string;
+            /** @constant */
+            schema_version: 1;
+            project_id: string;
+            name: string;
+            /** @enum {string} */
+            source_kind: "curated_fixtures" | "historical_range";
+            repository: string;
+            base_revision: string;
+            target_revision: string;
+            known_patch_sha256: string;
+            hidden_patch_sha256: string;
+            exclusions: string[];
+            scoring_profile: string;
+            retention_days: number;
+            reproducibility_key: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EvaluationLaunchRunRequest: {
+            dataset_id: string;
+            profile_matrix: string[];
+            budget_seconds?: number;
+            concurrency?: number;
+            scoring_profile?: string;
+        };
+        EvaluationProfileResult: {
+            profile_id: string;
+            task_completion: number;
+            test_success: number;
+            regression_rate: number;
+            diff_churn: number;
+            finding_precision: number;
+            finding_recall: number;
+            context_tokens: number;
+            context_bytes: number;
+            irrelevant_context_ratio: number;
+            wall_time_millis: number;
+            cpu_time_millis: number;
+            memory_bytes: number;
+            cache_effect: string;
+            documentation_compliance: number;
+            operator_interventions: number;
+            unresolved_uncertainty: number;
+            known_patch_hidden: boolean;
+            /** @constant */
+            promotion_allowed: false;
+            promotion_blocked_reason: string;
+        };
+        EvaluationRun: {
+            id: string;
+            /** @constant */
+            schema_version: 1;
+            dataset_id: string;
+            project_id: string;
+            /** @enum {string} */
+            status: "queued" | "completed" | "rejected";
+            profile_matrix: string[];
+            isolated_memory_namespace: string;
+            isolated_cache_namespace: string;
+            budget_seconds: number;
+            concurrency: number;
+            scoring_profile: string;
+            results: components["schemas"]["EvaluationProfileResult"][];
+            report_sha256: string;
+            /** @enum {string} */
+            promotion_recommendation: "review_only" | "rejected";
+            reason: string;
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
         };
         SkillProposalInput: {
             name: string;
@@ -7407,6 +7536,122 @@ export interface operations {
                     };
                 };
             };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listEvaluationDatasets: {
+        parameters: {
+            query?: {
+                project_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluation datasets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["EvaluationDataset"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    createEvaluationDataset: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationCreateDatasetRequest"];
+            };
+        };
+        responses: {
+            /** @description Created immutable evaluation dataset */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        dataset: components["schemas"]["EvaluationDataset"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listEvaluationRuns: {
+        parameters: {
+            query?: {
+                dataset_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluation runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["EvaluationRun"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    launchEvaluationRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationLaunchRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Created isolated evaluation run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run: components["schemas"]["EvaluationRun"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
         };
     };

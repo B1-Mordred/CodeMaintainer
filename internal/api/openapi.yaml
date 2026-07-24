@@ -1153,6 +1153,88 @@ paths:
                 properties:
                   probes: { type: array, items: { $ref: "#/components/schemas/ProviderCapabilityProbe" } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /evaluations/datasets:
+    get:
+      summary: List immutable historical evaluation datasets
+      operationId: listEvaluationDatasets
+      parameters:
+        - { name: project_id, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: Evaluation datasets
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/EvaluationDataset" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create an immutable historical evaluation dataset
+      operationId: createEvaluationDataset
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EvaluationCreateDatasetRequest" } } }
+      responses:
+        "201":
+          description: Created immutable evaluation dataset
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [dataset]
+                properties:
+                  dataset: { $ref: "#/components/schemas/EvaluationDataset" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /evaluations/runs:
+    get:
+      summary: List retained isolated historical evaluation runs
+      operationId: listEvaluationRuns
+      parameters:
+        - { name: dataset_id, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: Evaluation runs
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/EvaluationRun" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Launch a deterministic offline historical evaluation run
+      operationId: launchEvaluationRun
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EvaluationLaunchRunRequest" } } }
+      responses:
+        "201":
+          description: Created isolated evaluation run
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [run]
+                properties:
+                  run: { $ref: "#/components/schemas/EvaluationRun" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /skill-proposals:
     get:
       summary: List inert Hermes skill proposals and administrator decisions
@@ -3984,6 +4066,101 @@ components:
         recent_egress_manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
         recent_capability_probes: { type: array, items: { $ref: "#/components/schemas/ProviderCapabilityProbe" } }
         remote_enabled_by_default: { type: boolean }
+    EvaluationCreateDatasetRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, name, source_kind, repository, base_revision, target_revision, known_patch_sha256]
+      properties:
+        project_id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 256 }
+        source_kind: { type: string, enum: [curated_fixtures, historical_range] }
+        repository: { type: string, minLength: 1, maxLength: 512 }
+        base_revision: { type: string, minLength: 1, maxLength: 128 }
+        target_revision: { type: string, minLength: 1, maxLength: 128 }
+        known_patch_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        exclusions: { type: array, maxItems: 128, items: { type: string, maxLength: 512 } }
+        scoring_profile: { type: string, maxLength: 128 }
+        retention_days: { type: integer, minimum: 1, maximum: 3650 }
+        metadata: { type: object, additionalProperties: true }
+    EvaluationDataset:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, project_id, name, source_kind, repository, base_revision, target_revision, known_patch_sha256, hidden_patch_sha256, exclusions, scoring_profile, retention_days, reproducibility_key, metadata, actor_id, created_at]
+      properties:
+        id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        project_id: { type: string }
+        name: { type: string }
+        source_kind: { type: string, enum: [curated_fixtures, historical_range] }
+        repository: { type: string }
+        base_revision: { type: string }
+        target_revision: { type: string }
+        known_patch_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        hidden_patch_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        exclusions: { type: array, items: { type: string } }
+        scoring_profile: { type: string }
+        retention_days: { type: integer, minimum: 1 }
+        reproducibility_key: { type: string, pattern: "^[a-f0-9]{64}$" }
+        metadata: { type: object, additionalProperties: true }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
+    EvaluationLaunchRunRequest:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, profile_matrix]
+      properties:
+        dataset_id: { type: string }
+        profile_matrix: { type: array, minItems: 1, maxItems: 32, items: { type: string, minLength: 1, maxLength: 128 } }
+        budget_seconds: { type: integer, minimum: 60, maximum: 604800 }
+        concurrency: { type: integer, minimum: 1, maximum: 8 }
+        scoring_profile: { type: string, maxLength: 128 }
+    EvaluationProfileResult:
+      type: object
+      additionalProperties: false
+      required: [profile_id, task_completion, test_success, regression_rate, diff_churn, finding_precision, finding_recall, context_tokens, context_bytes, irrelevant_context_ratio, wall_time_millis, cpu_time_millis, memory_bytes, cache_effect, documentation_compliance, operator_interventions, unresolved_uncertainty, known_patch_hidden, promotion_allowed, promotion_blocked_reason]
+      properties:
+        profile_id: { type: string }
+        task_completion: { type: number, minimum: 0, maximum: 1 }
+        test_success: { type: number, minimum: 0, maximum: 1 }
+        regression_rate: { type: number, minimum: 0, maximum: 1 }
+        diff_churn: { type: number, minimum: 0 }
+        finding_precision: { type: number, minimum: 0, maximum: 1 }
+        finding_recall: { type: number, minimum: 0, maximum: 1 }
+        context_tokens: { type: integer, minimum: 0 }
+        context_bytes: { type: integer, minimum: 0 }
+        irrelevant_context_ratio: { type: number, minimum: 0, maximum: 1 }
+        wall_time_millis: { type: integer, minimum: 0 }
+        cpu_time_millis: { type: integer, minimum: 0 }
+        memory_bytes: { type: integer, minimum: 0 }
+        cache_effect: { type: string }
+        documentation_compliance: { type: number, minimum: 0, maximum: 1 }
+        operator_interventions: { type: integer, minimum: 0 }
+        unresolved_uncertainty: { type: integer, minimum: 0 }
+        known_patch_hidden: { type: boolean }
+        promotion_allowed: { type: boolean, const: false }
+        promotion_blocked_reason: { type: string }
+    EvaluationRun:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, dataset_id, project_id, status, profile_matrix, isolated_memory_namespace, isolated_cache_namespace, budget_seconds, concurrency, scoring_profile, results, report_sha256, promotion_recommendation, reason, actor_id, created_at]
+      properties:
+        id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        dataset_id: { type: string }
+        project_id: { type: string }
+        status: { type: string, enum: [queued, completed, rejected] }
+        profile_matrix: { type: array, items: { type: string } }
+        isolated_memory_namespace: { type: string, pattern: "^eval://memory/" }
+        isolated_cache_namespace: { type: string, pattern: "^eval://cache/" }
+        budget_seconds: { type: integer, minimum: 60 }
+        concurrency: { type: integer, minimum: 1, maximum: 8 }
+        scoring_profile: { type: string }
+        results: { type: array, items: { $ref: "#/components/schemas/EvaluationProfileResult" } }
+        report_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        promotion_recommendation: { type: string, enum: [review_only, rejected] }
+        reason: { type: string }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
     SkillProposalInput:
       type: object
       additionalProperties: false

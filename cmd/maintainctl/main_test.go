@@ -231,6 +231,58 @@ func TestEvidenceCLIListsJobTraceGraph(t *testing.T) {
 	}
 }
 
+func TestEvaluationCLIRoutesDatasetAndRunOperations(t *testing.T) {
+	seen := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI())
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if r.URL.Path == "/api/v1/evaluations/datasets" && body["project_id"] != "owner-repo" {
+				t.Errorf("unexpected dataset body %#v", body)
+			}
+			if r.URL.Path == "/api/v1/evaluations/runs" && body["dataset_id"] != "evaldataset_1" {
+				t.Errorf("unexpected run body %#v", body)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	datasetFile := filepath.Join(t.TempDir(), "dataset.json")
+	if err := os.WriteFile(datasetFile, []byte(`{"project_id":"owner-repo"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runFile := filepath.Join(t.TempDir(), "run.json")
+	if err := os.WriteFile(runFile, []byte(`{"dataset_id":"evaldataset_1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.evaluation([]string{"datasets", "--project", "owner-repo"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.evaluation([]string{"create-dataset", "--input", datasetFile}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.evaluation([]string{"runs", "--dataset", "evaldataset_1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.evaluation([]string{"launch", "--input", runFile}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET /api/v1/evaluations/datasets?project_id=owner-repo",
+		"POST /api/v1/evaluations/datasets",
+		"GET /api/v1/evaluations/runs?dataset_id=evaldataset_1",
+		"POST /api/v1/evaluations/runs",
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected CLI requests:\n%s", strings.Join(seen, "\n"))
+	}
+}
+
 func TestTestDesignerCLIListsJobReports(t *testing.T) {
 	seen := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
