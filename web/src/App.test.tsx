@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const status = { status: "healthy", profile: "mock", components: { controller: "healthy" } };
-const jobs = { items: [{ id: "job_fixture", repository: "owner/repo", state: "queued", updated_at: "2026-07-20T09:00:00Z" }] };
+const jobs = { items: [{ id: "job_fixture", project_id: "owner-repo", repository: "owner/repo", task: "verify retained evidence", state: "queued", acceptance_criteria: [], base_sha: "", result_sha: "", max_tokens: 1000, reserved_tokens: 0, max_wall_seconds: 3600, version: 1, created_at: "2026-07-20T09:00:00Z", updated_at: "2026-07-20T09:00:00Z" }] };
 const providerStatus = {
   families: ["local_llamacpp", "openai_responses"],
   providers: [
@@ -66,6 +66,17 @@ const runtimeBenchmarks = {
     actor_id: "operator-console", created_at: "2026-07-24T04:30:00Z",
   }],
 };
+const evidenceGraph = {
+  job_id: "job_fixture",
+  project_id: "owner-repo",
+  nodes: [
+    { id: "evidence_node_job_job_fixture", job_id: "job_fixture", project_id: "owner-repo", kind: "job", subject_id: "job_fixture", subject_sha256: "1".repeat(64), label: "Job job_fixture", producer: "controller", metadata: { source: "job" }, metadata_sha256: "2".repeat(64), created_at: "2026-07-24T05:00:00Z" },
+    { id: "evidence_node_artifact_artifact_fixture", job_id: "job_fixture", project_id: "owner-repo", kind: "artifact", subject_id: "artifact_fixture", subject_sha256: "3".repeat(64), label: "command_result artifact", producer: "verifier", metadata: { kind: "command_result", media_type: "application/json", bytes: 16 }, metadata_sha256: "4".repeat(64), created_at: "2026-07-24T05:00:00Z" },
+  ],
+  edges: [
+    { id: "evidence_edge_fixture", job_id: "job_fixture", project_id: "owner-repo", from_node_id: "evidence_node_job_job_fixture", to_node_id: "evidence_node_artifact_artifact_fixture", relationship: "produced", reason: "artifact retained for job evidence", actor_id: "verifier", metadata: { source: "artifact_index" }, created_at: "2026-07-24T05:00:00Z" },
+  ],
+};
 
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
   status: 200,
@@ -87,6 +98,8 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/model-providers/models/fake-remote-json/actions/probe") return new Response(JSON.stringify(capabilityProbe), { status: 201, headers: { "Content-Type": "application/json" } });
   if (path === "/api/v1/model-providers/capability-probes") return jsonResponse({ probes: [capabilityProbe.probe] });
   if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
+  if (path === "/api/v1/jobs/job_fixture/artifacts") return jsonResponse({ items: [{ id: "artifact_fixture", job_id: "job_fixture", project_id: "owner-repo", sha256: "3".repeat(64), bytes: 16, kind: "command_result", media_type: "application/json", producer: "verifier", metadata: {}, created_at: "2026-07-24T05:00:00Z" }] });
+  if (path === "/api/v1/jobs/job_fixture/evidence-graph") return jsonResponse(evidenceGraph);
   return new Response(JSON.stringify({ error: { code: "unmocked", message: path } }), { status: 404, headers: { "Content-Type": "application/json" } });
 };
 
@@ -132,5 +145,13 @@ describe("App", () => {
     expect(screen.getByText("local-quality-default")).toBeInTheDocument();
     const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
     expect(result.violations).toEqual([]);
+  });
+
+  it("opens a job evidence traceability graph from the Jobs page", async () => {
+    render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Jobs" }))[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "job_fixture" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Evidence traceability graph" })).toBeInTheDocument();
+    expect(await screen.findByText(/artifact retained for job evidence/)).toBeInTheDocument();
   });
 });

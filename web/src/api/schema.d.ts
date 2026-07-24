@@ -1971,6 +1971,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobID}/evidence-graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List typed traceability graph nodes and edges retained for one job */
+        get: operations["getJobEvidenceGraph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectID}/intelligence/status": {
         parameters: {
             query?: never;
@@ -4526,6 +4545,45 @@ export interface components {
             kind: string;
             media_type: string;
             producer: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        EvidenceGraph: {
+            job_id: string;
+            project_id: string;
+            nodes: components["schemas"]["EvidenceNode"][];
+            edges: components["schemas"]["EvidenceEdge"][];
+        };
+        EvidenceNode: {
+            id: string;
+            job_id: string;
+            project_id: string;
+            /** @enum {string} */
+            kind: "job" | "artifact";
+            subject_id: string;
+            subject_sha256: string;
+            label: string;
+            producer: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            metadata_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EvidenceEdge: {
+            id: string;
+            job_id: string;
+            project_id: string;
+            from_node_id: string;
+            to_node_id: string;
+            /** @enum {string} */
+            relationship: "produced";
+            reason: string;
+            actor_id: string;
             metadata: {
                 [key: string]: unknown;
             };
@@ -8649,6 +8707,29 @@ export interface operations {
             };
             404: components["responses"]["ErrorResponse"];
             503: components["responses"]["ErrorResponse"];
+        };
+    };
+    getJobEvidenceGraph: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job-scoped evidence graph */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceGraph"];
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
         };
     };
     getIntelligenceStatus: {

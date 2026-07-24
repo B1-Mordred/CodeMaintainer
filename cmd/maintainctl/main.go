@@ -77,6 +77,11 @@ func run(arguments []string) error {
 			return errors.New("usage: maintainctl inspect <job-id>")
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1]), nil)
+	case "evidence":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl evidence <job-id>")
+		}
+		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/evidence-graph", nil)
 	case "logs":
 		if len(arguments) != 2 {
 			return errors.New("usage: maintainctl logs <job-id>")
@@ -1551,6 +1556,7 @@ Commands:
   run <owner/repository> --task <text> | --issue <number>
   status [job-id]
   inspect <job-id>
+  evidence <job-id>
   logs <job-id>
   cancel <job-id>
   retry <job-id>

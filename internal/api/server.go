@@ -289,6 +289,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/events", s.jobEvents)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts", s.listJobArtifacts)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/artifacts/{artifactID}", s.downloadJobArtifact)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/evidence-graph", s.getJobEvidenceGraph)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-publication", s.approvePublication)
@@ -1077,6 +1078,15 @@ func (s *Server) listJobArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) getJobEvidenceGraph(w http.ResponseWriter, r *http.Request) {
+	graph, err := s.store.ListJobEvidenceGraph(r.Context(), r.PathValue("jobID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, graph)
 }
 
 func (s *Server) downloadJobArtifact(w http.ResponseWriter, r *http.Request) {

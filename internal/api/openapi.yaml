@@ -2041,6 +2041,19 @@ paths:
               schema: { type: string, format: binary }
         "404": { $ref: "#/components/responses/ErrorResponse" }
         "503": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/evidence-graph:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List typed traceability graph nodes and edges retained for one job
+      operationId: getJobEvidenceGraph
+      responses:
+        "200":
+          description: Job-scoped evidence graph
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidenceGraph" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
   /projects/{projectID}/intelligence/status:
     parameters: [{ $ref: "#/components/parameters/ProjectID" }]
     get:
@@ -4703,6 +4716,43 @@ components:
         kind: { type: string }
         media_type: { type: string }
         producer: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    EvidenceGraph:
+      type: object
+      required: [job_id, project_id, nodes, edges]
+      properties:
+        job_id: { type: string }
+        project_id: { type: string }
+        nodes: { type: array, items: { $ref: "#/components/schemas/EvidenceNode" } }
+        edges: { type: array, items: { $ref: "#/components/schemas/EvidenceEdge" } }
+    EvidenceNode:
+      type: object
+      required: [id, job_id, project_id, kind, subject_id, subject_sha256, label, producer, metadata, metadata_sha256, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        project_id: { type: string }
+        kind: { type: string, enum: [job, artifact] }
+        subject_id: { type: string }
+        subject_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        label: { type: string }
+        producer: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        metadata_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        created_at: { type: string, format: date-time }
+    EvidenceEdge:
+      type: object
+      required: [id, job_id, project_id, from_node_id, to_node_id, relationship, reason, actor_id, metadata, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        project_id: { type: string }
+        from_node_id: { type: string }
+        to_node_id: { type: string }
+        relationship: { type: string, enum: [produced] }
+        reason: { type: string }
+        actor_id: { type: string }
         metadata: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
     Finding:

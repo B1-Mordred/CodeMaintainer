@@ -213,6 +213,24 @@ func TestAgentContractsCLIListsSchemasAndJobValidationEvidence(t *testing.T) {
 	}
 }
 
+func TestEvidenceCLIListsJobTraceGraph(t *testing.T) {
+	var seen string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"job_id":"job-one","project_id":"project-one","nodes":[],"edges":[]}`))
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"evidence", "job-one"}); err != nil {
+		t.Fatal(err)
+	}
+	if seen != "GET /api/v1/jobs/job-one/evidence-graph" {
+		t.Fatalf("unexpected evidence request %q", seen)
+	}
+}
+
 func TestTestDesignerCLIListsJobReports(t *testing.T) {
 	seen := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

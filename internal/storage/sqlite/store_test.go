@@ -221,8 +221,8 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 37 {
-		t.Fatalf("applied migration count = %d, want 37", migrations)
+	if migrations != 38 {
+		t.Fatalf("applied migration count = %d, want 38", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -318,6 +318,12 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 		var name string
 		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
 			t.Fatalf("migration 37 table %s missing: %v", table, err)
+		}
+	}
+	for _, table := range []string{"evidence_nodes", "evidence_edges"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
+			t.Fatalf("migration 38 table %s missing: %v", table, err)
 		}
 	}
 }
@@ -495,6 +501,19 @@ func TestArtifactIndexIsImmutableJobScopedAndAudited(t *testing.T) {
 	items, err := store.ListJobArtifacts(ctx, job.ID, 10)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("listed artifacts %#v, %v", items, err)
+	}
+	graph, err := store.ListJobEvidenceGraph(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) != 2 || len(graph.Edges) != 1 || graph.Edges[0].Relationship != "produced" {
+		t.Fatalf("artifact evidence graph not retained: %#v", graph)
+	}
+	if _, err := store.db.ExecContext(ctx, "UPDATE evidence_nodes SET label='tampered' WHERE id=?", graph.Nodes[0].ID); err == nil {
+		t.Fatal("evidence node was mutable")
+	}
+	if _, err := store.db.ExecContext(ctx, "DELETE FROM evidence_edges WHERE id=?", graph.Edges[0].ID); err == nil {
+		t.Fatal("evidence edge was mutable")
 	}
 	if _, err := store.GetArtifact(ctx, "another-job", created.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("cross-job lookup returned %v", err)

@@ -13,6 +13,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	"github.com/B1-Mordred/CodeMaintainer/internal/config"
 	documentation "github.com/B1-Mordred/CodeMaintainer/internal/docagent"
+	"github.com/B1-Mordred/CodeMaintainer/internal/evidence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/findings"
 	"github.com/B1-Mordred/CodeMaintainer/internal/forges"
 	"github.com/B1-Mordred/CodeMaintainer/internal/gitbridge"
@@ -224,6 +225,7 @@ type Store interface {
 	risk.Store
 	runtimeopt.Store
 	scheduler.Store
+	evidence.Store
 	windowsworker.Store
 	Close() error
 }

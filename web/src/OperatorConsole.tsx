@@ -30,6 +30,7 @@ type Finding = components["schemas"]["Finding"];
 type User = components["schemas"]["User"];
 type BackupRecord = components["schemas"]["BackupRecord"];
 type Artifact = components["schemas"]["Artifact"];
+type EvidenceGraph = components["schemas"]["EvidenceGraph"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
 type RuntimeBenchmark = components["schemas"]["RuntimeBenchmark"];
@@ -326,6 +327,7 @@ function JobsPage({ initialJobs, expert }: { initialJobs: Job[]; expert: boolean
   const [selected, setSelected] = useState<Job | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [evidenceGraph, setEvidenceGraph] = useState<EvidenceGraph | null>(null);
   const [task, setTask] = useState("");
   const [projectID, setProjectID] = useState("");
   const [rationale, setRationale] = useState("");
@@ -337,7 +339,7 @@ function JobsPage({ initialJobs, expert }: { initialJobs: Job[]; expert: boolean
   const [goldenMaskSelectors, setGoldenMaskSelectors] = useState("");
   const load = useCallback(async () => { const [jobsResult, projectsResult] = await Promise.all([api.GET("/jobs"), api.GET("/projects")]); setJobs(jobsResult.data?.items ?? []); setProjects(projectsResult.data?.items ?? []); }, []);
   useEffect(() => { void load(); }, [load]);
-  const inspect = async (job: Job) => { setSelected(job); const [response, artifactResponse] = await Promise.all([api.GET("/jobs/{jobID}", { params: { path: { jobID: job.id } } }), api.GET("/jobs/{jobID}/artifacts", { params: { path: { jobID: job.id } } })]); setDetail(response.data ?? null); setArtifacts(artifactResponse.data?.items ?? []); };
+  const inspect = async (job: Job) => { setSelected(job); const [response, artifactResponse, graphResponse] = await Promise.all([api.GET("/jobs/{jobID}", { params: { path: { jobID: job.id } } }), api.GET("/jobs/{jobID}/artifacts", { params: { path: { jobID: job.id } } }), api.GET("/jobs/{jobID}/evidence-graph", { params: { path: { jobID: job.id } } })]); setDetail(response.data ?? null); setArtifacts(artifactResponse.data?.items ?? []); setEvidenceGraph(graphResponse.data ?? null); };
   const submit = async (event: FormEvent) => { event.preventDefault(); const project = projects.find((item) => item.id === projectID); if (!project) return; const response = await api.POST("/jobs", { body: { project_id: project.id, repository: project.repository, task } }); if (response.data) { setTask(""); await load(); await inspect(response.data); } };
   const action = async (name: "cancel" | "retry") => { if (!selected) return; await (name === "cancel" ? api.POST("/jobs/{jobID}/actions/cancel", { params: { path: { jobID: selected.id } } }) : api.POST("/jobs/{jobID}/actions/retry", { params: { path: { jobID: selected.id } } })); await load(); };
   const inspectAction = async (name: "verify" | "review") => { if (!selected) return; const response = name === "verify" ? await api.POST("/jobs/{jobID}/actions/verify", { params: { path: { jobID: selected.id }, header: { "X-CSRF-Token": getCSRFToken() } } }) : await api.POST("/jobs/{jobID}/actions/review", { params: { path: { jobID: selected.id }, header: { "X-CSRF-Token": getCSRFToken() } } }); setMessage(response.data ? `${label(name)} request recorded.` : `${label(name)} request failed.`); };
@@ -396,6 +398,8 @@ function JobsPage({ initialJobs, expert }: { initialJobs: Job[]; expert: boolean
       <div className="timeline"><h3>State timeline</h3>{detail?.transitions?.map((transition: any, index: number, transitions: any[]) => { const elapsed = index > 0 ? Math.max(0, new Date(transition.created_at).getTime() - new Date(transitions[index - 1].created_at).getTime()) : 0; return <div className="timeline-row" key={transition.sequence}><span /><div><strong>{label(transition.to)}</strong><p>{transition.reason}{index > 0 ? ` · ${(elapsed / 1000).toFixed(1)}s in prior state` : " · queued"}</p></div><time>{date(transition.created_at)}</time></div>; })}</div>
       <details open={expert}><summary>Commands, logs, tests, analysis, diffs, resources, and phase outcomes</summary><pre>{JSON.stringify(detail?.phases ?? [], null, 2)}</pre></details>
       <h3>Retained artifacts</h3>{artifacts.length === 0 ? <Empty title="No retained artifacts" detail="Bounded logs, reports, diffs, and coverage outputs appear here when produced." /> : <div className="backup-list">{artifacts.map((artifact) => <article key={artifact.id}><div><strong>{label(artifact.kind)}</strong><p>{artifact.media_type} · {(artifact.bytes / 1024).toFixed(1)} KiB · <code>{artifact.sha256.slice(0, 12)}</code></p></div><a className="secondary-button" href={`/api/v1/jobs/${selected.id}/artifacts/${artifact.id}`}>Open</a></article>)}</div>}
+      <h3>Evidence traceability graph</h3>{!evidenceGraph || evidenceGraph.nodes.length === 0 ? <Empty title="No graph evidence retained" detail="New retained artifacts are indexed as typed evidence nodes with produced edges from the job." /> : <div className="backup-list">{evidenceGraph.edges.map((edge) => { const from = evidenceGraph.nodes.find((node) => node.id === edge.from_node_id); const to = evidenceGraph.nodes.find((node) => node.id === edge.to_node_id); return <article key={edge.id}><div><strong>{label(edge.relationship)}</strong><p>{from?.label ?? edge.from_node_id} → {to?.label ?? edge.to_node_id}</p><p>{edge.reason} · {date(edge.created_at)}</p></div><code>{shortSHA(to?.subject_sha256)}</code></article>; })}</div>}
+      {expert && evidenceGraph && <details><summary>Typed evidence nodes and edges</summary><pre>{JSON.stringify(evidenceGraph, null, 2)}</pre></details>}
     </Section>}
   </>;
 }

@@ -1630,6 +1630,16 @@ func TestJobArtifactsAreListedAndDownloadedWithIntegrityMetadata(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !bytes.Contains(listed, []byte(record.ID)) {
 		t.Fatalf("artifact list returned %d: %s", response.StatusCode, listed)
 	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/evidence-graph")
+	if err != nil {
+		t.Fatal(err)
+	}
+	graphPayload, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || !bytes.Contains(graphPayload, []byte(`"kind":"artifact"`)) ||
+		!bytes.Contains(graphPayload, []byte(record.ID)) || !bytes.Contains(graphPayload, []byte(`"relationship":"produced"`)) {
+		t.Fatalf("evidence graph returned %d: %s", response.StatusCode, graphPayload)
+	}
 	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/artifacts/" + record.ID)
 	if err != nil {
 		t.Fatal(err)
