@@ -256,6 +256,11 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/hermes/tools/schedules", s.hermesListSchedules)
 	mux.HandleFunc("POST /api/v1/hermes/tools/skill-proposals", s.hermesCreateSkillProposal)
 	mux.HandleFunc("GET /api/v1/agent-contracts", s.listAgentContracts)
+	mux.HandleFunc("GET /api/v1/policies/bundles", s.listPolicyBundles)
+	mux.HandleFunc("POST /api/v1/policies/bundles/{bundleID}/actions/activate", s.activatePolicyBundle)
+	mux.HandleFunc("GET /api/v1/policies/activations", s.listPolicyActivations)
+	mux.HandleFunc("GET /api/v1/policies/simulations", s.listPolicySimulations)
+	mux.HandleFunc("POST /api/v1/policies/simulations", s.simulatePolicy)
 	mux.HandleFunc("GET /api/v1/jobs", s.listJobs)
 	mux.HandleFunc("POST /api/v1/jobs", s.createJob)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}", s.getJob)
@@ -266,6 +271,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/test-designer", s.listJobTestDesignerReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/documentation", s.listJobDocumentationManifests)
+	mux.HandleFunc("GET /api/v1/jobs/{jobID}/policy-decisions", s.listJobPolicyDecisions)
 	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve", s.approveGoldenUpdate)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
@@ -723,6 +729,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if manifests, err := s.store.ListDocumentationManifests(r.Context(), job.ID, 100); err == nil {
 		response["documentation_manifests"] = manifests
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	if decisions, err := s.store.ListPolicyDecisions(r.Context(), job.ID, 100); err == nil {
+		response["policy_decisions"] = decisions
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

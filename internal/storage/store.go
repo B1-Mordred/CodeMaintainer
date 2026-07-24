@@ -20,6 +20,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
@@ -215,6 +216,7 @@ type Store interface {
 	testdesigner.Store
 	golden.Store
 	documentation.Store
+	policy.Store
 	risk.Store
 	windowsworker.Store
 	Close() error

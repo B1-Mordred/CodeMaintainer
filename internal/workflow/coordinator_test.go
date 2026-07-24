@@ -327,7 +327,7 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 			}
 		}
 	}
-	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer", "golden_rehearsals", "documentation_manifests"} {
+	for _, required := range []string{"effective_configuration", "controller_policy", "code_intelligence_range", "verification_baselines", "unresolved_findings", "independent_test_designer", "golden_rehearsals", "documentation_manifests", "opa_policy_decisions"} {
 		if !sources[required] {
 			t.Fatalf("context manifests omitted production source %q: %#v", required, sources)
 		}

@@ -25,6 +25,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StatePolicyReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview,
 		},
 		{
@@ -34,6 +35,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StatePolicyReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingRepair,
 			jobs.StateRepairing, jobs.StateFinalVerification, jobs.StateLoadingDocumentationModel,
 		},
@@ -44,6 +46,7 @@ func TestRestartAdvancesEveryAutomaticallyResumablePhase(t *testing.T) {
 			jobs.StateImplementing, jobs.StateVerifyingTargeted, jobs.StateVerifyingFull,
 			jobs.StateLoadingTestDesignerModel, jobs.StateTestDesignReview,
 			jobs.StateGoldenRehearsalReview, jobs.StateLoadingDocumentationModel, jobs.StateDocumentationReview,
+			jobs.StatePolicyReview,
 			jobs.StateLoadingQCModel, jobs.StateQCReview, jobs.StateAwaitingOperator,
 			jobs.StatePublishingBranch, jobs.StateDraftPRCreated,
 		},

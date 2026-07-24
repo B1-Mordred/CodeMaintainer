@@ -92,7 +92,7 @@ func (e *Engine) fail(ctx context.Context, job jobs.Job, cause error, reason str
 
 func phaseTokenReservation(state jobs.State) int {
 	switch state {
-	case jobs.StateImplementing, jobs.StateTestDesignReview, jobs.StateDocumentationReview, jobs.StateQCReview, jobs.StateRepairing:
+	case jobs.StateImplementing, jobs.StateTestDesignReview, jobs.StateDocumentationReview, jobs.StatePolicyReview, jobs.StateQCReview, jobs.StateRepairing:
 		return 16_384
 	default:
 		return 0
@@ -146,7 +146,8 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 		jobs.StateTestDesignReview:           jobs.StateGoldenRehearsalReview,
 		jobs.StateGoldenRehearsalReview:      jobs.StateLoadingDocumentationModel,
 		jobs.StateLoadingDocumentationModel:  jobs.StateDocumentationReview,
-		jobs.StateDocumentationReview:        jobs.StateLoadingQCModel,
+		jobs.StateDocumentationReview:        jobs.StatePolicyReview,
+		jobs.StatePolicyReview:               jobs.StateLoadingQCModel,
 		jobs.StateLoadingQCModel:             jobs.StateQCReview,
 		jobs.StateQCReview:                   jobs.StateAwaitingOperator,
 		jobs.StateAwaitingRepair:             jobs.StateRepairing,

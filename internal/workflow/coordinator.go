@@ -26,6 +26,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	projectmemory "github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
+	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
@@ -55,6 +56,7 @@ type coordinatorStore interface {
 	testdesigner.Store
 	golden.Store
 	documentation.Store
+	policy.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -259,6 +261,8 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		return detailOutcome(map[string]any{"profile_id": status.ProfileID, "model_family": status.ModelFamily}), nil
 	case jobs.StateDocumentationReview:
 		return c.reviewDocumentation(ctx, job)
+	case jobs.StatePolicyReview:
+		return c.reviewPolicy(ctx, job)
 	case jobs.StateLoadingQCModel:
 		if err := c.validateRoleSeparation(ctx); err != nil {
 			return Outcome{}, err
@@ -830,6 +834,63 @@ func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Ou
 	return detailOutcome(details), nil
 }
 
+func (c *Coordinator) reviewPolicy(ctx context.Context, job jobs.Job) (Outcome, error) {
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, job.ID)
+	if err != nil {
+		return Outcome{}, err
+	}
+	documentationManifests, err := c.store.ListDocumentationManifests(ctx, job.ID, 3)
+	if err != nil {
+		return Outcome{}, err
+	}
+	goldenReports, err := c.store.ListGoldenReports(ctx, job.ID, 3)
+	if err != nil {
+		return Outcome{}, err
+	}
+	input := map[string]any{
+		"job_id":                   job.ID,
+		"project_id":               job.ProjectID,
+		"repository":               job.Repository,
+		"risk_level":               string(assessment.Level),
+		"contract_sha256":          assessment.ContractSHA256,
+		"base_sha":                 job.BaseSHA,
+		"result_sha":               job.ResultSHA,
+		"review_cycle":             job.ReviewCycle,
+		"full_verification_passed": true,
+		"documentation_status":     latestDocumentationStatus(documentationManifests),
+		"golden_status":            latestGoldenStatus(goldenReports),
+		"protected_action":         "qc_entry",
+	}
+	decision, decisionErr := policy.NewService(c.store).EvaluateAndRecord(ctx, policy.EvaluationRequest{
+		JobID: job.ID, DecisionPoint: policy.DecisionPointQCRequirement, Input: input,
+	})
+	details := map[string]any{
+		"policy_decision": decision.Outcome, "decision_id": decision.ID,
+		"bundle_id": decision.BundleID, "bundle_version": decision.BundleVersion,
+		"required_stages": decision.RequiredStages, "fail_closed": decision.FailClosed,
+	}
+	if decisionErr != nil {
+		return Outcome{Details: mustJSON(details)}, decisionErr
+	}
+	outcome := detailOutcome(details)
+	outcome.NextState = jobs.StateLoadingQCModel
+	return outcome, nil
+}
+
+func latestDocumentationStatus(items []documentation.Manifest) string {
+	if len(items) == 0 {
+		return "missing"
+	}
+	return items[0].Status
+}
+
+func latestGoldenStatus(items []golden.Report) string {
+	if len(items) == 0 {
+		return "not_required"
+	}
+	return items[0].Status
+}
+
 func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error) {
 	records, err := c.store.ListFindings(ctx, job.ID)
 	if err != nil {
@@ -971,6 +1032,10 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 	if err != nil {
 		return agents.TaskPacket{}, err
 	}
+	policyDecisions, err := c.store.ListPolicyDecisions(ctx, job.ID, 3)
+	if err != nil {
+		return agents.TaskPacket{}, err
+	}
 	for _, evidence := range []struct {
 		id, source, reason string
 		value              any
@@ -981,6 +1046,7 @@ func (c *Coordinator) taskPacket(ctx context.Context, job jobs.Job, mode string,
 		{id: "test-designer-evidence", source: "independent_test_designer", reason: "independent test design proposals and dispositions for the exact candidate", value: testDesignReports},
 		{id: "golden-rehearsal-evidence", source: "golden_rehearsals", reason: "registered golden and rehearsal comparisons for the exact candidate", value: goldenReports},
 		{id: "documentation-evidence", source: "documentation_manifests", reason: "Documentation Agent impact, change, check, and unsupported-claim manifest for the exact candidate", value: documentationManifests},
+		{id: "policy-decision-evidence", source: "opa_policy_decisions", reason: "active deterministic policy bundle decision pinned before QC", value: policyDecisions},
 	} {
 		payload, _ := json.Marshal(evidence.value)
 		if string(payload) != "[]" && string(payload) != "null" {

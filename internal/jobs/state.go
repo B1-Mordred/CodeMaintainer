@@ -23,6 +23,7 @@ const (
 	StateGoldenRehearsalReview      State = "golden_rehearsal_review"
 	StateLoadingDocumentationModel  State = "loading_documentation_model"
 	StateDocumentationReview        State = "documentation_review"
+	StatePolicyReview               State = "policy_review"
 	StateLoadingQCModel             State = "loading_qc_model"
 	StateQCReview                   State = "qc_review"
 	StateAwaitingRepair             State = "awaiting_repair"
@@ -53,6 +54,7 @@ var allStates = []State{
 	StateGoldenRehearsalReview,
 	StateLoadingDocumentationModel,
 	StateDocumentationReview,
+	StatePolicyReview,
 	StateLoadingQCModel,
 	StateQCReview,
 	StateAwaitingRepair,
@@ -82,12 +84,13 @@ var transitions = map[State]map[State]struct{}{
 	StateTestDesignReview:           set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateGoldenRehearsalReview:      set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingDocumentationModel:  set(StateDocumentationReview, StateCancelled, StateFailed),
-	StateDocumentationReview:        set(StateLoadingQCModel, StateCancelled, StateFailed),
+	StateDocumentationReview:        set(StatePolicyReview, StateLoadingQCModel, StateCancelled, StateFailed),
+	StatePolicyReview:               set(StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingQCModel:             set(StateQCReview, StateCancelled, StateFailed),
 	StateQCReview:                   set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
 	StateAwaitingRepair:             set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
 	StateRepairing:                  set(StateFinalVerification, StateCancelled, StateFailed),
-	StateFinalVerification:          set(StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateFinalVerification:          set(StateLoadingDocumentationModel, StatePolicyReview, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateAwaitingOperator:           set(StatePublishingBranch, StateCompleted, StateCancelled, StateFailed),
 	StatePublishingBranch:           set(StateDraftPRCreated, StateAwaitingOperator, StateFailed),
 	StateDraftPRCreated:             set(StateCompleted, StateFailed),

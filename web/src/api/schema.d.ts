@@ -1399,6 +1399,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/policies/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List policy bundles and structured source */
+        get: operations["listPolicyBundles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policies/bundles/{bundleID}/actions/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundleID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate or roll back to a validated policy bundle after recent reauthentication */
+        post: operations["activatePolicyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policies/activations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List policy activation and rollback history */
+        get: operations["listPolicyActivations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policies/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained policy simulations */
+        get: operations["listPolicySimulations"];
+        put?: never;
+        /** Simulate a policy decision with redacted retained input */
+        post: operations["simulatePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/task-contract": {
         parameters: {
             query?: never;
@@ -1506,6 +1577,25 @@ export interface paths {
         };
         /** List Documentation Agent manifests for one job */
         get: operations["listJobDocumentationManifests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{jobID}/policy-decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        /** List retained policy decisions for one job */
+        get: operations["listJobPolicyDecisions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3333,7 +3423,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "policy_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -3520,6 +3610,89 @@ export interface components {
             reauthenticated: boolean;
             approved_artifact_sha256: string;
             candidate_artifact_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PolicyStructuredRules: {
+            required_stages: {
+                [key: string]: string[];
+            };
+            protected_actions: string[];
+            allowed_runner_profiles: string[];
+            allowed_network_profiles: string[];
+            allowed_model_trust_tiers: string[];
+            memory_promotion_requires: string[];
+            publication_requires: string[];
+            waiver_requires: string[];
+        };
+        PolicyBundle: {
+            id: string;
+            /** @constant */
+            schema_version: 1;
+            version: string;
+            /** @enum {string} */
+            source_kind: "structured_template" | "advanced_rego";
+            source_sha256: string;
+            compiled_sha256: string;
+            structured_rules: components["schemas"]["PolicyStructuredRules"];
+            rego_source?: string;
+            /** @enum {string} */
+            status: "active" | "available";
+            created_by: string;
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            activated_at?: string;
+        };
+        PolicyActivation: {
+            id: string;
+            bundle_id: string;
+            bundle_version: string;
+            /** @enum {string} */
+            action: "activate" | "rollback";
+            previous_bundle_id?: string;
+            actor_id: string;
+            actor_role: string;
+            reason: string;
+            staged_rollout_percent: number;
+            reauthenticated: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PolicyDecision: {
+            id: string;
+            bundle_id: string;
+            bundle_version: string;
+            job_id?: string;
+            decision_point: string;
+            input_sha256: string;
+            redacted_input: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            outcome: "allow" | "deny";
+            allowed: boolean;
+            required_stages: string[];
+            explanation: string;
+            fail_closed: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PolicySimulation: {
+            id: string;
+            bundle_id: string;
+            bundle_version: string;
+            decision_point: string;
+            input_sha256: string;
+            redacted_input: {
+                [key: string]: unknown;
+            };
+            decision: components["schemas"]["PolicyDecision"];
+            /** @enum {string} */
+            status: "passed" | "failed";
+            errors: string[];
+            actor_id: string;
             /** Format: date-time */
             created_at: string;
         };
@@ -6740,6 +6913,7 @@ export interface operations {
                         golden_rehearsal_reports?: components["schemas"]["GoldenRehearsalReport"][];
                         golden_update_approvals?: components["schemas"]["GoldenUpdateApproval"][];
                         documentation_manifests?: components["schemas"]["DocumentationManifest"][];
+                        policy_decisions?: components["schemas"]["PolicyDecision"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
                     };
                 };
@@ -6767,6 +6941,159 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    listPolicyBundles: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versioned deterministic policy bundles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bundles: components["schemas"]["PolicyBundle"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    activatePolicyBundle: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                bundleID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default activate
+                     * @enum {string}
+                     */
+                    action?: "activate" | "rollback";
+                    reason: string;
+                    /** @default 100 */
+                    staged_rollout_percent?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Append-only activation history row */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        activation: components["schemas"]["PolicyActivation"];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listPolicyActivations: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy activation history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        activations: components["schemas"]["PolicyActivation"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    listPolicySimulations: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy simulation history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        simulations: components["schemas"]["PolicySimulation"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+        };
+    };
+    simulatePolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    bundle_id?: string;
+                    decision_point: string;
+                    input: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Retained simulation result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        simulation: components["schemas"]["PolicySimulation"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
             500: components["responses"]["ErrorResponse"];
@@ -6970,6 +7297,33 @@ export interface operations {
                 content: {
                     "application/json": {
                         manifests: components["schemas"]["DocumentationManifest"][];
+                    };
+                };
+            };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    listJobPolicyDecisions: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobID: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job-scoped policy decision history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        decisions: components["schemas"]["PolicyDecision"][];
                     };
                 };
             };

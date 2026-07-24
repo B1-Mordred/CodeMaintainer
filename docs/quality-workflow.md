@@ -23,7 +23,7 @@ The first risk assessment is computed from deterministic controller signals boun
 Risk levels route required stages and manual gates:
 
 - `low`: clarifier, implementation, targeted/full/final verification, and code QC.
-- `medium` and `high`: also require independent Test Designer, Documentation Agent, documentation QC, and OPA policy stages once the remaining Milestone 5 slices are implemented.
+- `medium` and `high`: also require independent Test Designer, golden/rehearsal review, Documentation Agent, and deterministic policy review before QC. Later slices still add full documentation QC actions.
 - `high`: additionally records publication reauthentication as a manual gate.
 
 Risk history is append-only. Lowering risk requires a reviewer or administrator to reauthenticate, provide a reason, and set a future expiry:
@@ -92,6 +92,27 @@ Operators can inspect manifests through the Jobs page or CLI:
 maintainctl documentation <job-id>
 ```
 
+## OPA policy lifecycle foundation
+
+The controller now retains a deterministic policy bundle ledger and inserts `policy_review` after `documentation_review` and before `loading_qc_model`. The built-in structured bundle is the safe default for Increment 2 quality gates. It records required stages by risk level, protected action classes, allowed runner/network/model trust profiles, publication requirements, memory-promotion requirements, and waiver requirements.
+
+Policy review evaluates the active bundle against job, risk, result commit, golden/rehearsal, and documentation evidence. The decision is append-only and includes bundle ID/version, decision point, redacted input, input hash, allow/deny outcome, required stages, explanation, and whether the decision failed closed. A denied decision stops QC rather than routing around the gate.
+
+Operators can inspect and exercise the lifecycle through the CLI:
+
+```sh
+maintainctl policy bundles
+maintainctl policy activations
+maintainctl policy decisions <job-id>
+maintainctl policy simulate --decision qc_requirement --input <json-file|-> [--bundle <id>]
+maintainctl reauthenticate --password-file <file|->
+maintainctl policy activate <bundle-id> --reason <text> --staged-rollout-percent 100
+```
+
+The API exposes the same bundle, activation, simulation, and job-decision records. Activation requires recent reauthentication when authentication is enabled. Simulation input is bounded JSON and stored only after secret-like keys are redacted. The Jobs page shows the latest policy decision and full decision history for inspected jobs.
+
+This foundation deliberately does not expose arbitrary Rego editing from the browser. Full embedded OPA/Rego validation, formatting, unit-test coverage, structured policy editors, staged rollout UX, rollback workbench, and broad protected-action enforcement across memory, provider, forge, signing, Windows, and hardware actions remain open work under I2-20.
+
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, and OPA-backed policy simulation/activation/rollback.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, and the remaining OPA policy authoring, rollback workbench, Rego test/coverage, and cross-domain protected-action enforcement.

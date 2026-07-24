@@ -142,11 +142,76 @@ func run(arguments []string) error {
 			return errors.New("usage: maintainctl documentation <job-id>")
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/documentation", nil)
+	case "policy":
+		return api.policy(arguments[1:])
 	case "golden":
 		return api.golden(arguments[1:])
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) policy(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl policy <bundles|activations|simulate|activate|decisions> ...")
+	}
+	switch arguments[0] {
+	case "bundles":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl policy bundles")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/policies/bundles", nil)
+	case "activations":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl policy activations")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/policies/activations", nil)
+	case "decisions":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl policy decisions <job-id>")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/policy-decisions", nil)
+	case "simulate":
+		flags := flag.NewFlagSet("policy simulate", flag.ContinueOnError)
+		bundleID := flags.String("bundle", "", "policy bundle ID, defaults to active")
+		decisionPoint := flags.String("decision", "", "policy decision point")
+		inputFile := flags.String("input", "", "JSON input file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *decisionPoint == "" || *inputFile == "" {
+			return errors.New("usage: maintainctl policy simulate --decision <point> --input <json-file|-> [--bundle <id>]")
+		}
+		raw, err := readJSONDocument(*inputFile)
+		if err != nil {
+			return err
+		}
+		var input any
+		if err := json.Unmarshal(raw, &input); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/policies/simulations", map[string]any{
+			"bundle_id": *bundleID, "decision_point": *decisionPoint, "input": input,
+		})
+	case "activate":
+		if len(arguments) < 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl policy activate <bundle-id> --reason <text> [--staged-rollout-percent <0-100>]; reauthenticate first")
+		}
+		flags := flag.NewFlagSet("policy activate", flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited activation reason")
+		staged := flags.Int("staged-rollout-percent", 100, "staged rollout percent")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*reason) == "" || *staged < 0 || *staged > 100 {
+			return errors.New("usage: maintainctl policy activate <bundle-id> --reason <text> [--staged-rollout-percent <0-100>]; reauthenticate first")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/policies/bundles/"+url.PathEscape(arguments[1])+"/actions/activate", map[string]any{
+			"action": "activate", "reason": *reason, "staged_rollout_percent": *staged,
+		})
+	default:
+		return errors.New("usage: maintainctl policy <bundles|activations|simulate|activate|decisions> ...")
 	}
 }
 

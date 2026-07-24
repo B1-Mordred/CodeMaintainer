@@ -1266,6 +1266,7 @@ paths:
                   golden_rehearsal_reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
                   golden_update_approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
                   documentation_manifests: { type: array, items: { $ref: "#/components/schemas/DocumentationManifest" } }
+                  policy_decisions: { type: array, items: { $ref: "#/components/schemas/PolicyDecision" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /agent-contracts:
@@ -1282,6 +1283,117 @@ paths:
                 required: [contracts]
                 properties:
                   contracts: { type: array, items: { $ref: "#/components/schemas/AgentContractDescriptor" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/bundles:
+    get:
+      summary: List policy bundles and structured source
+      operationId: listPolicyBundles
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Versioned deterministic policy bundles
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundles]
+                properties:
+                  bundles: { type: array, items: { $ref: "#/components/schemas/PolicyBundle" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/bundles/{bundleID}/actions/activate:
+    parameters:
+      - { name: bundleID, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Activate or roll back to a validated policy bundle after recent reauthentication
+      operationId: activatePolicyBundle
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                action: { type: string, enum: [activate, rollback], default: activate }
+                reason: { type: string, minLength: 1, maxLength: 4000 }
+                staged_rollout_percent: { type: integer, minimum: 0, maximum: 100, default: 100 }
+      responses:
+        "201":
+          description: Append-only activation history row
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [activation]
+                properties:
+                  activation: { $ref: "#/components/schemas/PolicyActivation" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/activations:
+    get:
+      summary: List policy activation and rollback history
+      operationId: listPolicyActivations
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Policy activation history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [activations]
+                properties:
+                  activations: { type: array, items: { $ref: "#/components/schemas/PolicyActivation" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/simulations:
+    get:
+      summary: List retained policy simulations
+      operationId: listPolicySimulations
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Policy simulation history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [simulations]
+                properties:
+                  simulations: { type: array, items: { $ref: "#/components/schemas/PolicySimulation" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Simulate a policy decision with redacted retained input
+      operationId: simulatePolicy
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision_point, input]
+              properties:
+                bundle_id: { type: string }
+                decision_point: { type: string }
+                input: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Retained simulation result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [simulation]
+                properties:
+                  simulation: { $ref: "#/components/schemas/PolicySimulation" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "500": { $ref: "#/components/responses/ErrorResponse" }
@@ -1432,6 +1544,25 @@ paths:
                 required: [manifests]
                 properties:
                   manifests: { type: array, items: { $ref: "#/components/schemas/DocumentationManifest" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /jobs/{jobID}/policy-decisions:
+    parameters:
+      - { $ref: "#/components/parameters/JobID" }
+    get:
+      summary: List retained policy decisions for one job
+      operationId: listJobPolicyDecisions
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Job-scoped policy decision history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [decisions]
+                properties:
+                  decisions: { type: array, items: { $ref: "#/components/schemas/PolicyDecision" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve:
     parameters:
@@ -3263,7 +3394,7 @@ components:
         replay: { type: boolean }
     JobState:
       type: string
-      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, golden_rehearsal_review, loading_documentation_model, documentation_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, golden_rehearsal_review, loading_documentation_model, documentation_review, policy_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
     AgentContractKind:
       type: string
       enum: [task_packet, implementation_result, qc_report, test_proposal, documentation_manifest, risk_assessment, completion_summary]
@@ -3473,6 +3604,91 @@ components:
         reauthenticated: { type: boolean }
         approved_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         candidate_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        created_at: { type: string, format: date-time }
+    PolicyStructuredRules:
+      type: object
+      additionalProperties: false
+      required: [required_stages, protected_actions, allowed_runner_profiles, allowed_network_profiles, allowed_model_trust_tiers, memory_promotion_requires, publication_requires, waiver_requires]
+      properties:
+        required_stages:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        protected_actions: { type: array, items: { type: string } }
+        allowed_runner_profiles: { type: array, items: { type: string } }
+        allowed_network_profiles: { type: array, items: { type: string } }
+        allowed_model_trust_tiers: { type: array, items: { type: string } }
+        memory_promotion_requires: { type: array, items: { type: string } }
+        publication_requires: { type: array, items: { type: string } }
+        waiver_requires: { type: array, items: { type: string } }
+    PolicyBundle:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, version, source_kind, source_sha256, compiled_sha256, structured_rules, status, created_by, reason, created_at]
+      properties:
+        id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        version: { type: string }
+        source_kind: { type: string, enum: [structured_template, advanced_rego] }
+        source_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        compiled_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        structured_rules: { $ref: "#/components/schemas/PolicyStructuredRules" }
+        rego_source: { type: string }
+        status: { type: string, enum: [active, available] }
+        created_by: { type: string }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time }
+    PolicyActivation:
+      type: object
+      additionalProperties: false
+      required: [id, bundle_id, bundle_version, action, actor_id, actor_role, reason, staged_rollout_percent, reauthenticated, created_at]
+      properties:
+        id: { type: string }
+        bundle_id: { type: string }
+        bundle_version: { type: string }
+        action: { type: string, enum: [activate, rollback] }
+        previous_bundle_id: { type: string }
+        actor_id: { type: string }
+        actor_role: { type: string }
+        reason: { type: string }
+        staged_rollout_percent: { type: integer, minimum: 0, maximum: 100 }
+        reauthenticated: { type: boolean }
+        created_at: { type: string, format: date-time }
+    PolicyDecision:
+      type: object
+      additionalProperties: false
+      required: [id, bundle_id, bundle_version, decision_point, input_sha256, redacted_input, outcome, allowed, required_stages, explanation, fail_closed, created_at]
+      properties:
+        id: { type: string }
+        bundle_id: { type: string }
+        bundle_version: { type: string }
+        job_id: { type: string }
+        decision_point: { type: string }
+        input_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        redacted_input: { type: object, additionalProperties: true }
+        outcome: { type: string, enum: [allow, deny] }
+        allowed: { type: boolean }
+        required_stages: { type: array, items: { type: string } }
+        explanation: { type: string }
+        fail_closed: { type: boolean }
+        created_at: { type: string, format: date-time }
+    PolicySimulation:
+      type: object
+      additionalProperties: false
+      required: [id, bundle_id, bundle_version, decision_point, input_sha256, redacted_input, decision, status, errors, actor_id, created_at]
+      properties:
+        id: { type: string }
+        bundle_id: { type: string }
+        bundle_version: { type: string }
+        decision_point: { type: string }
+        input_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        redacted_input: { type: object, additionalProperties: true }
+        decision: { $ref: "#/components/schemas/PolicyDecision" }
+        status: { type: string, enum: [passed, failed] }
+        errors: { type: array, items: { type: string } }
+        actor_id: { type: string }
         created_at: { type: string, format: date-time }
     TaskContractCriterion:
       type: object
