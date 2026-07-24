@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
@@ -13,6 +14,74 @@ func (s *Server) providerStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) updateProviderProfile(w http.ResponseWriter, r *http.Request) {
+	var request providers.UpdateProviderRequest
+	if err := decodeJSONLimit(w, r, &request, 128*1024); err != nil {
+		return
+	}
+	profile, err := providers.NewService(s.store).UpdateProvider(r.Context(), r.PathValue("providerID"), request, actorID(r))
+	if err != nil {
+		if errors.Is(err, providers.ErrConflict) {
+			writeError(w, http.StatusConflict, "provider_profile_stale", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "provider_profile_invalid", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (s *Server) updateProviderEndpoint(w http.ResponseWriter, r *http.Request) {
+	var request providers.UpdateEndpointRequest
+	if err := decodeJSONLimit(w, r, &request, 128*1024); err != nil {
+		return
+	}
+	profile, err := providers.NewService(s.store).UpdateEndpoint(r.Context(), r.PathValue("endpointID"), request, actorID(r))
+	if err != nil {
+		if errors.Is(err, providers.ErrConflict) {
+			writeError(w, http.StatusConflict, "provider_endpoint_stale", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "provider_endpoint_invalid", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (s *Server) updateProviderModel(w http.ResponseWriter, r *http.Request) {
+	var request providers.UpdateModelRequest
+	if err := decodeJSONLimit(w, r, &request, 128*1024); err != nil {
+		return
+	}
+	profile, err := providers.NewService(s.store).UpdateModel(r.Context(), r.PathValue("modelID"), request, actorID(r))
+	if err != nil {
+		if errors.Is(err, providers.ErrConflict) {
+			writeError(w, http.StatusConflict, "provider_model_stale", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "provider_model_invalid", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (s *Server) updateProviderRoute(w http.ResponseWriter, r *http.Request) {
+	var request providers.UpdateRouteRequest
+	if err := decodeJSONLimit(w, r, &request, 128*1024); err != nil {
+		return
+	}
+	profile, err := providers.NewService(s.store).UpdateRoute(r.Context(), r.PathValue("routeID"), request, actorID(r))
+	if err != nil {
+		if errors.Is(err, providers.ErrConflict) {
+			writeError(w, http.StatusConflict, "provider_route_stale", err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "provider_route_invalid", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
 }
 
 func (s *Server) simulateProviderRoute(w http.ResponseWriter, r *http.Request) {

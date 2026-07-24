@@ -58,10 +58,98 @@ func TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview(t *testing.
 	if response.StatusCode != http.StatusOK || len(status.Families) != 10 || len(status.Providers) == 0 {
 		t.Fatalf("provider status %d %#v", response.StatusCode, status)
 	}
+	var fakeProvider providers.ProviderProfile
 	for _, profile := range status.Providers {
 		if profile.Remote && profile.Enabled {
 			t.Fatalf("remote profile %s defaulted enabled", profile.ID)
 		}
+		if profile.ID == "fake-openai-responses" {
+			fakeProvider = profile
+		}
+	}
+	if fakeProvider.ID == "" {
+		t.Fatal("fake provider profile not seeded")
+	}
+	fakeProvider.Enabled = true
+	fakeProvider.OperatorAssertions = append(fakeProvider.OperatorAssertions, "api reviewer approved fake remote profile")
+	providerBody, err := json.Marshal(providers.UpdateProviderRequest{
+		ExpectedVersion: fakeProvider.Version,
+		Reason:          "enable fake remote profile from typed provider workbench",
+		Profile:         fakeProvider,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateRequest, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/model-providers/providers/fake-openai-responses", bytes.NewReader(providerBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateRequest.Header.Set("Content-Type", "application/json")
+	updateResponse, err := http.DefaultClient.Do(updateRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var providerResult struct {
+		Profile providers.ProviderProfile `json:"profile"`
+	}
+	if err := json.NewDecoder(updateResponse.Body).Decode(&providerResult); err != nil {
+		t.Fatal(err)
+	}
+	updateResponse.Body.Close()
+	if updateResponse.StatusCode != http.StatusOK || !providerResult.Profile.Enabled || providerResult.Profile.Version != fakeProvider.Version+1 {
+		t.Fatalf("provider update %d %#v", updateResponse.StatusCode, providerResult)
+	}
+	staleRequest, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/model-providers/providers/fake-openai-responses", bytes.NewReader(providerBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRequest.Header.Set("Content-Type", "application/json")
+	staleResponse, err := http.DefaultClient.Do(staleRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleResponse.Body.Close()
+	if staleResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("stale provider update returned %d", staleResponse.StatusCode)
+	}
+	var remoteRoute providers.RouteProfile
+	for _, route := range status.Routes {
+		if route.ID == "remote-documentation-ci-preview" {
+			remoteRoute = route
+		}
+	}
+	if remoteRoute.ID == "" {
+		t.Fatal("remote route not seeded")
+	}
+	remoteRoute.Enabled = true
+	routeBody, err := json.Marshal(providers.UpdateRouteRequest{
+		ExpectedVersion:             remoteRoute.Version,
+		Reason:                      "enable fake documentation route after operator preview",
+		Profile:                     remoteRoute,
+		RemoteEgressApproved:        true,
+		RemoteEgressApprovalSummary: "preview acknowledged for task_metadata and documentation_public_source",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeUpdate, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/model-providers/routes/remote-documentation-ci-preview", bytes.NewReader(routeBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeUpdate.Header.Set("Content-Type", "application/json")
+	routeUpdateResponse, err := http.DefaultClient.Do(routeUpdate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routeResult struct {
+		Profile providers.RouteProfile `json:"profile"`
+	}
+	if err := json.NewDecoder(routeUpdateResponse.Body).Decode(&routeResult); err != nil {
+		t.Fatal(err)
+	}
+	routeUpdateResponse.Body.Close()
+	if routeUpdateResponse.StatusCode != http.StatusOK || !routeResult.Profile.Enabled || routeResult.Profile.Version != remoteRoute.Version+1 {
+		t.Fatalf("route update %d %#v", routeUpdateResponse.StatusCode, routeResult)
 	}
 	routePayload := `{"project_id":"owner-repo","role":"implementation","purpose":"api local route","data_classes":["task_metadata","candidate_diff"],"estimated_bytes":2048,"estimated_tokens":1024,"requires_structured_output":true}`
 	route, err := http.Post(server.URL+"/api/v1/model-providers/routes/simulations", "application/json", strings.NewReader(routePayload))

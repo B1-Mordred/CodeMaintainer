@@ -19,7 +19,10 @@ const providerStatus = {
     { id: "local-implementation", provider_id: "local-llamacpp", endpoint_id: "local-llamacpp-endpoint", model_id: "local-implementation", display_name: "Local implementation model", role_eligibility: ["implementation", "quality"], capabilities: { responses_api: false, chat_completions: true, streaming: true, cancellation: true, structured_outputs: true, tool_calls: false, parallel_tool_calls: false, stable_tool_call_ids: false, system_messages: true, developer_messages: false, usage_accounting: true, reasoning_controls: false, prompt_caching: false, batch: false, asynchronous: false, model_listing: false, immutable_model_ids: true }, context_limit: 32768, output_limit: 8192, input_price_per_mtok: 0, output_price_per_mtok: 0, quality_status: "accepted_local_default", capability_override: false, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
     { id: "fake-remote-json", provider_id: "fake-openai-responses", endpoint_id: "fake-openai-responses-endpoint", model_id: "gpt-5.6-fake", display_name: "CI fake OpenAI Responses JSON", role_eligibility: ["implementation"], capabilities: { responses_api: true, chat_completions: false, streaming: true, cancellation: true, structured_outputs: true, tool_calls: true, parallel_tool_calls: true, stable_tool_call_ids: true, system_messages: true, developer_messages: true, usage_accounting: true, reasoning_controls: true, prompt_caching: true, batch: true, asynchronous: true, model_listing: true, immutable_model_ids: true }, context_limit: 128000, output_limit: 16384, input_price_per_mtok: 0, output_price_per_mtok: 0, quality_status: "ci_fake_only", capability_override: false, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
   ],
-  routes: [{ id: "local-quality-default", role: "implementation", preference: "local_first", ordered_model_ids: ["local-implementation"], allowed_data_classes: ["task_metadata", "candidate_diff"], max_tokens_per_request: 32768, max_cost_usd: 0, retry_budget: 2, fallback_policy: "same_trust_or_stricter", batch_policy: "disabled", enabled: true, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" }],
+  routes: [
+    { id: "local-quality-default", role: "implementation", preference: "local_first", ordered_model_ids: ["local-implementation"], allowed_data_classes: ["task_metadata", "candidate_diff"], max_tokens_per_request: 32768, max_cost_usd: 0, retry_budget: 2, fallback_policy: "same_trust_or_stricter", batch_policy: "disabled", enabled: true, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+    { id: "remote-documentation-ci-preview", role: "documentation", preference: "remote_when_policy_allows", ordered_model_ids: ["fake-remote-json"], allowed_data_classes: ["task_metadata", "documentation_public_source"], max_tokens_per_request: 16000, max_cost_usd: 0.1, retry_budget: 1, fallback_policy: "explicit_same_or_higher_trust_only", batch_policy: "project_isolated", enabled: false, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+  ],
   recent_egress_manifests: [],
   recent_capability_probes: [],
   remote_enabled_by_default: false,
@@ -272,6 +275,8 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/models") return jsonResponse({ items: [], status: { state: "unloaded", profile_id: "", memory_bytes: 0, prompt_tokens_second: 0, decode_tokens_second: 0 } });
   if (path === "/api/v1/models/runtime-benchmarks") return jsonResponse(runtimeBenchmarks);
   if (path === "/api/v1/model-providers/status") return jsonResponse(providerStatus);
+  if (path === "/api/v1/model-providers/providers/fake-openai-responses") return jsonResponse({ profile: { ...providerStatus.providers[1], enabled: true, version: 2 } });
+  if (path === "/api/v1/model-providers/routes/remote-documentation-ci-preview") return jsonResponse({ profile: { ...providerStatus.routes[1], enabled: true, version: 2 } });
   if (path === "/api/v1/model-providers/routes/simulations") return jsonResponse(routeDecision);
   if (path === "/api/v1/model-providers/models/fake-remote-json/actions/probe") return new Response(JSON.stringify(capabilityProbe), { status: 201, headers: { "Content-Type": "application/json" } });
   if (path === "/api/v1/model-providers/capability-probes") return jsonResponse({ probes: [capabilityProbe.probe] });
@@ -321,13 +326,21 @@ describe("App", () => {
     expect(await screen.findByText(/operator review is still required/)).toBeInTheDocument();
     expect((await screen.findAllByText("CI fake OpenAI Responses")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Remote provider")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Provider configuration workbench" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save provider version 1" }));
+    expect(await screen.findByText(/Provider profile fake-openai-responses saved at version 2/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByLabelText("Enabled")[1]);
+    fireEvent.change(screen.getByPlaceholderText(/summarize reviewed preview/), { target: { value: "reviewed retained preview for documentation public source only" } });
+    fireEvent.click(screen.getByLabelText(/I reviewed the retained egress preview/));
+    fireEvent.click(screen.getByRole("button", { name: "Save route version 1" }));
+    expect(await screen.findByText(/Route profile remote-documentation-ci-preview saved at version 2/)).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Provider model probes" })).toBeInTheDocument();
-    expect(await screen.findByText("CI fake OpenAI Responses JSON")).toBeInTheDocument();
+    expect((await screen.findAllByText("CI fake OpenAI Responses JSON")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Probe capabilities for fake-remote-json" }));
     expect(await screen.findByText(/openai\.responses\.create/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Simulate provider route" }));
     expect(await screen.findByText("local-implementation")).toBeInTheDocument();
-    expect(screen.getByText("local-quality-default")).toBeInTheDocument();
+    expect(screen.getAllByText("local-quality-default").length).toBeGreaterThan(0);
     const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
     expect(result.violations).toEqual([]);
   });

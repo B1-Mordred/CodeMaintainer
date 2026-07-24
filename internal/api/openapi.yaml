@@ -1060,8 +1060,116 @@ paths:
           description: Provider gateway status
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ProviderGatewayStatus" }
+                schema: { $ref: "#/components/schemas/ProviderGatewayStatus" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/providers/{providerID}:
+    parameters:
+      - name: providerID
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Update a registered provider profile with optimistic concurrency
+      operationId: updateModelProviderProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProviderUpdateRequest" } } }
+      responses:
+        "200":
+          description: Updated provider profile
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/ProviderProfile" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/endpoints/{endpointID}:
+    parameters:
+      - name: endpointID
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Update a registered provider endpoint profile with optimistic concurrency
+      operationId: updateModelProviderEndpoint
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProviderEndpointUpdateRequest" } } }
+      responses:
+        "200":
+          description: Updated endpoint profile
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/ProviderEndpointProfile" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/models/{modelID}:
+    parameters:
+      - name: modelID
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Update a registered provider model profile with optimistic concurrency
+      operationId: updateModelProviderModel
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProviderModelUpdateRequest" } } }
+      responses:
+        "200":
+          description: Updated model profile
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/ProviderModelProfile" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/routes/{routeID}:
+    parameters:
+      - name: routeID
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Update a registered provider route profile with optimistic concurrency
+      operationId: updateModelProviderRoute
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProviderRouteUpdateRequest" } } }
+      responses:
+        "200":
+          description: Updated route profile
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/ProviderRouteProfile" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
   /model-providers/routes/simulations:
     post:
       summary: Simulate a provider-neutral route and retain an egress manifest preview
@@ -4159,6 +4267,40 @@ components:
         recent_egress_manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
         recent_capability_probes: { type: array, items: { $ref: "#/components/schemas/ProviderCapabilityProbe" } }
         remote_enabled_by_default: { type: boolean }
+    ProviderUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason, profile]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        profile: { $ref: "#/components/schemas/ProviderProfile" }
+    ProviderEndpointUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason, profile]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        profile: { $ref: "#/components/schemas/ProviderEndpointProfile" }
+    ProviderModelUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason, profile]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        profile: { $ref: "#/components/schemas/ProviderModelProfile" }
+    ProviderRouteUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason, profile, remote_egress_approved]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        profile: { $ref: "#/components/schemas/ProviderRouteProfile" }
+        remote_egress_approved: { type: boolean }
+        remote_egress_approval_summary: { type: string, maxLength: 1000 }
     EvaluationCreateDatasetRequest:
       type: object
       additionalProperties: false

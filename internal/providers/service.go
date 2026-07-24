@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
+
+var ErrConflict = errors.New("provider profile changed; refresh and retry")
 
 type Service struct {
 	store Store
@@ -277,6 +280,156 @@ func (s *Service) ProbeModel(ctx context.Context, modelProfileID, actor string) 
 	return s.store.RecordCapabilityProbe(ctx, probe)
 }
 
+func (s *Service) UpdateProvider(ctx context.Context, id string, request UpdateProviderRequest, actor string) (ProviderProfile, error) {
+	if s == nil || s.store == nil {
+		return ProviderProfile{}, errors.New("provider store is required")
+	}
+	if err := s.EnsureDefaults(ctx, actor); err != nil {
+		return ProviderProfile{}, err
+	}
+	if !safeID.MatchString(id) || request.Profile.ID != id || actor == "" || strings.TrimSpace(request.Reason) == "" || request.ExpectedVersion < 1 {
+		return ProviderProfile{}, errors.New("provider update request is invalid")
+	}
+	current, err := s.findProvider(ctx, id)
+	if err != nil {
+		return ProviderProfile{}, err
+	}
+	if current.Version != request.ExpectedVersion {
+		return ProviderProfile{}, ErrConflict
+	}
+	next := request.Profile
+	next.SchemaVersion = SchemaVersion
+	next.CreatedAt = current.CreatedAt
+	next.UpdatedAt = current.UpdatedAt
+	next.Version = current.Version
+	if err := next.Validate(); err != nil {
+		return ProviderProfile{}, err
+	}
+	return s.store.UpsertProviderProfile(ctx, next, actor)
+}
+
+func (s *Service) UpdateEndpoint(ctx context.Context, id string, request UpdateEndpointRequest, actor string) (EndpointProfile, error) {
+	if s == nil || s.store == nil {
+		return EndpointProfile{}, errors.New("provider store is required")
+	}
+	if err := s.EnsureDefaults(ctx, actor); err != nil {
+		return EndpointProfile{}, err
+	}
+	if !safeID.MatchString(id) || request.Profile.ID != id || actor == "" || strings.TrimSpace(request.Reason) == "" || request.ExpectedVersion < 1 {
+		return EndpointProfile{}, errors.New("endpoint update request is invalid")
+	}
+	providersByID, _, _, _, err := s.load(ctx)
+	if err != nil {
+		return EndpointProfile{}, err
+	}
+	current, err := s.findEndpoint(ctx, id)
+	if err != nil {
+		return EndpointProfile{}, err
+	}
+	if current.Version != request.ExpectedVersion {
+		return EndpointProfile{}, ErrConflict
+	}
+	provider, ok := providersByID[request.Profile.ProviderID]
+	if !ok {
+		return EndpointProfile{}, errors.New("endpoint provider profile is not registered")
+	}
+	next := request.Profile
+	next.CreatedAt = current.CreatedAt
+	next.UpdatedAt = current.UpdatedAt
+	next.Version = current.Version
+	if err := next.Validate(provider); err != nil {
+		return EndpointProfile{}, err
+	}
+	return s.store.UpsertEndpointProfile(ctx, next, actor)
+}
+
+func (s *Service) UpdateModel(ctx context.Context, id string, request UpdateModelRequest, actor string) (ModelProfile, error) {
+	if s == nil || s.store == nil {
+		return ModelProfile{}, errors.New("provider store is required")
+	}
+	if err := s.EnsureDefaults(ctx, actor); err != nil {
+		return ModelProfile{}, err
+	}
+	if !safeID.MatchString(id) || request.Profile.ID != id || actor == "" || strings.TrimSpace(request.Reason) == "" || request.ExpectedVersion < 1 {
+		return ModelProfile{}, errors.New("model update request is invalid")
+	}
+	providersByID, endpointsByID, _, _, err := s.load(ctx)
+	if err != nil {
+		return ModelProfile{}, err
+	}
+	current, err := s.findModel(ctx, id)
+	if err != nil {
+		return ModelProfile{}, err
+	}
+	if current.Version != request.ExpectedVersion {
+		return ModelProfile{}, ErrConflict
+	}
+	provider, ok := providersByID[request.Profile.ProviderID]
+	if !ok {
+		return ModelProfile{}, errors.New("model provider profile is not registered")
+	}
+	endpoint, ok := endpointsByID[request.Profile.EndpointID]
+	if !ok || endpoint.ProviderID != provider.ID {
+		return ModelProfile{}, errors.New("model endpoint profile is not registered for provider")
+	}
+	next := request.Profile
+	next.CreatedAt = current.CreatedAt
+	next.UpdatedAt = current.UpdatedAt
+	next.Version = current.Version
+	if err := next.Validate(provider, endpoint); err != nil {
+		return ModelProfile{}, err
+	}
+	return s.store.UpsertModelProfile(ctx, next, actor)
+}
+
+func (s *Service) UpdateRoute(ctx context.Context, id string, request UpdateRouteRequest, actor string) (RouteProfile, error) {
+	if s == nil || s.store == nil {
+		return RouteProfile{}, errors.New("provider store is required")
+	}
+	if err := s.EnsureDefaults(ctx, actor); err != nil {
+		return RouteProfile{}, err
+	}
+	if !safeID.MatchString(id) || request.Profile.ID != id || actor == "" || strings.TrimSpace(request.Reason) == "" || request.ExpectedVersion < 1 {
+		return RouteProfile{}, errors.New("route update request is invalid")
+	}
+	providersByID, _, modelsByID, _, err := s.load(ctx)
+	if err != nil {
+		return RouteProfile{}, err
+	}
+	current, err := s.findRoute(ctx, id)
+	if err != nil {
+		return RouteProfile{}, err
+	}
+	if current.Version != request.ExpectedVersion {
+		return RouteProfile{}, ErrConflict
+	}
+	next := request.Profile
+	next.CreatedAt = current.CreatedAt
+	next.UpdatedAt = current.UpdatedAt
+	next.Version = current.Version
+	if err := next.Validate(); err != nil {
+		return RouteProfile{}, err
+	}
+	usesRemote := false
+	for _, modelID := range next.OrderedModelIDs {
+		model, ok := modelsByID[modelID]
+		if !ok {
+			return RouteProfile{}, fmt.Errorf("route references unregistered model profile %q", modelID)
+		}
+		provider, ok := providersByID[model.ProviderID]
+		if !ok {
+			return RouteProfile{}, fmt.Errorf("route references model %q with unregistered provider", modelID)
+		}
+		if provider.Remote {
+			usesRemote = true
+		}
+	}
+	if next.Enabled && usesRemote && (!request.RemoteEgressApproved || strings.TrimSpace(request.RemoteEgressApprovalSummary) == "") {
+		return RouteProfile{}, errors.New("enabling a remote-capable route requires explicit egress preview approval and rationale")
+	}
+	return s.store.UpsertRouteProfile(ctx, next, actor)
+}
+
 func (s *Service) recordAllowed(ctx context.Context, route RouteProfile, provider ProviderProfile, endpoint EndpointProfile, model ModelProfile, manifest EgressManifest) (RouteDecision, error) {
 	manifest.CreatedAt = s.now()
 	hash, err := HashManifest(manifest)
@@ -339,6 +492,58 @@ func (s *Service) load(ctx context.Context) (map[string]ProviderProfile, map[str
 		models[item.ID] = item
 	}
 	return providers, endpoints, models, routeItems, nil
+}
+
+func (s *Service) findProvider(ctx context.Context, id string) (ProviderProfile, error) {
+	items, err := s.store.ListProviderProfiles(ctx, 500)
+	if err != nil {
+		return ProviderProfile{}, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return ProviderProfile{}, errors.New("provider profile not found")
+}
+
+func (s *Service) findEndpoint(ctx context.Context, id string) (EndpointProfile, error) {
+	items, err := s.store.ListEndpointProfiles(ctx, 500)
+	if err != nil {
+		return EndpointProfile{}, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return EndpointProfile{}, errors.New("endpoint profile not found")
+}
+
+func (s *Service) findModel(ctx context.Context, id string) (ModelProfile, error) {
+	items, err := s.store.ListModelProfiles(ctx, 500)
+	if err != nil {
+		return ModelProfile{}, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return ModelProfile{}, errors.New("model profile not found")
+}
+
+func (s *Service) findRoute(ctx context.Context, id string) (RouteProfile, error) {
+	items, err := s.store.ListRouteProfiles(ctx, 500)
+	if err != nil {
+		return RouteProfile{}, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return RouteProfile{}, errors.New("route profile not found")
 }
 
 func eligibleRoutes(routes []RouteProfile, role string) []RouteProfile {

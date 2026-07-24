@@ -38,6 +38,10 @@ type ProviderGatewayStatus = components["schemas"]["ProviderGatewayStatus"];
 type ProviderRouteDecision = components["schemas"]["ProviderRouteDecision"];
 type ProviderRouteRequest = components["schemas"]["ProviderRouteRequest"];
 type ProviderCapabilityProbe = components["schemas"]["ProviderCapabilityProbe"];
+type ProviderProfile = components["schemas"]["ProviderProfile"];
+type ProviderEndpointProfile = components["schemas"]["ProviderEndpointProfile"];
+type ProviderModelProfile = components["schemas"]["ProviderModelProfile"];
+type ProviderRouteProfile = components["schemas"]["ProviderRouteProfile"];
 type EvaluationDataset = components["schemas"]["EvaluationDataset"];
 type EvaluationRun = components["schemas"]["EvaluationRun"];
 type EvaluationCreateDatasetRequest = components["schemas"]["EvaluationCreateDatasetRequest"];
@@ -126,6 +130,14 @@ function shortSHA(value?: string): string {
 
 function gibibytes(value?: number): string {
   return `${((value ?? 0) / 1073741824).toFixed(1)} GiB`;
+}
+
+function csv(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function setListValue(value: string[] | undefined): string {
+  return (value ?? []).join(", ");
 }
 
 function statusTone(value: string): "good" | "warn" | "bad" | "neutral" {
@@ -779,6 +791,21 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
   const [providerStatus, setProviderStatus] = useState<ProviderGatewayStatus | null>(null);
   const [providerDecision, setProviderDecision] = useState<ProviderRouteDecision | null>(null);
   const [providerProbe, setProviderProbe] = useState<ProviderCapabilityProbe | null>(null);
+  const [providerEdit, setProviderEdit] = useState<ProviderProfile | null>(null);
+  const [endpointEdit, setEndpointEdit] = useState<ProviderEndpointProfile | null>(null);
+  const [modelEdit, setModelEdit] = useState<ProviderModelProfile | null>(null);
+  const [routeEdit, setRouteEdit] = useState<ProviderRouteProfile | null>(null);
+  const [providerClasses, setProviderClasses] = useState("");
+  const [providerAssertions, setProviderAssertions] = useState("");
+  const [modelRoles, setModelRoles] = useState("");
+  const [routeModels, setRouteModels] = useState("");
+  const [routeClasses, setRouteClasses] = useState("");
+  const [providerEditReason, setProviderEditReason] = useState("typed provider profile review");
+  const [endpointEditReason, setEndpointEditReason] = useState("typed endpoint profile review");
+  const [modelEditReason, setModelEditReason] = useState("typed model profile review");
+  const [routeEditReason, setRouteEditReason] = useState("typed route profile review");
+  const [routeRemoteApproved, setRouteRemoteApproved] = useState(false);
+  const [routeRemoteApprovalSummary, setRouteRemoteApprovalSummary] = useState("");
   const [routeInput, setRouteInput] = useState(`{
   "project_id": "owner-repo",
   "role": "implementation",
@@ -791,6 +818,16 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
   const [message, setMessage] = useState("");
   const load = useCallback(async () => { const [modelResponse, providerResponse, benchmarkResponse] = await Promise.all([api.GET("/models"), api.GET("/model-providers/status"), api.GET("/models/runtime-benchmarks")]); setProfiles(modelResponse.data?.items ?? []); setModelStatus(modelResponse.data?.status ?? null); setProviderStatus(providerResponse.data ?? null); setRuntimeBenchmarks(benchmarkResponse.data?.items ?? []); }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!providerStatus) return;
+    setProviderEdit((current) => current ?? providerStatus.providers.find((provider) => provider.remote) ?? providerStatus.providers[0] ?? null);
+    setEndpointEdit((current) => current ?? providerStatus.endpoints.find((endpoint) => providerStatus.providers.some((provider) => provider.remote && provider.id === endpoint.provider_id)) ?? providerStatus.endpoints[0] ?? null);
+    setModelEdit((current) => current ?? providerStatus.models.find((model) => providerStatus.providers.some((provider) => provider.remote && provider.id === model.provider_id)) ?? providerStatus.models[0] ?? null);
+    setRouteEdit((current) => current ?? providerStatus.routes.find((route) => route.id === "remote-documentation-ci-preview") ?? providerStatus.routes[0] ?? null);
+  }, [providerStatus]);
+  useEffect(() => { setProviderClasses(setListValue(providerEdit?.approved_data_classes)); setProviderAssertions(setListValue(providerEdit?.operator_assertions)); }, [providerEdit?.id]);
+  useEffect(() => { setModelRoles(setListValue(modelEdit?.role_eligibility)); }, [modelEdit?.id]);
+  useEffect(() => { setRouteModels(setListValue(routeEdit?.ordered_model_ids)); setRouteClasses(setListValue(routeEdit?.allowed_data_classes)); setRouteRemoteApproved(false); setRouteRemoteApprovalSummary(""); }, [routeEdit?.id]);
   const modelAction = async (profile: ModelProfile, action: "benchmark" | "load") => {
     const params = { path: { profileID: profile.id }, header: { "X-CSRF-Token": getCSRFToken() } };
     const response = action === "benchmark" ? await api.POST("/models/{profileID}/actions/benchmark", { params }) : await api.POST("/models/{profileID}/actions/load", { params });
@@ -819,6 +856,53 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
     setMessage(response.data ? `${label(response.data.probe.status)} capability probe retained for ${modelID}.` : `Capability probe failed for ${modelID}.`);
     if (response.data) await load();
   };
+  const saveProviderProfile = async () => {
+    if (!providerEdit) return;
+    const profile = { ...providerEdit, approved_data_classes: csv(providerClasses), operator_assertions: csv(providerAssertions) };
+    const response = await api.PUT("/model-providers/providers/{providerID}", { params: { path: { providerID: providerEdit.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { expected_version: providerEdit.version, reason: providerEditReason, profile } });
+    if (response.data) {
+      setProviderEdit(response.data.profile);
+      setMessage(`Provider profile ${response.data.profile.id} saved at version ${response.data.profile.version}.`);
+      await load();
+    } else {
+      setMessage("Provider profile save failed; refresh and inspect validation errors.");
+    }
+  };
+  const saveEndpointProfile = async () => {
+    if (!endpointEdit) return;
+    const response = await api.PUT("/model-providers/endpoints/{endpointID}", { params: { path: { endpointID: endpointEdit.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { expected_version: endpointEdit.version, reason: endpointEditReason, profile: endpointEdit } });
+    if (response.data) {
+      setEndpointEdit(response.data.profile);
+      setMessage(`Endpoint profile ${response.data.profile.id} saved at version ${response.data.profile.version}.`);
+      await load();
+    } else {
+      setMessage("Endpoint profile save failed; refresh and inspect validation errors.");
+    }
+  };
+  const saveModelProfile = async () => {
+    if (!modelEdit) return;
+    const profile = { ...modelEdit, role_eligibility: csv(modelRoles) };
+    const response = await api.PUT("/model-providers/models/{modelID}", { params: { path: { modelID: modelEdit.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { expected_version: modelEdit.version, reason: modelEditReason, profile } });
+    if (response.data) {
+      setModelEdit(response.data.profile);
+      setMessage(`Model profile ${response.data.profile.id} saved at version ${response.data.profile.version}.`);
+      await load();
+    } else {
+      setMessage("Model profile save failed; refresh and inspect validation errors.");
+    }
+  };
+  const saveRouteProfile = async () => {
+    if (!routeEdit) return;
+    const profile = { ...routeEdit, ordered_model_ids: csv(routeModels), allowed_data_classes: csv(routeClasses) };
+    const response = await api.PUT("/model-providers/routes/{routeID}", { params: { path: { routeID: routeEdit.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { expected_version: routeEdit.version, reason: routeEditReason, profile, remote_egress_approved: routeRemoteApproved, remote_egress_approval_summary: routeRemoteApprovalSummary } });
+    if (response.data) {
+      setRouteEdit(response.data.profile);
+      setMessage(`Route profile ${response.data.profile.id} saved at version ${response.data.profile.version}.`);
+      await load();
+    } else {
+      setMessage("Route profile save failed; refresh and inspect validation errors.");
+    }
+  };
   const remoteProfiles = providerStatus?.providers.filter((provider) => provider.remote) ?? [];
   const enabledRemoteProfiles = remoteProfiles.filter((provider) => provider.enabled);
   const providerByID = new Map((providerStatus?.providers ?? []).map((provider) => [provider.id, provider]));
@@ -839,6 +923,83 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
     <Section title="Provider gateway" eyebrow="Local, LAN, and remote boundaries" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
       {!providerStatus ? <Empty title="Provider gateway status unavailable" detail="The controller will seed safe local defaults when storage is ready." /> : <div className="card-grid">
         {providerStatus.providers.map((provider) => <article className="resource-card" key={provider.id}><div className="resource-title"><BrainCircuit aria-hidden="true" /><div><h3>{provider.display_name}</h3><p>{provider.interface_family}</p></div><Badge value={provider.enabled ? "enabled" : "disabled"} /></div><dl><div><dt>Trust tier</dt><dd>{label(provider.trust_tier)}</dd></div><div><dt>Boundary</dt><dd>{provider.remote ? "Remote provider" : "Local-only"}</dd></div><div><dt>Credentials</dt><dd>{provider.credential_configured ? "Configured write-only" : "Not configured"}</dd></div><div><dt>Data classes</dt><dd>{provider.approved_data_classes.join(", ")}</dd></div></dl>{expert && <details><summary>Operator assertions</summary><pre>{JSON.stringify(provider.operator_assertions, null, 2)}</pre></details>}</article>)}
+      </div>}
+    </Section>
+    <Section title="Provider configuration workbench" eyebrow="Typed profile controls with version checks">
+      {!providerStatus ? <Empty title="Provider controls unavailable" detail="Provider profile controls appear after the gateway status loads." /> : <div className="stacked-forms">
+        <article className="detail-panel">
+          <h3>Provider profile</h3>
+          <div className="inline-form-grid">
+            <label>Registered provider<select value={providerEdit?.id ?? ""} onChange={(event) => setProviderEdit(providerStatus.providers.find((provider) => provider.id === event.target.value) ?? null)}>{providerStatus.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.display_name}</option>)}</select></label>
+            <label>Display name<input value={providerEdit?.display_name ?? ""} onChange={(event) => providerEdit && setProviderEdit({ ...providerEdit, display_name: event.target.value })} /></label>
+            <label>Trust tier<select value={providerEdit?.trust_tier ?? "approved_private"} onChange={(event) => providerEdit && setProviderEdit({ ...providerEdit, trust_tier: event.target.value as ProviderProfile["trust_tier"] })}><option value="local">Local</option><option value="approved_private">Approved private</option><option value="approved_enterprise">Approved enterprise</option><option value="public_remote">Public remote</option></select></label>
+            <label>Credential reference<input value={providerEdit?.credential_ref ?? ""} onChange={(event) => providerEdit && setProviderEdit({ ...providerEdit, credential_ref: event.target.value })} placeholder="write-only secret reference id" /></label>
+            <label>Approved data classes<input value={providerClasses} onChange={(event) => setProviderClasses(event.target.value)} /></label>
+            <label>Operator assertions<input value={providerAssertions} onChange={(event) => setProviderAssertions(event.target.value)} /></label>
+            <label>Review reason<input value={providerEditReason} onChange={(event) => setProviderEditReason(event.target.value)} /></label>
+            <label className="checkbox-line"><input type="checkbox" checked={providerEdit?.enabled ?? false} onChange={(event) => providerEdit && setProviderEdit({ ...providerEdit, enabled: event.target.checked })} />Enabled</label>
+          </div>
+          <p className="expert-note">Interface family, registered ID, and remote/local boundary stay controller-owned. Credentials are references only; raw secret values are never returned.</p>
+          <button type="button" disabled={!providerEdit} onClick={() => void saveProviderProfile()}>Save provider version {providerEdit?.version ?? "—"}</button>
+        </article>
+        <article className="detail-panel">
+          <h3>Endpoint profile</h3>
+          <div className="inline-form-grid">
+            <label>Registered endpoint<select value={endpointEdit?.id ?? ""} onChange={(event) => setEndpointEdit(providerStatus.endpoints.find((endpoint) => endpoint.id === event.target.value) ?? null)}>{providerStatus.endpoints.map((endpoint) => <option key={endpoint.id} value={endpoint.id}>{endpoint.id}</option>)}</select></label>
+            <label>Base URL<input value={endpointEdit?.base_url ?? ""} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, base_url: event.target.value })} /></label>
+            <label>Network zone<select value={endpointEdit?.network_zone ?? "public_internet"} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, network_zone: event.target.value as ProviderEndpointProfile["network_zone"] })}><option value="local">Local</option><option value="lan_private">LAN private</option><option value="enterprise_private">Enterprise private</option><option value="public_internet">Public internet</option></select></label>
+            <label>TLS mode<select value={endpointEdit?.tls_mode ?? "verify"} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, tls_mode: event.target.value as ProviderEndpointProfile["tls_mode"] })}><option value="verify">Verify</option><option value="custom_ca">Custom CA</option><option value="mtls">mTLS</option><option value="local_http">Local HTTP</option></select></label>
+            <label>DNS policy<select value={endpointEdit?.dns_policy ?? "public_only"} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, dns_policy: event.target.value as ProviderEndpointProfile["dns_policy"] })}><option value="public_only">Public only</option><option value="private_allowed">Private allowed</option><option value="loopback_only">Loopback only</option></select></label>
+            <label>Timeout milliseconds<input type="number" min={1000} max={1800000} value={endpointEdit?.timeout_millis ?? 30000} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, timeout_millis: Number(event.target.value) })} /></label>
+            <label>Health path<input value={endpointEdit?.health_check_path ?? ""} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, health_check_path: event.target.value })} /></label>
+            <label>Review reason<input value={endpointEditReason} onChange={(event) => setEndpointEditReason(event.target.value)} /></label>
+            <label className="checkbox-line"><input type="checkbox" checked={endpointEdit?.allow_private_address ?? false} onChange={(event) => endpointEdit && setEndpointEdit({ ...endpointEdit, allow_private_address: event.target.checked })} />Allow private addresses when the network zone permits it</label>
+          </div>
+          <p className="expert-note">Redirect policy is fixed to reject. The server rejects public profiles targeting loopback, link-local, private, or metadata endpoints.</p>
+          <button type="button" disabled={!endpointEdit} onClick={() => void saveEndpointProfile()}>Save endpoint version {endpointEdit?.version ?? "—"}</button>
+        </article>
+        <article className="detail-panel">
+          <h3>Model profile</h3>
+          <div className="inline-form-grid">
+            <label>Registered model<select value={modelEdit?.id ?? ""} onChange={(event) => setModelEdit(providerStatus.models.find((model) => model.id === event.target.value) ?? null)}>{providerStatus.models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}</select></label>
+            <label>Display name<input value={modelEdit?.display_name ?? ""} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, display_name: event.target.value })} /></label>
+            <label>Provider<select value={modelEdit?.provider_id ?? ""} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, provider_id: event.target.value })}>{providerStatus.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.id}</option>)}</select></label>
+            <label>Endpoint<select value={modelEdit?.endpoint_id ?? ""} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, endpoint_id: event.target.value })}>{providerStatus.endpoints.map((endpoint) => <option key={endpoint.id} value={endpoint.id}>{endpoint.id}</option>)}</select></label>
+            <label>Native model ID<input value={modelEdit?.model_id ?? ""} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, model_id: event.target.value })} /></label>
+            <label>Eligible roles<input value={modelRoles} onChange={(event) => setModelRoles(event.target.value)} /></label>
+            <label>Context limit<input type="number" min={1024} value={modelEdit?.context_limit ?? 1024} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, context_limit: Number(event.target.value) })} /></label>
+            <label>Output limit<input type="number" min={1} value={modelEdit?.output_limit ?? 1} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, output_limit: Number(event.target.value) })} /></label>
+            <label>Input $/M tokens<input type="number" min={0} step="0.000001" value={modelEdit?.input_price_per_mtok ?? 0} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, input_price_per_mtok: Number(event.target.value) })} /></label>
+            <label>Output $/M tokens<input type="number" min={0} step="0.000001" value={modelEdit?.output_price_per_mtok ?? 0} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, output_price_per_mtok: Number(event.target.value) })} /></label>
+            <label>Quality status<select value={modelEdit?.quality_status ?? "experimental"} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, quality_status: event.target.value as ProviderModelProfile["quality_status"] })}><option value="accepted_local_default">Accepted local default</option><option value="ci_fake_only">CI fake only</option><option value="experimental">Experimental</option><option value="accepted">Accepted</option></select></label>
+            <label>Review reason<input value={modelEditReason} onChange={(event) => setModelEditReason(event.target.value)} /></label>
+            <label className="checkbox-line"><input type="checkbox" checked={modelEdit?.capabilities.structured_outputs ?? false} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, capabilities: { ...modelEdit.capabilities, structured_outputs: event.target.checked } })} />Structured outputs</label>
+            <label className="checkbox-line"><input type="checkbox" checked={modelEdit?.capabilities.streaming ?? false} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, capabilities: { ...modelEdit.capabilities, streaming: event.target.checked } })} />Streaming</label>
+            <label className="checkbox-line"><input type="checkbox" checked={modelEdit?.capabilities.batch ?? false} onChange={(event) => modelEdit && setModelEdit({ ...modelEdit, capabilities: { ...modelEdit.capabilities, batch: event.target.checked } })} />Batch</label>
+          </div>
+          <button type="button" disabled={!modelEdit} onClick={() => void saveModelProfile()}>Save model version {modelEdit?.version ?? "—"}</button>
+        </article>
+        <article className="detail-panel">
+          <h3>Route profile and egress approval</h3>
+          <div className="inline-form-grid">
+            <label>Registered route<select value={routeEdit?.id ?? ""} onChange={(event) => setRouteEdit(providerStatus.routes.find((route) => route.id === event.target.value) ?? null)}>{providerStatus.routes.map((route) => <option key={route.id} value={route.id}>{route.id}</option>)}</select></label>
+            <label>Role<input value={routeEdit?.role ?? ""} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, role: event.target.value })} /></label>
+            <label>Preference<select value={routeEdit?.preference ?? "local_first"} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, preference: event.target.value as ProviderRouteProfile["preference"] })}><option value="local_first">Local first</option><option value="remote_when_policy_allows">Remote when policy allows</option><option value="measured_hybrid">Measured hybrid</option></select></label>
+            <label>Ordered model IDs<input value={routeModels} onChange={(event) => setRouteModels(event.target.value)} /></label>
+            <label>Allowed data classes<input value={routeClasses} onChange={(event) => setRouteClasses(event.target.value)} /></label>
+            <label>Max tokens<input type="number" min={1} value={routeEdit?.max_tokens_per_request ?? 1} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, max_tokens_per_request: Number(event.target.value) })} /></label>
+            <label>Max cost USD<input type="number" min={0} step="0.000001" value={routeEdit?.max_cost_usd ?? 0} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, max_cost_usd: Number(event.target.value) })} /></label>
+            <label>Retry budget<input type="number" min={0} max={10} value={routeEdit?.retry_budget ?? 0} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, retry_budget: Number(event.target.value) })} /></label>
+            <label>Fallback policy<select value={routeEdit?.fallback_policy ?? "same_trust_or_stricter"} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, fallback_policy: event.target.value as ProviderRouteProfile["fallback_policy"] })}><option value="none">None</option><option value="same_trust_or_stricter">Same trust or stricter</option><option value="explicit_same_or_higher_trust_only">Explicit same or higher trust only</option></select></label>
+            <label>Batch policy<select value={routeEdit?.batch_policy ?? "disabled"} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, batch_policy: event.target.value as ProviderRouteProfile["batch_policy"] })}><option value="disabled">Disabled</option><option value="project_isolated">Project isolated</option></select></label>
+            <label>Review reason<input value={routeEditReason} onChange={(event) => setRouteEditReason(event.target.value)} /></label>
+            <label>Remote approval summary<input value={routeRemoteApprovalSummary} onChange={(event) => setRouteRemoteApprovalSummary(event.target.value)} placeholder="summarize reviewed preview, data classes, retention, and cost" /></label>
+            <label className="checkbox-line"><input type="checkbox" checked={routeEdit?.enabled ?? false} onChange={(event) => routeEdit && setRouteEdit({ ...routeEdit, enabled: event.target.checked })} />Enabled</label>
+            <label className="checkbox-line"><input type="checkbox" checked={routeRemoteApproved} onChange={(event) => setRouteRemoteApproved(event.target.checked)} />I reviewed the retained egress preview before enabling a remote-capable route</label>
+          </div>
+          <p className="expert-note">Remote-capable route enablement is rejected by the controller unless this request includes explicit egress approval and a rationale. Run the route preview below first.</p>
+          <button type="button" disabled={!routeEdit} onClick={() => void saveRouteProfile()}>Save route version {routeEdit?.version ?? "—"}</button>
+        </article>
       </div>}
     </Section>
     <Section title="Provider model probes" eyebrow="Protocol conformance">

@@ -215,6 +215,32 @@ type Status struct {
 	RemoteEnabledByDefault bool              `json:"remote_enabled_by_default"`
 }
 
+type UpdateProviderRequest struct {
+	ExpectedVersion int64           `json:"expected_version"`
+	Reason          string          `json:"reason"`
+	Profile         ProviderProfile `json:"profile"`
+}
+
+type UpdateEndpointRequest struct {
+	ExpectedVersion int64           `json:"expected_version"`
+	Reason          string          `json:"reason"`
+	Profile         EndpointProfile `json:"profile"`
+}
+
+type UpdateModelRequest struct {
+	ExpectedVersion int64        `json:"expected_version"`
+	Reason          string       `json:"reason"`
+	Profile         ModelProfile `json:"profile"`
+}
+
+type UpdateRouteRequest struct {
+	ExpectedVersion             int64        `json:"expected_version"`
+	Reason                      string       `json:"reason"`
+	Profile                     RouteProfile `json:"profile"`
+	RemoteEgressApproved        bool         `json:"remote_egress_approved"`
+	RemoteEgressApprovalSummary string       `json:"remote_egress_approval_summary,omitempty"`
+}
+
 type Store interface {
 	ListProviderProfiles(context.Context, int) ([]ProviderProfile, error)
 	UpsertProviderProfile(context.Context, ProviderProfile, string) (ProviderProfile, error)

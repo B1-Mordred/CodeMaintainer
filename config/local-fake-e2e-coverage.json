@@ -190,19 +190,19 @@
       "status": "in_progress",
       "title": "Configure a fake remote endpoint from the UI, probe, route, approve egress, complete a job, and retain safe usage/cost evidence",
       "fixtures": [],
-      "implementation": ["internal/providers", "internal/api/providers.go", "internal/workflow/coordinator.go", "web/src/OperatorConsole.tsx"],
+      "implementation": ["internal/providers", "internal/api/providers.go", "internal/api/openapi.yaml", "internal/workflow/coordinator.go", "web/src/OperatorConsole.tsx"],
       "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "internal/workflow/coordinator_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go", "internal/acceptance/local_fake_e2e_test.go"],
       "ui": ["web/src/OperatorConsole.tsx#models-agents"],
       "docs": ["docs/model-providers.md", "docs/acceptance.md"],
       "proof": [
-        {"path": "web/src/App.test.tsx", "contains": ["Simulate provider route", "fake-remote-json", "local-quality-default"]},
-        {"path": "internal/api/server_test.go", "contains": ["TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview", "fake-remote-json"]},
-        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "ManifestSHA256"]},
+        {"path": "web/src/App.test.tsx", "contains": ["Provider configuration workbench", "Save provider version", "I reviewed the retained egress preview"]},
+        {"path": "internal/api/server_test.go", "contains": ["typed provider workbench", "stale provider update returned", "remote-documentation-ci-preview"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestProfileUpdatesRequireFreshVersionsAndRemoteEgressApproval", "egress preview approval"]},
         {"path": "internal/workflow/coordinator_test.go", "contains": ["provider_egress_manifest_sha256", "implementation worker task packet", "repair worker task packet"]},
         {"path": "internal/workflow/coordinator.go", "contains": ["routeModelCall", "withProviderRouteDetails", "provider_egress_manifest_sha256"]},
         {"path": "internal/acceptance/local_fake_e2e_test.go", "contains": ["SimulateExecution", "browser approved fake remote documentation route", "NetworkContacted"]}
       ],
-      "remaining_work": ["Add editable provider/endpoint/model/route browser controls and explicit egress approval in the browser workflow."]
+      "remaining_work": ["Promote the provider workbench, route preview, route enablement approval, and job execution into one real browser-to-controller local-fake E2E; add per-job remote egress approval when project policy requires it."]
     },
     {
       "step": 13,

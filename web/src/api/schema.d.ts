@@ -1142,6 +1142,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/model-providers/providers/{providerID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a registered provider profile with optimistic concurrency */
+        put: operations["updateModelProviderProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/endpoints/{endpointID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpointID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a registered provider endpoint profile with optimistic concurrency */
+        put: operations["updateModelProviderEndpoint"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/models/{modelID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a registered provider model profile with optimistic concurrency */
+        put: operations["updateModelProviderModel"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/routes/{routeID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a registered provider route profile with optimistic concurrency */
+        put: operations["updateModelProviderRoute"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/model-providers/routes/simulations": {
         parameters: {
             query?: never;
@@ -3979,6 +4055,28 @@ export interface components {
             recent_egress_manifests: components["schemas"]["ProviderEgressManifest"][];
             recent_capability_probes: components["schemas"]["ProviderCapabilityProbe"][];
             remote_enabled_by_default: boolean;
+        };
+        ProviderUpdateRequest: {
+            expected_version: number;
+            reason: string;
+            profile: components["schemas"]["ProviderProfile"];
+        };
+        ProviderEndpointUpdateRequest: {
+            expected_version: number;
+            reason: string;
+            profile: components["schemas"]["ProviderEndpointProfile"];
+        };
+        ProviderModelUpdateRequest: {
+            expected_version: number;
+            reason: string;
+            profile: components["schemas"]["ProviderModelProfile"];
+        };
+        ProviderRouteUpdateRequest: {
+            expected_version: number;
+            reason: string;
+            profile: components["schemas"]["ProviderRouteProfile"];
+            remote_egress_approved: boolean;
+            remote_egress_approval_summary?: string;
         };
         EvaluationCreateDatasetRequest: {
             project_id: string;
@@ -7559,6 +7657,138 @@ export interface operations {
                 };
             };
             403: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateModelProviderProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                providerID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated provider profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["ProviderProfile"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateModelProviderEndpoint: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                endpointID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderEndpointUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated endpoint profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["ProviderEndpointProfile"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateModelProviderModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                modelID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderModelUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated model profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["ProviderModelProfile"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
+        };
+    };
+    updateModelProviderRoute: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                routeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderRouteUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated route profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["ProviderRouteProfile"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            409: components["responses"]["ErrorResponse"];
         };
     };
     simulateModelProviderRoute: {

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -179,6 +180,69 @@ func TestEveryRequiredFamilyHasFakeAdapterAndRetainedProbe(t *testing.T) {
 	}
 }
 
+func TestProfileUpdatesRequireFreshVersionsAndRemoteEgressApproval(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	service.now = func() time.Time { return time.Date(2026, 7, 24, 14, 20, 0, 0, time.UTC) }
+	status, err := service.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := findTestProvider(status.Providers, "fake-openai-responses")
+	provider.Enabled = true
+	provider.OperatorAssertions = append(provider.OperatorAssertions, "browser-approved fake remote provider for documentation only")
+	updatedProvider, err := service.UpdateProvider(context.Background(), provider.ID, UpdateProviderRequest{
+		ExpectedVersion: provider.Version,
+		Reason:          "enable fake remote provider after reviewing credential-free CI profile",
+		Profile:         provider,
+	}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updatedProvider.Enabled || updatedProvider.Version != provider.Version+1 {
+		t.Fatalf("provider update did not persist versioned enablement: %#v", updatedProvider)
+	}
+	if _, err := service.UpdateProvider(context.Background(), provider.ID, UpdateProviderRequest{
+		ExpectedVersion: provider.Version,
+		Reason:          "stale browser retry",
+		Profile:         provider,
+	}, "operator"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale provider update error = %v, want conflict", err)
+	}
+	route := findTestRoute(status.Routes, "remote-documentation-ci-preview")
+	route.Enabled = true
+	if _, err := service.UpdateRoute(context.Background(), route.ID, UpdateRouteRequest{
+		ExpectedVersion: route.Version,
+		Reason:          "missing egress approval",
+		Profile:         route,
+	}, "operator"); err == nil || !strings.Contains(err.Error(), "egress preview approval") {
+		t.Fatalf("remote route enable without approval error = %v", err)
+	}
+	updatedRoute, err := service.UpdateRoute(context.Background(), route.ID, UpdateRouteRequest{
+		ExpectedVersion:             route.Version,
+		Reason:                      "enable fake documentation route after previewing task metadata and public documentation classes",
+		Profile:                     route,
+		RemoteEgressApproved:        true,
+		RemoteEgressApprovalSummary: "approved preview: task_metadata and documentation_public_source only",
+	}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updatedRoute.Enabled || updatedRoute.Version != route.Version+1 {
+		t.Fatalf("route update did not persist versioned enablement: %#v", updatedRoute)
+	}
+	route.OrderedModelIDs = []string{"missing-model-profile"}
+	if _, err := service.UpdateRoute(context.Background(), route.ID, UpdateRouteRequest{
+		ExpectedVersion:             updatedRoute.Version,
+		Reason:                      "bad model reference",
+		Profile:                     route,
+		RemoteEgressApproved:        true,
+		RemoteEgressApprovalSummary: "preview acknowledged",
+	}, "operator"); err == nil || !strings.Contains(err.Error(), "unregistered model profile") {
+		t.Fatalf("unregistered model reference error = %v", err)
+	}
+}
+
 func TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile(t *testing.T) {
 	store := &memoryStore{}
 	service := NewService(store)
@@ -201,6 +265,24 @@ func TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile(t *testing.T) 
 	if err == nil || secret.Status == DecisionAllowed {
 		t.Fatalf("forbidden data class should be rejected before manifest: %#v err=%v", secret, err)
 	}
+}
+
+func findTestProvider(items []ProviderProfile, id string) ProviderProfile {
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+	}
+	return ProviderProfile{}
+}
+
+func findTestRoute(items []RouteProfile, id string) RouteProfile {
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+	}
+	return RouteProfile{}
 }
 
 func TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests(t *testing.T) {

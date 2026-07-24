@@ -156,6 +156,20 @@ uses local llama.cpp route profiles for the worker packet classes, while explici
 remote provider simulations still exercise the default-off remote documentation
 route.
 
+## Provider profile workbench
+
+The Models and agents page now exposes typed controls for registered provider,
+endpoint, model, and route profiles. Saves call controller-owned OpenAPI
+endpoints for the exact registered ID, include the current profile version and a
+review reason, and fail with a stale-edit conflict when another operator has
+updated the profile first.
+
+Remote-capable route enablement requires an explicit egress-preview approval
+flag and summary in the server request. The controller still validates the
+route profile, referenced model IDs, provider trust tier, endpoint safety,
+allowed data classes, cost limits, and retained capability probe evidence before
+any route can be selected.
+
 ## Remaining provider milestone work
 
 The full Increment 2 provider milestone is still open. Remaining work includes:
@@ -167,6 +181,6 @@ The full Increment 2 provider milestone is still open. Remaining work includes:
   resumability, and usage reconciliation into model-backed worker calls beyond
   the deterministic execution fakes;
 - OPA-bound project data-class policy and per-job approval when required;
-- editable provider/endpoint/model/route workbench controls with rollback and
-  export/import through the configuration registry;
+- rollback and export/import for provider profile revisions through the
+  configuration/recovery workflow;
 - benchmark-backed local runtime optimization profiles.
