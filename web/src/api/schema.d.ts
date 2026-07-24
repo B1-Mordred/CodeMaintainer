@@ -3480,7 +3480,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "awaiting_test_design_disposition" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "policy_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "awaiting_test_design_disposition" | "golden_rehearsal_review" | "awaiting_golden_approval" | "loading_documentation_model" | "documentation_review" | "policy_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -7597,13 +7597,18 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Append-only approval record */
+            /** @description Append-only approval record and current wait-state resolution */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GoldenUpdateApproval"];
+                    "application/json": {
+                        approval: components["schemas"]["GoldenUpdateApproval"];
+                        pending_approvals: number;
+                        rejected_approvals: number;
+                        job?: components["schemas"]["Job"];
+                    };
                 };
             };
             400: components["responses"]["ErrorResponse"];

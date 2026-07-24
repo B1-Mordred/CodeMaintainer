@@ -145,6 +145,7 @@ func nextState(state jobs.State, outcome Outcome) (jobs.State, error) {
 		jobs.StateLoadingTestDesignerModel:   jobs.StateTestDesignReview,
 		jobs.StateTestDesignReview:           jobs.StateGoldenRehearsalReview,
 		jobs.StateGoldenRehearsalReview:      jobs.StateLoadingDocumentationModel,
+		jobs.StateAwaitingGoldenApproval:     jobs.StateLoadingDocumentationModel,
 		jobs.StateLoadingDocumentationModel:  jobs.StateDocumentationReview,
 		jobs.StateDocumentationReview:        jobs.StatePolicyReview,
 		jobs.StatePolicyReview:               jobs.StateLoadingQCModel,

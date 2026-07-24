@@ -29,6 +29,10 @@ func TestGoldenReportsAndApprovalsAreAppendOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	found, err := store.GetGoldenReport(ctx, saved.ID)
+	if err != nil || found.ID != saved.ID || found.JobID != "job_golden" {
+		t.Fatalf("get report = %#v, %v", found, err)
+	}
 	listed, err := store.ListGoldenReports(ctx, "job_golden", 10)
 	if err != nil || len(listed) != 1 || listed[0].ID != saved.ID || listed[0].Status != "approval_required" {
 		t.Fatalf("reports = %#v, %v", listed, err)
@@ -47,6 +51,9 @@ func TestGoldenReportsAndApprovalsAreAppendOnly(t *testing.T) {
 	})
 	if err != nil || approval.CandidateArtifactSHA256 != saved.Comparisons[0].CandidateArtifactSHA256 {
 		t.Fatalf("approval = %#v, %v", approval, err)
+	}
+	if resolution := golden.ResolveApprovals(saved, []golden.Approval{approval}); resolution.Pending != 0 || resolution.Rejected != 0 {
+		t.Fatalf("approved golden did not resolve pending update: %#v", resolution)
 	}
 	approvals, err := store.ListGoldenApprovals(ctx, "job_golden", 10)
 	if err != nil || len(approvals) != 1 || approvals[0].ID != approval.ID {

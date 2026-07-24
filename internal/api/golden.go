@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/golden"
+	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 )
 
 func (s *Server) listJobGoldenReports(w http.ResponseWriter, r *http.Request) {
@@ -51,5 +52,42 @@ func (s *Server) approveGoldenUpdate(w http.ResponseWriter, r *http.Request) {
 		s.storageError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, approval)
+	report, err := s.store.GetGoldenReport(r.Context(), approval.ReportID)
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	approvals, err := s.store.ListGoldenApprovals(r.Context(), report.JobID, 500)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	resolution := golden.ResolveApprovals(report, approvals)
+	var refreshed *jobs.Job
+	if resolution.Pending == 0 {
+		job, jobErr := s.store.GetJob(r.Context(), report.JobID)
+		if jobErr != nil {
+			s.storageError(w, r, jobErr)
+			return
+		}
+		if job.State == jobs.StateAwaitingGoldenApproval {
+			details, _ := json.Marshal(map[string]any{
+				"report_id": report.ID, "pending_approvals": resolution.Pending,
+			})
+			advanced, transitionErr := s.store.TransitionJob(r.Context(), job.ID, jobs.TransitionRequest{
+				To: jobs.StateLoadingDocumentationModel, ActorID: actorID(r),
+				Reason:          "all required golden or rehearsal updates have explicit approvals",
+				ExpectedVersion: job.Version, Details: details,
+			})
+			if transitionErr != nil {
+				s.storageError(w, r, transitionErr)
+				return
+			}
+			refreshed = &advanced
+		}
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"approval": approval, "pending_approvals": resolution.Pending,
+		"rejected_approvals": resolution.Rejected, "job": refreshed,
+	})
 }

@@ -58,13 +58,17 @@ func (s *Store) ListGoldenReports(ctx context.Context, jobID string, limit int) 
 	return items, rows.Err()
 }
 
+func (s *Store) GetGoldenReport(ctx context.Context, reportID string) (golden.Report, error) {
+	return scanGoldenReport(s.db.QueryRowContext(ctx, `SELECT id,job_id,schema_version,project_id,contract_sha256,
+		risk_level,result_sha,source_context,comparisons_json,status,policy_summary,created_at
+		FROM golden_rehearsal_reports WHERE id=?`, reportID))
+}
+
 func (s *Store) ApproveGoldenUpdate(ctx context.Context, request golden.ApprovalRequest) (golden.Approval, error) {
 	if err := request.Validate(); err != nil {
 		return golden.Approval{}, storage.ErrInvalid
 	}
-	report, err := scanGoldenReport(s.db.QueryRowContext(ctx, `SELECT id,job_id,schema_version,project_id,contract_sha256,
-		risk_level,result_sha,source_context,comparisons_json,status,policy_summary,created_at
-		FROM golden_rehearsal_reports WHERE id=?`, request.ReportID))
+	report, err := s.GetGoldenReport(ctx, request.ReportID)
 	if err != nil {
 		return golden.Approval{}, err
 	}

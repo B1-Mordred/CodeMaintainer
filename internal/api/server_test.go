@@ -1618,6 +1618,20 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, state := range []jobs.State{
+		jobs.StateSyncing, jobs.StateCreatingWorktree, jobs.StatePreparingDependencies,
+		jobs.StateLockingAcceptanceCriteria, jobs.StateAwaitingTaskApproval,
+		jobs.StateLoadingImplementationModel, jobs.StateReproducing, jobs.StateImplementing,
+		jobs.StateVerifyingTargeted, jobs.StateVerifyingFull, jobs.StateGoldenRehearsalReview,
+		jobs.StateAwaitingGoldenApproval,
+	} {
+		job, err = store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{
+			To: state, ActorID: "test", Reason: "seed golden approval wait", ExpectedVersion: job.Version,
+		})
+		if err != nil {
+			t.Fatalf("seed %s: %v", state, err)
+		}
+	}
 	report, err := golden.ChangedReportForTest(job.ID, job.ProjectID, strings.Repeat("a", 64), "medium", strings.Repeat("b", 40))
 	if err != nil {
 		t.Fatal(err)
@@ -1645,13 +1659,20 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var approval golden.Approval
-	if err := json.NewDecoder(response.Body).Decode(&approval); err != nil {
+	var approvalResponse struct {
+		Approval          golden.Approval `json:"approval"`
+		PendingApprovals  int             `json:"pending_approvals"`
+		RejectedApprovals int             `json:"rejected_approvals"`
+		Job               *jobs.Job       `json:"job"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&approvalResponse); err != nil {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusCreated || approval.ReportID != report.ID || !approval.Approved {
-		t.Fatalf("golden approval = %d %#v", response.StatusCode, approval)
+	if response.StatusCode != http.StatusCreated || approvalResponse.Approval.ReportID != report.ID ||
+		!approvalResponse.Approval.Approved || approvalResponse.PendingApprovals != 0 ||
+		approvalResponse.Job == nil || approvalResponse.Job.State != jobs.StateLoadingDocumentationModel {
+		t.Fatalf("golden approval = %d %#v", response.StatusCode, approvalResponse)
 	}
 	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
 	if err != nil {

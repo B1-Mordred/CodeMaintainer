@@ -746,7 +746,14 @@ func (c *Coordinator) reviewGoldens(ctx context.Context, job jobs.Job) (Outcome,
 		return Outcome{}, err
 	}
 	details := map[string]any{"golden_rehearsals": report.Status, "report_id": report.ID, "comparisons": len(report.Comparisons)}
-	if report.Status == "approval_required" || report.Status == "failed" {
+	if report.Status == "approval_required" {
+		resolution := golden.ResolveApprovals(report, nil)
+		details["pending_approvals"] = resolution.Pending
+		outcome := detailOutcome(details)
+		outcome.NextState = jobs.StateAwaitingGoldenApproval
+		return outcome, nil
+	}
+	if report.Status == "failed" {
 		return Outcome{Details: mustJSON(details)}, errors.New("golden rehearsal gate requires explicit approval before QC")
 	}
 	outcome := detailOutcome(details)

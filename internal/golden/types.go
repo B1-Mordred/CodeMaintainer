@@ -92,6 +92,7 @@ type ApprovalRequest struct {
 
 type Store interface {
 	SaveGoldenReport(context.Context, Report) (Report, error)
+	GetGoldenReport(context.Context, string) (Report, error)
 	ListGoldenReports(context.Context, string, int) ([]Report, error)
 	ApproveGoldenUpdate(context.Context, ApprovalRequest) (Approval, error)
 	ListGoldenApprovals(context.Context, string, int) ([]Approval, error)
@@ -250,6 +251,41 @@ func (r ApprovalRequest) Validate() error {
 		return errors.New("golden approval requires a bounded reason")
 	}
 	return nil
+}
+
+type ApprovalResolution struct {
+	Pending  int `json:"pending"`
+	Rejected int `json:"rejected"`
+}
+
+func ResolveApprovals(report Report, approvals []Approval) ApprovalResolution {
+	latest := map[string]Approval{}
+	for _, approval := range approvals {
+		if approval.ReportID != report.ID {
+			continue
+		}
+		current, exists := latest[approval.ComparisonID]
+		if !exists || approval.CreatedAt.After(current.CreatedAt) ||
+			(approval.CreatedAt.Equal(current.CreatedAt) && approval.ID > current.ID) {
+			latest[approval.ComparisonID] = approval
+		}
+	}
+	var resolution ApprovalResolution
+	for _, comparison := range report.Comparisons {
+		if !comparison.ApprovalRequired && comparison.Status != "changed" && comparison.Status != "missing_approved" {
+			continue
+		}
+		approval, exists := latest[comparison.ID]
+		if !exists {
+			resolution.Pending++
+			continue
+		}
+		if !approval.Approved {
+			resolution.Pending++
+			resolution.Rejected++
+		}
+	}
+	return resolution
 }
 
 func digest(parts ...string) string {

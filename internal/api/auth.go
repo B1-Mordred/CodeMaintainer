@@ -140,7 +140,8 @@ func routePermission(r *http.Request) maintainerauth.Permission {
 		}
 		return maintainerauth.PermissionRead
 	}
-	if strings.Contains(path, "/approve-publication") || strings.Contains(path, "/findings/") || strings.Contains(path, "/test-designer-reports/") {
+	if strings.Contains(path, "/approve-publication") || strings.Contains(path, "/findings/") ||
+		strings.Contains(path, "/test-designer-reports/") || strings.Contains(path, "/golden-rehearsals/") {
 		return maintainerauth.PermissionReview
 	}
 	if strings.Contains(path, "/memory/") {

@@ -40,6 +40,8 @@ The API derives reauthentication from the session. It does not trust caller-supp
 
 Agent-controller packets and structured model outputs are registered as versioned JSON Schema contracts. The built-in catalogue currently covers task packets, implementation results, QC reports, Test Designer proposals, documentation manifests, risk assessments, and completion summaries. The controller advertises strict JSON Schema response formats to compatible model runtimes and still validates decoded output with bounded Go contracts before accepting it.
 
+Model-backed implementation, QC, Test Designer, and Documentation Agent workers now use the registered retry policy for malformed structured output. A rejected completion is not applied or stored as trusted evidence; the trusted runner sends bounded controller validation feedback back to the model and retries up to the descriptor limit, currently three attempts. Exhaustion fails the phase according to workflow policy instead of accepting unsupported claims, extra fields, wrong job bindings, unsafe edits, or malformed JSON.
+
 Operators can inspect the active catalogue and job-level validation evidence:
 
 ```sh
@@ -47,7 +49,7 @@ maintainctl agent-contracts
 maintainctl agent-contracts <job-id>
 ```
 
-Each validation record stores the phase, contract kind, schema version, schema hash, payload hash, attempt, validity, bounded error text, and artifact reference when present. The ledger is append-only and is also visible in the Jobs page under “Structured output contracts.” This provides the evidence base for retry policy and later Test Designer, Documentation Agent, and OPA gates.
+Each validation record stores the phase, contract kind, schema version, schema hash, payload hash, attempt, validity, bounded error text, and artifact reference when present. The ledger is append-only and is also visible in the Jobs page under “Structured output contracts.” This provides the evidence base for Test Designer, Documentation Agent, and OPA gates.
 
 ## Independent Test Designer
 
@@ -68,9 +70,11 @@ maintainctl test-designer dispose <report-id> <proposal-id> --disposition accept
 
 After Test Designer review, or after full verification for low-risk jobs that have registered rehearsals from assigned capability packs, the workflow records a `golden_rehearsal_review` phase before QC. The phase selects only controller-registered rehearsal definitions from trusted capability manifests and cross-links matching Test Designer suggestions; it does not execute pack-supplied commands or accept browser-supplied runner inputs.
 
-The report stores candidate-vs-approved artifact identities, comparison class, tolerance and mask policy metadata, provenance, diff summary, and status. A matched report advances to QC. A job with no registered rehearsals records `no_rehearsals` evidence. A changed or missing approved golden stores `approval_required` and fails closed; it never updates the approved artifact automatically.
+The report stores candidate-vs-approved artifact identities, comparison class, tolerance and mask policy metadata, provenance, diff summary, and status. A matched report advances to QC. A job with no registered rehearsals records `no_rehearsals` evidence. A changed or missing approved golden stores `approval_required` and routes the job to `awaiting_golden_approval`; it never updates the approved artifact automatically.
 
-Golden update approvals are append-only records with actor, role, reason, recent reauthentication, and the exact approved/candidate artifact hashes. Operators can inspect reports and append an approval or rejection through the Jobs page/API or CLI:
+Golden update approvals are append-only records with actor, role, reason, recent reauthentication, and the exact approved/candidate artifact hashes. The effective decision for each comparison is the latest append-only approval record. Rejections keep the comparison unresolved until a later explicit approval supersedes them; when all required comparisons are approved, the API advances a waiting job to `loading_documentation_model`.
+
+Operators can inspect reports and append an approval or rejection through the Jobs page/API or CLI:
 
 ```sh
 maintainctl golden reports <job-id>
@@ -121,4 +125,4 @@ This foundation exposes advanced Rego authoring only behind the expert UI and co
 
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.
+This slice does not complete Milestone 5. Still pending are editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.

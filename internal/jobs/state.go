@@ -22,6 +22,7 @@ const (
 	StateTestDesignReview              State = "test_design_review"
 	StateAwaitingTestDesignDisposition State = "awaiting_test_design_disposition"
 	StateGoldenRehearsalReview         State = "golden_rehearsal_review"
+	StateAwaitingGoldenApproval        State = "awaiting_golden_approval"
 	StateLoadingDocumentationModel     State = "loading_documentation_model"
 	StateDocumentationReview           State = "documentation_review"
 	StatePolicyReview                  State = "policy_review"
@@ -54,6 +55,7 @@ var allStates = []State{
 	StateTestDesignReview,
 	StateAwaitingTestDesignDisposition,
 	StateGoldenRehearsalReview,
+	StateAwaitingGoldenApproval,
 	StateLoadingDocumentationModel,
 	StateDocumentationReview,
 	StatePolicyReview,
@@ -85,7 +87,8 @@ var transitions = map[State]map[State]struct{}{
 	StateLoadingTestDesignerModel:      set(StateTestDesignReview, StateCancelled, StateFailed),
 	StateTestDesignReview:              set(StateAwaitingTestDesignDisposition, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateAwaitingTestDesignDisposition: set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
-	StateGoldenRehearsalReview:         set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateGoldenRehearsalReview:         set(StateAwaitingGoldenApproval, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateAwaitingGoldenApproval:        set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingDocumentationModel:     set(StateDocumentationReview, StateCancelled, StateFailed),
 	StateDocumentationReview:           set(StatePolicyReview, StateLoadingQCModel, StateCancelled, StateFailed),
 	StatePolicyReview:                  set(StateLoadingQCModel, StateCancelled, StateFailed),
@@ -130,7 +133,8 @@ func (s State) Terminal() bool {
 }
 
 func (s State) Resumable() bool {
-	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval && s != StateAwaitingTestDesignDisposition
+	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval &&
+		s != StateAwaitingTestDesignDisposition && s != StateAwaitingGoldenApproval
 }
 
 func CanTransition(from, to State) bool {

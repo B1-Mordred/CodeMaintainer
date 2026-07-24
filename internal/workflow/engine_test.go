@@ -118,6 +118,13 @@ func TestOutcomeCanRouteFullVerificationThroughGoldenRehearsal(t *testing.T) {
 	}
 }
 
+func TestOutcomeCanRouteGoldenRehearsalToApprovalWait(t *testing.T) {
+	next, err := nextState(jobs.StateGoldenRehearsalReview, Outcome{NextState: jobs.StateAwaitingGoldenApproval})
+	if err != nil || next != jobs.StateAwaitingGoldenApproval {
+		t.Fatalf("golden approval route = %s, %v", next, err)
+	}
+}
+
 func TestOutcomeCanRouteFullVerificationThroughDocumentation(t *testing.T) {
 	next, err := nextState(jobs.StateVerifyingFull, Outcome{NextState: jobs.StateLoadingDocumentationModel})
 	if err != nil || next != jobs.StateLoadingDocumentationModel {

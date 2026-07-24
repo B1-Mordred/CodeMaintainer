@@ -3,6 +3,7 @@ package golden
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/capabilities"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
@@ -42,5 +43,22 @@ func TestChangedGoldenRequiresApprovalStatus(t *testing.T) {
 	report.Status = "passed"
 	if err := report.Validate(); err == nil {
 		t.Fatal("changed golden validated without approval_required status")
+	}
+}
+
+func TestApprovalResolutionUsesLatestAppendOnlyDecision(t *testing.T) {
+	report, err := ChangedReportForTest("job_golden", "project", strings.Repeat("a", 64), "medium", strings.Repeat("b", 40))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report.ID = "report-golden"
+	comparisonID := report.Comparisons[0].ID
+	rejected := Approval{ID: "approval-1", ReportID: report.ID, ComparisonID: comparisonID, Approved: false, CreatedAt: time.Unix(1, 0)}
+	if resolution := ResolveApprovals(report, []Approval{rejected}); resolution.Pending != 1 || resolution.Rejected != 1 {
+		t.Fatalf("rejected update should remain unresolved: %#v", resolution)
+	}
+	approved := Approval{ID: "approval-2", ReportID: report.ID, ComparisonID: comparisonID, Approved: true, CreatedAt: time.Unix(2, 0)}
+	if resolution := ResolveApprovals(report, []Approval{rejected, approved}); resolution.Pending != 0 || resolution.Rejected != 0 {
+		t.Fatalf("latest approved update should resolve: %#v", resolution)
 	}
 }
