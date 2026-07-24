@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "requirement_id": "I2-DOD-14",
+  "updated_at": "2026-07-24T09:25:00Z",
+  "surfaces": [
+    {
+      "id": "policy-impact-selection",
+      "claim": "The controller-owned documentation policy maps bounded change evidence to required documents, render targets, validation checks, source-of-truth mappings, reviewer roles, and publication gates.",
+      "implementation": ["internal/docagent/types.go", "internal/api/documentation.go", "internal/api/openapi.yaml", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/docagent/types_test.go", "internal/api/server_test.go", "cmd/maintainctl/main_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#documentation-policy-workbench", "web/src/OperatorConsole.tsx#policy-risk-documentation-impact"],
+      "docs": ["docs/quality-workflow.md", "execplan/increment-2.md"],
+      "proof": [
+        {"path": "internal/docagent/types.go", "contains": ["BuiltinPolicyProfile", "RenderTargets: []string", "PublicationGate: true", "SourceOfTruth"]},
+        {"path": "internal/api/server_test.go", "contains": ["TestDocumentationPolicyProfileAndSimulationAreExposed", "/api/v1/documentation/policy/simulations", "Simulation.NoDocumentationOK"]},
+        {"path": "web/src/OperatorConsole.tsx", "contains": ["Documentation policy impact", "Required docs and render checks", "Simulate documentation impact"]}
+      ]
+    },
+    {
+      "id": "source-controlled-generation",
+      "claim": "The Documentation Agent stage receives a fresh bounded packet and can produce source-controlled documentation changes with a manifest bound to the exact job, project, contract, risk, and result commit.",
+      "implementation": ["internal/workflow/coordinator.go", "internal/workflow/deterministic.go", "internal/docagent/types.go", "internal/storage/sqlite/documentation.go"],
+      "tests": ["internal/workflow/coordinator_test.go", "internal/docagent/types_test.go", "internal/storage/sqlite/documentation_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#documentation-agent-manifests"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator.go", "contains": ["packet.Diff = diff.Patch", "ContractSHA256 = assessment.ContractSHA256", "SaveDocumentationManifest"]},
+        {"path": "internal/workflow/deterministic.go", "contains": ["Mock maintenance documentation", "Status: status", "SourceOfTruth: \"approved_task_contract\""]},
+        {"path": "internal/docagent/types_test.go", "contains": ["TestManifestRequiresExactJobBindingAndBlocksUnsupportedClaims", "manifest with mismatched job binding was accepted"]}
+      ]
+    },
+    {
+      "id": "render-validate-review-blockers",
+      "claim": "Documentation manifests retain render/check status and unsupported-claim evidence; failed required documents, failed checks, and unsupported claims become normal blocking findings before final QC.",
+      "implementation": ["internal/docagent/types.go", "internal/workflow/coordinator.go", "internal/storage/sqlite/findings.go"],
+      "tests": ["internal/docagent/types_test.go", "internal/workflow/coordinator_test.go", "internal/storage/sqlite/findings_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#documentation-findings-and-readiness"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/docagent/types.go", "contains": ["unsupported documentation claims must block", "documentation check lacks bounded status evidence", "Status != \"blocked\""]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["documentationPolicyFindings", "documentation policy blocked final QC until documentation findings are resolved", "Documentation check failed for "]},
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["TestDocumentationPolicyFindingsBindManifestFailuresToQCFindingLifecycle", "documentation_unsupported_claim", "must_fix"]}
+      ]
+    },
+    {
+      "id": "fresh-verification-and-traceability",
+      "claim": "Source-controlled documentation changes update the candidate result SHA, record fresh test-impact evidence, run a fresh full verification differential, and feed retained documentation evidence back into later context and traceability surfaces.",
+      "implementation": ["internal/workflow/coordinator.go", "internal/intelligence/service.go", "internal/api/server.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/workflow/coordinator_test.go", "internal/api/server_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#jobs-documentation-agent", "web/src/OperatorConsole.tsx#documentation"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator.go", "contains": ["documentation manifest declared changes but no source-controlled documentation commit was produced", "recordTestImpact", "\"documentation\")"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["documentation-evidence", "Documentation Agent impact, change, check, and unsupported-claim manifest for the exact candidate"]},
+        {"path": "internal/api/server.go", "contains": ["documentation_manifests", "ListDocumentationManifests"]}
+      ]
+    },
+    {
+      "id": "operator-surface-parity",
+      "claim": "Operators can inspect retained documentation manifests, active policy, simulations, findings, and publication-readiness evidence through REST/OpenAPI, maintainctl, and browser pages.",
+      "implementation": ["internal/api/documentation.go", "internal/api/openapi.yaml", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/api/server_test.go", "cmd/maintainctl/main_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#documentation-policy-workbench", "web/src/OperatorConsole.tsx#documentation-agent-manifests"],
+      "docs": ["docs/quality-workflow.md", "docs/dashboard.md"],
+      "proof": [
+        {"path": "internal/api/openapi.yaml", "contains": ["List Documentation Agent manifests for one job", "Inspect the active documentation policy profile", "Simulate documentation policy impact for bounded change evidence"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["TestDocumentationCLIListsJobManifests", "documentation\", \"policy", "documentation\", \"simulate"]},
+        {"path": "web/src/App.test.tsx", "contains": ["shows documentation operations as a dedicated page", "Documentation policy workbench", "docmanifest_fixture"]}
+      ]
+    }
+  ],
+  "known_remaining_work": [
+    "persistent editable documentation policy profiles",
+    "renderer and documentation tool profile management",
+    "rich render previews and generated screenshot/golden freshness checks",
+    "independent documentation QC actions beyond current retained finding lifecycle"
+  ]
+}

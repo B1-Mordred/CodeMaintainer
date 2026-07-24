@@ -64,6 +64,7 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - [ ] (2026-07-24 08:25Z) Milestone 7 redaction coverage checkpoint: `config/redaction-coverage.json` now maps ten secret-bearing output surfaces across configuration, provider egress, observability events, support bundles, memory, auth/session state, forge credentials, Windows-worker credentials, and policy inputs. `internal/config/redaction_coverage_test.go` checks required surface coverage, referenced implementation/UI/test/doc paths, and proof snippets for existing leak-prevention regressions. Focused config validation passes; broader redaction-adjacent packages and final E2E/security acceptance remain open.
 - [ ] (2026-07-24 08:45Z) Milestone 7 DOD-11 intelligence evidence checkpoint: `config/intelligence-coverage.json` now maps seven surfaces for project-separated incremental indexing, deterministic context manifests, workflow baselines, differential verification, test-impact records, cache integrity/quota/retention, and REST/CLI/browser parity. `internal/config/intelligence_coverage_test.go` verifies required surface coverage, referenced evidence paths, and proof snippets; full acceptance remains open.
 - [ ] (2026-07-24 09:05Z) Milestone 7 DOD-13 verification-safety checkpoint: `config/verification-safety-coverage.json` now maps non-waivable newly introduced findings, mandatory final full-suite impact evidence, explicit golden-update approval, and REST/CLI/browser parity. `internal/config/verification_safety_coverage_test.go` verifies required surface coverage, evidence paths, and proof snippets; broader final acceptance remains open.
+- [ ] (2026-07-24 09:25Z) Milestone 7 DOD-14 documentation-policy checkpoint: `config/documentation-policy-coverage.json` now maps policy impact selection, source-controlled Documentation Agent generation, render/check validation blockers, fresh verification/traceability, and REST/CLI/browser parity. `internal/config/documentation_policy_coverage_test.go` verifies coverage, proof snippets, and explicit remaining documentation QC/tool-profile work.
 - [x] Milestone 1 — replace the single-document configuration surface with the complete typed registry, seven-scope effective-value resolver, immutable job snapshots, drafts/review/apply/rollback/import/export/dry-run/prerequisite APIs, CLI parity, and dedicated accessible workbench.
 - [x] Milestone 2 — add incremental code intelligence, deterministic Context Compiler, baseline/differential verification, test-impact analysis, isolated content-addressed caches, and their status/query/rebuild browser surfaces.
 - [x] Milestone 3 — add evidence-backed Repo Doctor onboarding, signed/checksummed capability-pack lifecycle, PHP/R/security packs, and catalog/assignment/upgrade/rollback UI.
@@ -148,6 +149,8 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: the service, workflow, API, CLI, and browser tests already covered indexing, context manifests, baselines, differentials, impact, and caches; `config/increment-2-coverage.json` still marked `I2-DOD-11` as `missing` before the checked intelligence matrix connected those proofs.
 - Observation: DOD-13 spans intelligence, workflow, golden/rehearsal, API, CLI, and browser code, so no single existing test represented the complete acceptance boundary.
   Evidence: service tests reject classifying a newly introduced finding away, workflow code refuses final verification without full-suite impact evidence, golden tests require approval status, and browser/API/CLI code exposes the operations; `config/increment-2-coverage.json` still marked `I2-DOD-13` as `missing`.
+- Observation: DOD-14 had substantial implementation evidence but also known remaining scope, so a binary implemented/missing row was hiding the useful boundary.
+  Evidence: the documentation policy profile, simulation API/CLI/UI, Documentation Agent manifest binding, blocked-finding conversion, fresh documentation verification, and retained manifest surfaces exist; persistent editable policy profiles, renderer/tool profile management, rich render previews, and independent documentation QC actions remain explicit work.
 
 ## Decision Log
 
@@ -192,6 +195,9 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Date/Author: 2026-07-24 / Codex
 - Decision: make DOD-13 a checked safety matrix across differential, final verification, and golden approval gates.
   Rationale: the requirement combines three separate non-waiver guarantees. Recording implementation, tests, UI, docs, and proof snippets together prevents a future feature from weakening one safety gate while leaving the others apparently green.
+  Date/Author: 2026-07-24 / Codex
+- Decision: make DOD-14 an in-progress checked matrix with explicit known remaining work.
+  Rationale: documentation policy crosses the documentation agent, workflow coordinator, API, CLI, browser, finding lifecycle, and source-controlled verification. A checked matrix proves current behavior without overstating the unfinished renderer/tool-profile and independent documentation-QC scope.
   Date/Author: 2026-07-24 / Codex
 - Decision: model evidence corrections, baseline updates, and targeted-test overrides as append-only review ledgers, with replacement baselines derived only from stored candidate observations.
   Rationale: original evidence stays reviewable; privileged changes are explicit, attributed, reasoned, and audited; and neither a correction nor an inner-loop override can weaken the newly-introduced-failure or fresh-full-suite safety invariants.
@@ -301,6 +307,8 @@ The redaction slice is now active and partially validated. The new matrix covers
 DOD-11 intelligence acceptance evidence is now explicit but remains part of the broader open Milestone 7 final acceptance. The checked matrix covers incremental indexing, context manifests, workflow baselines, differential verification, impact records, cache integrity/quota/retention, and REST/CLI/browser parity without claiming full Increment 2 closure.
 
 DOD-13 verification-safety evidence is now explicit but still part of the broader open Milestone 7 final acceptance. The checked matrix covers newly introduced finding non-waiver, immutable full-suite final verification policy, explicit golden-update approval, and REST/CLI/browser parity.
+
+DOD-14 documentation-policy evidence is now explicit but remains in progress. The checked matrix covers source-controlled generation, render/check validation evidence, blocked documentation findings, fresh verification and context reuse, and REST/CLI/browser parity while preserving the remaining renderer/tool-profile and independent documentation-QC work.
 
 ## Context and Orientation
 
@@ -491,3 +499,5 @@ Revision note (2026-07-24 08:25Z): added the checked write-only secret redaction
 Revision note (2026-07-24 08:45Z): added the checked DOD-11 intelligence evidence inventory. `config/intelligence-coverage.json` maps incremental indexing, deterministic context manifests, baseline capture, differential verification, test-impact records, cache integrity/quota/retention, and operator parity to existing implementation, UI, docs, and proof snippets; Increment 2 remains active pending final acceptance.
 
 Revision note (2026-07-24 09:05Z): added the checked DOD-13 verification-safety inventory. `config/verification-safety-coverage.json` maps new-failure non-waiver, final full-suite non-waiver, golden-update approval, and operator parity to existing implementation, UI, docs, and proof snippets; Increment 2 remains active pending final acceptance.
+
+Revision note (2026-07-24 09:25Z): added the checked DOD-14 documentation-policy inventory. `config/documentation-policy-coverage.json` maps policy impact selection, source-controlled documentation generation, render/check validation blockers, fresh verification/traceability, and operator parity to existing implementation, UI, docs, and proof snippets while retaining known remaining documentation QC/tool-profile work; Increment 2 remains active.

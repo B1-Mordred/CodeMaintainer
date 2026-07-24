@@ -2,6 +2,8 @@
 
 The checked DOD-13 safety matrix lives in `config/verification-safety-coverage.json`; it ties non-waivable new failures, mandatory final full-suite evidence, and explicit golden-update approval to implementation, UI, CLI/API, documentation, and regression-test proof snippets.
 
+The checked DOD-14 documentation-policy matrix lives in `config/documentation-policy-coverage.json`; it records the current source-controlled generation, render/check validation, finding-review lifecycle, fresh verification, traceability, and operator-surface evidence while keeping remaining richer documentation QC/tool-profile work explicit.
+
 Increment 2 Milestone 5 starts by making implementation wait for a controller-owned task contract and deterministic risk decision.
 
 ## Task contracts
