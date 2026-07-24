@@ -26,6 +26,10 @@ Apply badges distinguish live settings, settings used only by newly accepted job
 
 The matching recovery and automation commands are under `maintainctl config`: `descriptors`, `values`, `effective`, `draft`, `history`, `registry-rollback`, `registry-export`, `import-preview`, and `import`.
 
+## Parity gate
+
+The operation-level parity inventory is [`config/configuration-parity.json`](../config/configuration-parity.json). CI checks that every routine configuration operation has a live OpenAPI route, a `maintainctl config` command, a browser workbench surface, documentation, and regression evidence. The matrix includes both the typed registry operations and the legacy Increment 1 system-document compatibility commands so recovery workflows remain reachable while the registry is the normal operator path.
+
 ## Export and import
 
 Exports are deterministic, schema-versioned, registry-hash-bound, scope/version-provenanced, and protected by a document SHA-256 hash. Secret descriptors export configured/redacted state only; raw secret material is never returned. Bootstrap-only or non-exportable values are not portable.
