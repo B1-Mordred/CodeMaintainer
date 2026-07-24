@@ -31,6 +31,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runtimeopt"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	"github.com/B1-Mordred/CodeMaintainer/internal/ui"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
@@ -297,6 +298,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/models", s.listModels)
 	mux.HandleFunc("GET /api/v1/models/status", s.modelStatus)
 	mux.HandleFunc("POST /api/v1/models/{profileID}/actions/benchmark", s.benchmarkModel)
+	mux.HandleFunc("GET /api/v1/models/runtime-benchmarks", s.listRuntimeBenchmarks)
 	mux.HandleFunc("POST /api/v1/models/{profileID}/actions/load", s.loadModel)
 	mux.HandleFunc("POST /api/v1/models/actions/unload", s.unloadModel)
 	mux.HandleFunc("GET /api/v1/model-providers/status", s.providerStatus)
@@ -852,14 +854,47 @@ func (s *Server) benchmarkModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "model_supervisor_unavailable", "model supervision is unavailable")
 		return
 	}
-	result, err := s.modelManager.SmokeTest(r.Context(), r.PathValue("profileID"))
+	profileID := r.PathValue("profileID")
+	profiles, err := s.modelManager.Profiles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "model_supervisor_failed", "model profiles could not be listed")
+		return
+	}
+	var profile models.Profile
+	for _, candidate := range profiles {
+		if candidate.ID == profileID {
+			profile = candidate
+			break
+		}
+	}
+	if profile.ID == "" {
+		writeError(w, http.StatusUnprocessableEntity, "model_benchmark_failed", "the allow-listed model benchmark failed")
+		return
+	}
+	result, err := s.modelManager.SmokeTest(r.Context(), profileID)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "model_benchmark_failed", "the allow-listed model benchmark failed")
 		return
 	}
-	details, _ := json.Marshal(result)
+	status, _ := s.modelManager.Status(r.Context())
+	run := runtimeopt.FromSmoke(profile, status, result, actorID(r), time.Now().UTC())
+	retained, err := s.store.RecordRuntimeBenchmark(r.Context(), run)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "model_benchmark_retention_failed", "model benchmark evidence could not be retained")
+		return
+	}
+	details, _ := json.Marshal(retained)
 	_, _ = s.store.AppendAudit(r.Context(), audit.AppendRequest{ActorID: actorID(r), ActorRole: actorRole(r), Action: "model.benchmark", TargetType: "model_profile", TargetID: result.ProfileID, Details: details})
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]any{"profile_id": result.ProfileID, "duration": result.Duration, "healthy": result.Healthy, "benchmark": retained})
+}
+
+func (s *Server) listRuntimeBenchmarks(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListRuntimeBenchmarks(r.Context(), r.URL.Query().Get("profile_id"), queryInt(r, "limit", 100))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "runtime_benchmarks_unavailable", "runtime benchmark evidence could not be listed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) loadModel(w http.ResponseWriter, r *http.Request) {

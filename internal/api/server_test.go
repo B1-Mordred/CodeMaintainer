@@ -1519,6 +1519,37 @@ func TestModelLoadBenchmarkAndUnloadUseAllowListedProfiles(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("POST %s returned %d: %s", path, response.StatusCode, body)
 		}
+		if strings.Contains(path, "benchmark") {
+			var envelope struct {
+				Benchmark struct {
+					ProfileID      string `json:"profile_id"`
+					Recommendation string `json:"recommendation"`
+				} `json:"benchmark"`
+			}
+			if err := json.Unmarshal(body, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Benchmark.ProfileID != "implementation" || envelope.Benchmark.Recommendation != "candidate" {
+				t.Fatalf("benchmark evidence not retained: %s", body)
+			}
+		}
+	}
+	response, err := http.Get(server.URL + "/api/v1/models/runtime-benchmarks?profile_id=implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retained struct {
+		Items []struct {
+			ProfileID             string `json:"profile_id"`
+			RuntimeIdentitySHA256 string `json:"runtime_identity_sha256"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&retained); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(retained.Items) != 1 || retained.Items[0].RuntimeIdentitySHA256 == "" {
+		t.Fatalf("runtime benchmark list = status %d %#v", response.StatusCode, retained)
 	}
 	status, _ := manager.Status(context.Background())
 	if status.State != "unloaded" {

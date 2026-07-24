@@ -2497,6 +2497,26 @@ paths:
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "422": { $ref: "#/components/responses/ErrorResponse" }
+  /models/runtime-benchmarks:
+    get:
+      summary: List retained local runtime benchmark evidence
+      operationId: listRuntimeBenchmarks
+      parameters:
+        - { name: profile_id, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: Retained runtime benchmarks
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/RuntimeBenchmark" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /models/{profileID}/actions/load:
     parameters:
       - { name: profileID, in: path, required: true, schema: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" } }
@@ -4801,11 +4821,54 @@ components:
     ModelBenchmark:
       type: object
       additionalProperties: false
-      required: [profile_id, duration, healthy]
+      required: [profile_id, duration, healthy, benchmark]
       properties:
         profile_id: { type: string }
         duration: { type: integer, minimum: 0, description: Nanoseconds elapsed }
         healthy: { type: boolean }
+        benchmark: { $ref: "#/components/schemas/RuntimeBenchmark" }
+    RuntimeBenchmarkQualityFixture:
+      type: object
+      additionalProperties: false
+      required: [id, status, score, threshold, evidence_sha256]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [passed, failed] }
+        score: { type: number, minimum: 0, maximum: 1 }
+        threshold: { type: number, minimum: 0, maximum: 1 }
+        evidence_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    RuntimeBenchmark:
+      type: object
+      additionalProperties: false
+      required: [id, profile_id, role, model_family, quantization, context_limit, threads, batch, ubatch, numa, runtime_identity_sha256, prompt_tokens_second, decode_tokens_second, duration_millis, memory_bytes, healthy, quality_fixtures, quality_status, determinism_status, cache_mode, experimental_features, recommendation, reason, actor_id, created_at]
+      properties:
+        id: { type: string }
+        profile_id: { type: string }
+        role: { type: string }
+        model_family: { type: string }
+        model_sha256: { type: string }
+        quantization: { type: string }
+        context_limit: { type: integer, minimum: 1 }
+        threads: { type: integer, minimum: 0 }
+        batch: { type: integer, minimum: 0 }
+        ubatch: { type: integer, minimum: 0 }
+        numa: { type: string }
+        runtime_identity_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        prompt_tokens_second: { type: number, minimum: 0 }
+        decode_tokens_second: { type: number, minimum: 0 }
+        duration_millis: { type: integer, minimum: 0 }
+        memory_bytes: { type: integer, minimum: 0 }
+        healthy: { type: boolean }
+        quality_fixtures: { type: array, items: { $ref: "#/components/schemas/RuntimeBenchmarkQualityFixture" } }
+        quality_status: { type: string, enum: [passed, failed] }
+        determinism_status: { type: string, enum: [passed, failed] }
+        cache_mode: { type: string, enum: [disabled, eligible] }
+        cache_identity_sha256: { type: string }
+        experimental_features: { type: array, items: { type: string } }
+        recommendation: { type: string, enum: [candidate, rejected] }
+        reason: { type: string }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
     ConfigScopeKind:
       type: string
       enum: [built_in, system, capability_pack, project, environment, job_template, job_override]

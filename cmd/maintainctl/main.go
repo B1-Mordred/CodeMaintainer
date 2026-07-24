@@ -1044,7 +1044,22 @@ func (c client) model(arguments []string) error {
 	if len(arguments) == 2 && arguments[0] == "benchmark" {
 		return c.printJSON(http.MethodPost, "/api/v1/models/"+url.PathEscape(arguments[1])+"/actions/benchmark", map[string]any{})
 	}
-	return errors.New("usage: maintainctl model list | maintainctl model benchmark <profile>")
+	if len(arguments) >= 1 && arguments[0] == "benchmarks" {
+		flags := flag.NewFlagSet("model benchmarks", flag.ContinueOnError)
+		profileID := flags.String("profile", "", "optional model profile id")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl model benchmarks [--profile <profile>]")
+		}
+		path := "/api/v1/models/runtime-benchmarks"
+		if *profileID != "" {
+			path += "?profile_id=" + url.QueryEscape(*profileID)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	}
+	return errors.New("usage: maintainctl model list | maintainctl model benchmark <profile> | maintainctl model benchmarks [--profile <profile>]")
 }
 
 func (c client) config(arguments []string) error {
@@ -1606,6 +1621,7 @@ Commands:
   intelligence purge-cache <project-id> [--kind kind] --reason <text>
   model list
   model benchmark <profile>
+  model benchmarks [--profile <profile>]
   version`)
 }
 

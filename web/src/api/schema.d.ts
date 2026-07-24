@@ -2543,6 +2543,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/models/runtime-benchmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained local runtime benchmark evidence */
+        get: operations["listRuntimeBenchmarks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/models/{profileID}/actions/load": {
         parameters: {
             query?: never;
@@ -4627,6 +4644,49 @@ export interface components {
             /** @description Nanoseconds elapsed */
             duration: number;
             healthy: boolean;
+            benchmark: components["schemas"]["RuntimeBenchmark"];
+        };
+        RuntimeBenchmarkQualityFixture: {
+            id: string;
+            /** @enum {string} */
+            status: "passed" | "failed";
+            score: number;
+            threshold: number;
+            evidence_sha256: string;
+        };
+        RuntimeBenchmark: {
+            id: string;
+            profile_id: string;
+            role: string;
+            model_family: string;
+            model_sha256?: string;
+            quantization: string;
+            context_limit: number;
+            threads: number;
+            batch: number;
+            ubatch: number;
+            numa: string;
+            runtime_identity_sha256: string;
+            prompt_tokens_second: number;
+            decode_tokens_second: number;
+            duration_millis: number;
+            memory_bytes: number;
+            healthy: boolean;
+            quality_fixtures: components["schemas"]["RuntimeBenchmarkQualityFixture"][];
+            /** @enum {string} */
+            quality_status: "passed" | "failed";
+            /** @enum {string} */
+            determinism_status: "passed" | "failed";
+            /** @enum {string} */
+            cache_mode: "disabled" | "eligible";
+            cache_identity_sha256?: string;
+            experimental_features: string[];
+            /** @enum {string} */
+            recommendation: "candidate" | "rejected";
+            reason: string;
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
         };
         /** @enum {string} */
         ConfigScopeKind: "built_in" | "system" | "capability_pack" | "project" | "environment" | "job_template" | "job_override";
@@ -9476,6 +9536,33 @@ export interface operations {
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
             422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listRuntimeBenchmarks: {
+        parameters: {
+            query?: {
+                profile_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retained runtime benchmarks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RuntimeBenchmark"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
         };
     };
     loadModel: {

@@ -54,6 +54,18 @@ const session = {
   },
   csrf_token: "csrf-token-with-at-least-thirty-two-characters",
 };
+const runtimeBenchmarks = {
+  items: [{
+    id: "runtime-benchmark-fixture", profile_id: "implementation", role: "implementation", model_family: "fixture",
+    model_sha256: "", quantization: "fake", context_limit: 4096, threads: 0, batch: 0, ubatch: 0, numa: "",
+    runtime_identity_sha256: "d".repeat(64), prompt_tokens_second: 1, decode_tokens_second: 1, duration_millis: 1,
+    memory_bytes: 0, healthy: true,
+    quality_fixtures: [{ id: "smoke-ok-exact", status: "passed", score: 1, threshold: 1, evidence_sha256: "e".repeat(64) }],
+    quality_status: "passed", determinism_status: "passed", cache_mode: "disabled", cache_identity_sha256: "",
+    experimental_features: [], recommendation: "candidate", reason: "benchmark passed smoke, quality, determinism, and identity gates; operator review is still required before activation",
+    actor_id: "operator-console", created_at: "2026-07-24T04:30:00Z",
+  }],
+};
 
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
   status: 200,
@@ -69,6 +81,7 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/jobs") return jsonResponse(jobs);
   if (path === "/api/v1/projects") return jsonResponse({ items: [] });
   if (path === "/api/v1/models") return jsonResponse({ items: [], status: { state: "unloaded", profile_id: "", memory_bytes: 0, prompt_tokens_second: 0, decode_tokens_second: 0 } });
+  if (path === "/api/v1/models/runtime-benchmarks") return jsonResponse(runtimeBenchmarks);
   if (path === "/api/v1/model-providers/status") return jsonResponse(providerStatus);
   if (path === "/api/v1/model-providers/routes/simulations") return jsonResponse(routeDecision);
   if (path === "/api/v1/model-providers/models/fake-remote-json/actions/probe") return new Response(JSON.stringify(capabilityProbe), { status: 201, headers: { "Content-Type": "application/json" } });
@@ -106,6 +119,8 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Models/i }));
     expect(await screen.findByRole("heading", { name: "Provider gateway" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Runtime benchmark lab" })).toBeInTheDocument();
+    expect(await screen.findByText(/operator review is still required/)).toBeInTheDocument();
     expect((await screen.findAllByText("CI fake OpenAI Responses")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Remote provider")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Provider model probes" })).toBeInTheDocument();

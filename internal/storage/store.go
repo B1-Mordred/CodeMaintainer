@@ -24,6 +24,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
+	"github.com/B1-Mordred/CodeMaintainer/internal/runtimeopt"
 	"github.com/B1-Mordred/CodeMaintainer/internal/scheduler"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
@@ -221,6 +222,7 @@ type Store interface {
 	policy.Store
 	providers.Store
 	risk.Store
+	runtimeopt.Store
 	scheduler.Store
 	windowsworker.Store
 	Close() error
