@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T11:45:00Z",
+  "surfaces": [
+    {
+      "id": "scheduler-resource-safety-and-fairness",
+      "status": "covered",
+      "title": "Scheduler keeps resource decisions bounded, fair, and durable",
+      "implementation": ["internal/scheduler/types.go", "internal/storage/sqlite/scheduler.go", "internal/api/scheduler.go", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/scheduler/types_test.go", "internal/storage/sqlite/scheduler_test.go", "internal/api/server_test.go", "cmd/maintainctl/main_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#scheduling-resources"],
+      "docs": ["docs/scheduler.md", "docs/performance-soak.md"],
+      "proof": [
+        {"path": "internal/scheduler/types_test.go", "contains": ["TestSimulateSelectsUrgentJobWithinResourceLimits", "TestSimulateDefersUnsafeCoResidence", "TestSimulateAppliesFairnessAndThroughputBatching"]},
+        {"path": "internal/storage/sqlite/scheduler_test.go", "contains": ["TestSchedulerDefersSameProjectLeaseAndRecordsDecision", "TestSchedulerDefersLeaseThatWouldExceedMemory"]},
+        {"path": "docs/scheduler.md", "contains": ["co-residence rejection", "fairness-aware live lease selection", "throughput model grouping"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "runtime-benchmark-quality-gates",
+      "status": "covered",
+      "title": "Runtime benchmark lab records speed, memory, identity, quality, and non-activating recommendations",
+      "implementation": ["internal/runtimeopt/types.go", "internal/storage/sqlite/runtime_benchmarks.go", "internal/api/server.go", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/runtimeopt/types_test.go", "internal/storage/sqlite/runtime_benchmarks_test.go", "internal/api/server_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#models-agents"],
+      "docs": ["docs/models.md", "docs/performance-soak.md"],
+      "proof": [
+        {"path": "internal/runtimeopt/types.go", "contains": ["PromptTokensSecond", "DecodeTokensSecond", "MemoryBytes", "RecommendationCandidate"]},
+        {"path": "internal/storage/sqlite/runtime_benchmarks_test.go", "contains": ["TestRuntimeBenchmarksPersistAppendOnly", "append-only runtime benchmark update unexpectedly succeeded"]},
+        {"path": "docs/models.md", "contains": ["Candidate recommendations are evidence for operator review only", "change a route"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "historical-evaluation-performance-metrics",
+      "status": "covered",
+      "title": "Historical evaluation records bounded performance, quality, cache, and uncertainty metrics",
+      "implementation": ["internal/evaluation/types.go", "internal/storage/sqlite/evaluation.go", "internal/api/evaluation.go", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/evaluation/types_test.go", "internal/storage/sqlite/evaluation_test.go", "internal/api/evaluation_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#evaluation"],
+      "docs": ["docs/evaluation.md", "docs/performance-soak.md"],
+      "proof": [
+        {"path": "internal/evaluation/types.go", "contains": ["WallTimeMillis", "CPUTimeMillis", "MemoryBytes", "CacheEffect", "OperatorInterventions"]},
+        {"path": "internal/api/evaluation_test.go", "contains": ["budget_seconds", "concurrency", "isolated_memory_namespace"]},
+        {"path": "web/src/App.test.tsx", "contains": ["wall_time_millis", "cpu_time_millis", "memory_bytes", "promotion_allowed"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "observability-bottleneck-and-resource-timeline",
+      "status": "covered",
+      "title": "Observability retains bounded timing, queue, retry, resource, and support-bundle evidence",
+      "implementation": ["internal/observability/types.go", "internal/storage/sqlite/observability.go", "internal/api/observability.go", "cmd/maintainctl/main.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/observability/types_test.go", "internal/storage/sqlite/observability_test.go", "internal/api/observability_test.go", "cmd/maintainctl/main_test.go", "web/src/App.test.tsx"],
+      "ui": ["web/src/OperatorConsole.tsx#observability"],
+      "docs": ["docs/observability.md", "docs/performance-soak.md"],
+      "proof": [
+        {"path": "internal/observability/types.go", "contains": ["DurationMillis", "QueueMillis", "RetryCount", "ResourceBytes"]},
+        {"path": "docs/observability.md", "contains": ["duration, queue time, retry count, and resource bytes", "support bundle manifest and bundle hashes"]},
+        {"path": "web/src/App.test.tsx", "contains": ["shows bounded redacted observability diagnostics and support bundles", "Create redacted support bundle"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "deterministic-local-acceptance-smoke",
+      "status": "in_progress",
+      "title": "Deterministic local acceptance commands cover the bounded smoke path without external credentials or model weights",
+      "implementation": ["scripts/acceptance.sh", "scripts/agent-image-acceptance.sh", "scripts/vulnerability-scan.sh", "scripts/sbom.sh", "compose.yaml"],
+      "tests": ["go test ./...", "go test -race ./...", "go vet ./...", "web npm test", "web npm run build", "docker compose config --quiet"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health", "web/src/OperatorConsole.tsx#jobs"],
+      "docs": ["docs/acceptance.md", "docs/performance-soak.md"],
+      "proof": [
+        {"path": "scripts/acceptance.sh", "contains": ["go test ./...", "npx tsc --noEmit", "browser-tool"]},
+        {"path": "docs/acceptance.md", "contains": ["Deterministic local gate", "No default gate fetches a model weight"]},
+        {"path": "web/src/OperatorConsole.tsx", "contains": ["Smoke-test job", "Submit one deterministic maintenance task"]}
+      ],
+      "remaining_work": ["Record a named final local run artifact that includes full race, frontend, Compose, image, browser, and local-fake E2E evidence after all Increment 2 rows are otherwise closed."]
+    },
+    {
+      "id": "bounded-soak-thresholds-and-reports",
+      "status": "remaining",
+      "title": "Bounded soak thresholds produce retained pass/fail reports for queue, scheduler, provider gateway, observability, and support-bundle behavior",
+      "implementation": ["docs/performance-soak.md"],
+      "tests": ["docs/performance-soak.md"],
+      "ui": ["web/src/OperatorConsole.tsx#observability", "web/src/OperatorConsole.tsx#scheduling-resources"],
+      "docs": ["docs/performance-soak.md", "execplan/increment-2.md"],
+      "proof": [
+        {"path": "docs/performance-soak.md", "contains": ["Remaining soak closure", "No current CI job claims a long-duration soak pass"]}
+      ],
+      "remaining_work": ["Add a deterministic bounded soak runner and retained JSON report schema with explicit thresholds for queue latency, scheduler decisions, memory growth, support-bundle size, provider retry/circuit behavior, and local-fake workflow throughput."]
+    }
+  ]
+}
