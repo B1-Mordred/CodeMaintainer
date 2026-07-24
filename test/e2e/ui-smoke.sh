@@ -20,11 +20,19 @@ session_token="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.read
 "${session_pw[@]}" reload
 "${session_pw[@]}" snapshot >"$output_root/desktop.snapshot.txt"
 "${session_pw[@]}" screenshot >"$output_root/desktop.screenshot.txt"
+"${session_pw[@]}" --raw run-code --filename test/e2e/provider-workbench.js >"$output_root/provider-workbench.result.json"
+"${session_pw[@]}" snapshot >"$output_root/provider-workbench.snapshot.txt"
+"${session_pw[@]}" screenshot >"$output_root/provider-workbench.screenshot.txt"
 "${session_pw[@]}" resize 390 844
 "${session_pw[@]}" snapshot >"$output_root/mobile.snapshot.txt"
 "${session_pw[@]}" screenshot >"$output_root/mobile.screenshot.txt"
 "${session_pw[@]}" close
 
-grep -q 'Overview' "$output_root/desktop.snapshot.txt"
-grep -q 'Maintenance jobs\|Queue and recent jobs' "$output_root/desktop.snapshot.txt"
+grep -q 'Setup and health' "$output_root/desktop.snapshot.txt"
+grep -q 'Administrator account' "$output_root/desktop.snapshot.txt"
+grep -q 'Provider configuration workbench' "$output_root/provider-workbench.snapshot.txt"
+grep -q 'Decision hash' "$output_root/provider-workbench.snapshot.txt"
+grep -q 'browser approved fake remote documentation route' "$output_root/provider-workbench.snapshot.txt"
+grep -q 'Route profile remote-documentation-ci-preview saved at version' "$output_root/provider-workbench.result.json"
+grep -q 'remote-documentation-ci-preview' "$output_root/provider-workbench.result.json"
 grep -q 'Primary navigation' "$output_root/mobile.snapshot.txt"

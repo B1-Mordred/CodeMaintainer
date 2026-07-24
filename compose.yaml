@@ -319,10 +319,10 @@ services:
         source: ./.cache/go
         target: /cache
     tmpfs:
-      # The Go tool executes test binaries from its work directory and the
-      # pure-Go SQLite compiler needs more than 128 MiB. This exception is
+      # The Go tool executes test binaries from its work directory and links
+      # large cgo/tree-sitter suites when caches are cold. This exception is
       # limited to the developer tool container, never a runtime service.
-      - /tmp:rw,exec,nosuid,nodev,size=1g,mode=1777
+      - /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777
     read_only: true
     cap_drop:
       - ALL

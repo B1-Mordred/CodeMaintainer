@@ -24,9 +24,9 @@ Run:
 ./scripts/acceptance.sh
 ```
 
-The script bootstraps required local directories/secrets, validates Go and frontend checks inside tool containers, validates the dev Compose graph, builds control-plane images, starts `runnerd` and `controller`, checks `http://127.0.0.1:8080/healthz`, runs `maintainctl doctor`, and executes the browser acceptance container.
+The script bootstraps required local directories/secrets, validates Go and frontend checks inside tool containers, validates the dev Compose graph, builds control-plane images, starts `runnerd` and `controller`, checks `http://127.0.0.1:8080/healthz`, ensures a valid local acceptance administrator session for fresh mock data, runs `maintainctl doctor`, and executes the browser acceptance container. Set `MAINTAINER_ACCEPTANCE_PORT=18080` to include `compose.acceptance.yaml`, replace the host port mapping, and run the same browser gate beside an existing retained appliance.
 
-If port `127.0.0.1:8080` is already owned by another retained appliance, use an isolated data root and an explicit Compose override before claiming a full live acceptance result. Do not mark this gate passing from CI alone.
+If port `127.0.0.1:8080` is already owned by another retained appliance, use an isolated checkout/data root with `MAINTAINER_ACCEPTANCE_PORT=18080` before claiming a full live acceptance result. Do not mark this gate passing from CI alone.
 
 ## Compose views to validate
 
