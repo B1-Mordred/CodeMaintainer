@@ -31,6 +31,11 @@ This checkpoint introduces the durable provider-gateway foundation:
   to reject malformed events, interleaved tool-call deltas, truncation, and
   unbounded content while retaining partial usage events for later
   reconciliation;
+- a deterministic provider execution fake that runs only after the gateway has
+  selected and retained an allowed egress manifest, then proves timeout retry
+  exhaustion, rate-limit retry-after handling, stream interruption,
+  project-isolated batch partial failure, circuit-open state, and no-network CI
+  behavior;
 - REST, OpenAPI, generated TypeScript client, `maintainctl model-provider`, and
   Models-page visibility.
 
@@ -84,6 +89,13 @@ for what would cross the model boundary:
 Denied simulations are retained too. This makes policy and routing failures
 auditable without contacting an external provider.
 
+Execution fakes also retain the selected manifest hash in every per-item
+report. Timeout and rate-limit scenarios use the route retry budget plus the
+initial attempt, open the route circuit deterministically, and never fall back to
+a less trusted provider. Batch simulations reject cross-project batches and
+report per-item success, denial, or failure so a partial batch cannot be treated
+as globally successful.
+
 Secret-bearing data classes fail closed before a route is selected. The checked
 redaction inventory in `config/redaction-coverage.json` links the provider
 egress manifest policy to the configuration, observability, support bundle,
@@ -123,7 +135,8 @@ The full Increment 2 provider milestone is still open. Remaining work includes:
 - write-only credential rotation workflows;
 - override/revalidation history and drift pausing;
 - integration of provider-native streaming, cancellation, batch/asynchronous
-  resumability, and usage reconciliation into model-backed worker calls;
+  resumability, and usage reconciliation into model-backed worker calls beyond
+  the deterministic execution fakes;
 - OPA-bound project data-class policy and per-job approval when required;
 - editable provider/endpoint/model/route workbench controls with rollback and
   export/import through the configuration registry;

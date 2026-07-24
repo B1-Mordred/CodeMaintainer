@@ -78,20 +78,21 @@
     },
     {
       "id": "failure-provider-egress-telemetry-security",
-      "status": "in_progress",
+      "status": "covered",
       "title": "Remote-provider failure, streamed interruption, redirect/DNS rejection, cross-trust fallback rejection, cost circuits, egress redaction, and telemetry redaction",
       "fixtures": [],
       "implementation": ["internal/providers", "internal/observability", "cmd/model-tool/main.go"],
-      "tests": ["internal/providers/service_test.go", "internal/providers/stream_test.go", "internal/storage/sqlite/providers_test.go", "internal/observability/types_test.go"],
+      "tests": ["internal/providers/service_test.go", "internal/providers/execution_test.go", "internal/providers/stream_test.go", "internal/storage/sqlite/providers_test.go", "internal/observability/types_test.go"],
       "docs": ["docs/model-providers.md", "docs/observability.md", "docs/security.md"],
       "proof": [
         {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt"]},
+        {"path": "internal/providers/execution_test.go", "contains": ["TestProviderExecutionFakesTimeoutAndRateLimitRetryCircuits", "TestProviderExecutionFakeBatchPartialFailureRetainsPerItemEvidence", "TestProviderExecutionFakeRejectsCrossProjectBatchAndCapturesStreamInterruption"]},
         {"path": "internal/providers/stream_test.go", "contains": ["TestParseStreamEventsRejectsInterleavedToolDeltasCancellationAndTruncation", "truncated stream was accepted"]},
         {"path": "internal/storage/sqlite/providers_test.go", "contains": ["TestProviderEndpointRejectsUnsafeRemoteURL", "provider egress manifest update unexpectedly succeeded"]},
         {"path": "internal/observability/types_test.go", "contains": ["TestEventRedactsSecretsPromptsBodiesAndReasoningBeforeStorage", "ExternalExported"]},
         {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect"]}
       ],
-      "remaining_work": ["Add provider-gateway integration fakes for timeout, rate-limit retry, and batch partial-failure handling once outbound request execution is implemented behind the provider gateway."]
+      "remaining_work": []
     }
   ]
 }
