@@ -1409,7 +1409,8 @@ export interface paths {
         /** List policy bundles and structured source */
         get: operations["listPolicyBundles"];
         put?: never;
-        post?: never;
+        /** Create an advanced Rego policy bundle after formatting and retained tests */
+        post: operations["createPolicyBundle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1429,6 +1430,25 @@ export interface paths {
         put?: never;
         /** Activate or roll back to a validated policy bundle after recent reauthentication */
         post: operations["activatePolicyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policies/bundles/{bundleID}/actions/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundleID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run and retain policy tests against an existing bundle */
+        post: operations["testPolicyBundle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1464,6 +1484,23 @@ export interface paths {
         put?: never;
         /** Simulate a policy decision with redacted retained input */
         post: operations["simulatePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policies/test-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained policy test runs */
+        get: operations["listPolicyTestRuns"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3691,6 +3728,40 @@ export interface components {
             decision: components["schemas"]["PolicyDecision"];
             /** @enum {string} */
             status: "passed" | "failed";
+            errors: string[];
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PolicyTestCase: {
+            id: string;
+            decision_point: string;
+            input: {
+                [key: string]: unknown;
+            };
+            want_allowed: boolean;
+            want_required_stages?: string[];
+            want_explanation_contains?: string;
+        };
+        PolicyTestResult: {
+            id: string;
+            passed: boolean;
+            error?: string;
+            decision: components["schemas"]["PolicyDecision"];
+        };
+        PolicyTestRun: {
+            id: string;
+            bundle_id: string;
+            bundle_version: string;
+            source_sha256: string;
+            formatted_source_sha256: string;
+            /** @enum {string} */
+            status: "passed" | "failed";
+            tests: components["schemas"]["PolicyTestCase"][];
+            results: components["schemas"]["PolicyTestResult"][];
+            coverage?: {
+                [key: string]: unknown;
+            };
             errors: string[];
             actor_id: string;
             /** Format: date-time */
@@ -6969,6 +7040,43 @@ export interface operations {
             401: components["responses"]["ErrorResponse"];
         };
     };
+    createPolicyBundle: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: string;
+                    reason: string;
+                    rego_source: string;
+                    tests: components["schemas"]["PolicyTestCase"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Created policy bundle plus retained test evidence */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bundle: components["schemas"]["PolicyBundle"];
+                        test_run: components["schemas"]["PolicyTestRun"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
     activatePolicyBundle: {
         parameters: {
             query?: never;
@@ -7008,6 +7116,41 @@ export interface operations {
             };
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    testPolicyBundle: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                bundleID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    tests: components["schemas"]["PolicyTestCase"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Retained policy test run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        test_run: components["schemas"]["PolicyTestRun"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
             404: components["responses"]["ErrorResponse"];
         };
     };
@@ -7097,6 +7240,32 @@ export interface operations {
             401: components["responses"]["ErrorResponse"];
             403: components["responses"]["ErrorResponse"];
             500: components["responses"]["ErrorResponse"];
+        };
+    };
+    listPolicyTestRuns: {
+        parameters: {
+            query?: {
+                bundle_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy test run history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        test_runs: components["schemas"]["PolicyTestRun"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
         };
     };
     getTaskContract: {

@@ -98,21 +98,26 @@ The controller now retains a deterministic policy bundle ledger and inserts `pol
 
 Policy review evaluates the active bundle against job, risk, result commit, golden/rehearsal, and documentation evidence. The decision is append-only and includes bundle ID/version, decision point, redacted input, input hash, allow/deny outcome, required stages, explanation, and whether the decision failed closed. A denied decision stops QC rather than routing around the gate.
 
+Advanced policy bundles use the embedded `github.com/open-policy-agent/opa` library pinned in `go.mod`. The controller formats Rego source before storing it, records both source and formatted-source hashes, runs retained policy tests before activation, and requires the latest retained test run for the exact formatted source to pass before an advanced bundle can become active. OPA evaluation failures produce fail-closed decisions rather than bypassing the policy gate.
+
 Operators can inspect and exercise the lifecycle through the CLI:
 
 ```sh
 maintainctl policy bundles
 maintainctl policy activations
+maintainctl policy test-runs [--bundle <id>]
 maintainctl policy decisions <job-id>
 maintainctl policy simulate --decision qc_requirement --input <json-file|-> [--bundle <id>]
+maintainctl policy test <bundle-id> --tests <json-file|->
+maintainctl policy create-advanced --version <version> --reason <text> --rego <rego-file> --tests <json-file|->
 maintainctl reauthenticate --password-file <file|->
 maintainctl policy activate <bundle-id> --reason <text> --staged-rollout-percent 100
 ```
 
-The API exposes the same bundle, activation, simulation, and job-decision records. Activation requires recent reauthentication when authentication is enabled. Simulation input is bounded JSON and stored only after secret-like keys are redacted. The Jobs page shows the latest policy decision and full decision history for inspected jobs.
+The API exposes the same bundle, activation, simulation, test-run, and job-decision records. Activation and advanced Rego authoring require recent reauthentication when authentication is enabled. Simulation input is bounded JSON and stored only after secret-like keys are redacted. The Jobs page shows the latest policy decision and full decision history for inspected jobs. The Policy page exposes bundle source/structured interpretation, retained tests and coverage, simulations, activation history, and an expert-only advanced Rego editor.
 
-This foundation deliberately does not expose arbitrary Rego editing from the browser. Full embedded OPA/Rego validation, formatting, unit-test coverage, structured policy editors, staged rollout UX, rollback workbench, and broad protected-action enforcement across memory, provider, forge, signing, Windows, and hardware actions remain open work under I2-20.
+This foundation exposes advanced Rego authoring only behind the expert UI and controller-side administrator/reauthentication checks. Structured template editing, richer staged-rollout and rollback workbenches, and broad protected-action enforcement across memory, provider, forge, signing, Windows, and hardware actions remain open work under I2-20.
 
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, and the remaining OPA policy authoring, rollback workbench, Rego test/coverage, and cross-domain protected-action enforcement.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.

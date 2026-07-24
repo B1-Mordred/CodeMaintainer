@@ -154,7 +154,7 @@ func run(arguments []string) error {
 
 func (c client) policy(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: maintainctl policy <bundles|activations|simulate|activate|decisions> ...")
+		return errors.New("usage: maintainctl policy <bundles|create-advanced|test|test-runs|activations|simulate|activate|decisions> ...")
 	}
 	switch arguments[0] {
 	case "bundles":
@@ -167,6 +167,21 @@ func (c client) policy(arguments []string) error {
 			return errors.New("usage: maintainctl policy activations")
 		}
 		return c.printJSON(http.MethodGet, "/api/v1/policies/activations", nil)
+	case "test-runs":
+		flags := flag.NewFlagSet("policy test-runs", flag.ContinueOnError)
+		bundleID := flags.String("bundle", "", "optional policy bundle ID")
+		if err := flags.Parse(arguments[1:]); err != nil || flags.NArg() != 0 {
+			return errors.New("usage: maintainctl policy test-runs [--bundle <id>]")
+		}
+		query := url.Values{}
+		if *bundleID != "" {
+			query.Set("bundle_id", *bundleID)
+		}
+		path := "/api/v1/policies/test-runs"
+		if encoded := query.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return c.printJSON(http.MethodGet, path, nil)
 	case "decisions":
 		if len(arguments) != 2 || arguments[1] == "" {
 			return errors.New("usage: maintainctl policy decisions <job-id>")
@@ -194,6 +209,54 @@ func (c client) policy(arguments []string) error {
 		return c.printJSON(http.MethodPost, "/api/v1/policies/simulations", map[string]any{
 			"bundle_id": *bundleID, "decision_point": *decisionPoint, "input": input,
 		})
+	case "create-advanced":
+		flags := flag.NewFlagSet("policy create-advanced", flag.ContinueOnError)
+		version := flags.String("version", "", "policy bundle version")
+		reason := flags.String("reason", "", "audited creation reason")
+		regoFile := flags.String("rego", "", "Rego source file")
+		testsFile := flags.String("tests", "", "policy tests JSON file or '-'")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *version == "" || strings.TrimSpace(*reason) == "" || *regoFile == "" || *testsFile == "" {
+			return errors.New("usage: maintainctl policy create-advanced --version <v> --reason <text> --rego <file> --tests <json-file|->; reauthenticate first")
+		}
+		regoSource, err := readTextDocument(*regoFile, 256*1024)
+		if err != nil {
+			return err
+		}
+		tests, err := readJSONDocument(*testsFile)
+		if err != nil {
+			return err
+		}
+		var decodedTests any
+		if err := json.Unmarshal(tests, &decodedTests); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/policies/bundles", map[string]any{
+			"version": *version, "reason": *reason, "rego_source": regoSource, "tests": decodedTests,
+		})
+	case "test":
+		if len(arguments) < 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl policy test <bundle-id> --tests <json-file|->")
+		}
+		flags := flag.NewFlagSet("policy test", flag.ContinueOnError)
+		testsFile := flags.String("tests", "", "policy tests JSON file or '-'")
+		if err := flags.Parse(arguments[2:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *testsFile == "" {
+			return errors.New("usage: maintainctl policy test <bundle-id> --tests <json-file|->")
+		}
+		tests, err := readJSONDocument(*testsFile)
+		if err != nil {
+			return err
+		}
+		var decodedTests any
+		if err := json.Unmarshal(tests, &decodedTests); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/policies/bundles/"+url.PathEscape(arguments[1])+"/actions/test", map[string]any{"tests": decodedTests})
 	case "activate":
 		if len(arguments) < 2 || arguments[1] == "" {
 			return errors.New("usage: maintainctl policy activate <bundle-id> --reason <text> [--staged-rollout-percent <0-100>]; reauthenticate first")
@@ -211,7 +274,7 @@ func (c client) policy(arguments []string) error {
 			"action": "activate", "reason": *reason, "staged_rollout_percent": *staged,
 		})
 	default:
-		return errors.New("usage: maintainctl policy <bundles|activations|simulate|activate|decisions> ...")
+		return errors.New("usage: maintainctl policy <bundles|create-advanced|test|test-runs|activations|simulate|activate|decisions> ...")
 	}
 }
 
@@ -1111,6 +1174,26 @@ func readJSONDocument(path string) (json.RawMessage, error) {
 		source = file
 	}
 	return readJSON(source)
+}
+
+func readTextDocument(path string, limit int64) (string, error) {
+	var source io.Reader = os.Stdin
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return "", fmt.Errorf("open document %s: %w", path, err)
+		}
+		defer file.Close()
+		source = file
+	}
+	payload, err := io.ReadAll(io.LimitReader(source, limit+1))
+	if err != nil {
+		return "", fmt.Errorf("read document: %w", err)
+	}
+	if int64(len(payload)) > limit {
+		return "", fmt.Errorf("document exceeds %d bytes", limit)
+	}
+	return string(payload), nil
 }
 
 func readJSON(source io.Reader) (json.RawMessage, error) {

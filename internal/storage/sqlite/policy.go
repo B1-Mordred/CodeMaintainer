@@ -40,6 +40,34 @@ func (s *Store) ListPolicyBundles(ctx context.Context, limit int) ([]policy.Bund
 	return items, rows.Err()
 }
 
+func (s *Store) CreatePolicyBundle(ctx context.Context, bundle policy.Bundle) (policy.Bundle, error) {
+	if err := s.ensureBuiltinPolicyBundle(ctx); err != nil {
+		return policy.Bundle{}, err
+	}
+	if bundle.ID == "" {
+		id, err := NewID("policybundle")
+		if err != nil {
+			return policy.Bundle{}, err
+		}
+		bundle.ID = id
+	}
+	bundle.CreatedAt = s.now()
+	if err := bundle.Validate(); err != nil {
+		return policy.Bundle{}, storage.ErrInvalid
+	}
+	rules, _ := json.Marshal(bundle.StructuredRules)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO policy_bundles(
+		id,schema_version,version,source_kind,source_sha256,compiled_sha256,structured_rules_json,rego_source,created_by,reason,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)`, bundle.ID, bundle.SchemaVersion, bundle.Version, bundle.SourceKind,
+		bundle.SourceSHA256, bundle.CompiledSHA256, string(rules), bundle.RegoSource, bundle.CreatedBy, bundle.Reason,
+		bundle.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return policy.Bundle{}, err
+	}
+	bundle.Status = "available"
+	return bundle, nil
+}
+
 func (s *Store) GetPolicyBundle(ctx context.Context, id string) (policy.Bundle, error) {
 	if err := s.ensureBuiltinPolicyBundle(ctx); err != nil {
 		return policy.Bundle{}, err
@@ -190,6 +218,59 @@ func (s *Store) ListPolicySimulations(ctx context.Context, limit int) ([]policy.
 	return items, rows.Err()
 }
 
+func (s *Store) SavePolicyTestRun(ctx context.Context, run policy.TestRun) (policy.TestRun, error) {
+	if run.ID == "" {
+		id, err := NewID("policytestrun")
+		if err != nil {
+			return policy.TestRun{}, err
+		}
+		run.ID = id
+	}
+	run.CreatedAt = s.now()
+	if err := run.Validate(); err != nil {
+		return policy.TestRun{}, storage.ErrInvalid
+	}
+	tests, _ := json.Marshal(run.Tests)
+	results, _ := json.Marshal(run.Results)
+	coverage, _ := json.Marshal(run.Coverage)
+	errorsJSON, _ := json.Marshal(run.Errors)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO policy_test_runs(
+		id,bundle_id,bundle_version,source_sha256,formatted_source_sha256,status,tests_json,results_json,coverage_json,errors_json,actor_id,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, run.ID, run.BundleID, run.BundleVersion, run.SourceSHA256,
+		run.FormattedSourceSHA256, run.Status, string(tests), string(results), string(coverage), string(errorsJSON),
+		run.ActorID, run.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return policy.TestRun{}, err
+	}
+	return run, nil
+}
+
+func (s *Store) ListPolicyTestRuns(ctx context.Context, bundleID string, limit int) ([]policy.TestRun, error) {
+	query := `SELECT id,bundle_id,bundle_version,source_sha256,formatted_source_sha256,status,tests_json,results_json,
+		coverage_json,errors_json,actor_id,created_at FROM policy_test_runs`
+	args := []any{}
+	if bundleID != "" {
+		query += ` WHERE bundle_id=?`
+		args = append(args, bundleID)
+	}
+	query += ` ORDER BY created_at DESC,id DESC LIMIT ?`
+	args = append(args, boundedLimit(limit, 100, 500))
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []policy.TestRun{}
+	for rows.Next() {
+		item, err := scanPolicyTestRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) RecordPolicyDecision(ctx context.Context, decision policy.Decision) (policy.Decision, error) {
 	if decision.ID == "" {
 		id, err := NewID("policydec")
@@ -325,6 +406,34 @@ func scanPolicySimulation(row scanner) (policy.Simulation, error) {
 	}
 	item.RedactedInput = []byte(input)
 	if err := json.Unmarshal([]byte(decision), &item.Decision); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(errorsJSON), &item.Errors); err != nil {
+		return item, err
+	}
+	parsed, err := time.Parse(timestampFormat, created)
+	if err != nil {
+		return item, err
+	}
+	item.CreatedAt = parsed
+	return item, item.Validate()
+}
+
+func scanPolicyTestRun(row scanner) (policy.TestRun, error) {
+	var item policy.TestRun
+	var tests, results, coverage, errorsJSON, created string
+	if err := row.Scan(&item.ID, &item.BundleID, &item.BundleVersion, &item.SourceSHA256,
+		&item.FormattedSourceSHA256, &item.Status, &tests, &results, &coverage, &errorsJSON,
+		&item.ActorID, &created); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(tests), &item.Tests); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(results), &item.Results); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(coverage), &item.Coverage); err != nil {
 		return item, err
 	}
 	if err := json.Unmarshal([]byte(errorsJSON), &item.Errors); err != nil {

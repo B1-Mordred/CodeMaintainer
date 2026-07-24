@@ -111,6 +111,37 @@ type Simulation struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
+type TestCase struct {
+	ID              string          `json:"id"`
+	DecisionPoint   string          `json:"decision_point"`
+	Input           json.RawMessage `json:"input"`
+	WantAllowed     bool            `json:"want_allowed"`
+	WantStages      []string        `json:"want_required_stages,omitempty"`
+	WantExplanation string          `json:"want_explanation_contains,omitempty"`
+}
+
+type TestResult struct {
+	ID       string   `json:"id"`
+	Passed   bool     `json:"passed"`
+	Error    string   `json:"error,omitempty"`
+	Decision Decision `json:"decision"`
+}
+
+type TestRun struct {
+	ID                    string         `json:"id"`
+	BundleID              string         `json:"bundle_id"`
+	BundleVersion         string         `json:"bundle_version"`
+	SourceSHA256          string         `json:"source_sha256"`
+	FormattedSourceSHA256 string         `json:"formatted_source_sha256"`
+	Status                string         `json:"status"`
+	Tests                 []TestCase     `json:"tests"`
+	Results               []TestResult   `json:"results"`
+	Coverage              map[string]any `json:"coverage,omitempty"`
+	Errors                []string       `json:"errors"`
+	ActorID               string         `json:"actor_id"`
+	CreatedAt             time.Time      `json:"created_at"`
+}
+
 type ActivationRequest struct {
 	BundleID             string
 	Action               string
@@ -119,6 +150,15 @@ type ActivationRequest struct {
 	Reason               string
 	StagedRolloutPercent int
 	Reauthenticated      bool
+}
+
+type CreateBundleRequest struct {
+	Version    string
+	SourceKind string
+	RegoSource string
+	CreatedBy  string
+	Reason     string
+	Tests      []TestCase
 }
 
 type SimulationRequest struct {
@@ -136,6 +176,7 @@ type EvaluationRequest struct {
 }
 
 type Store interface {
+	CreatePolicyBundle(context.Context, Bundle) (Bundle, error)
 	ListPolicyBundles(context.Context, int) ([]Bundle, error)
 	GetPolicyBundle(context.Context, string) (Bundle, error)
 	GetActivePolicyBundle(context.Context) (Bundle, error)
@@ -143,6 +184,8 @@ type Store interface {
 	ListPolicyActivations(context.Context, int) ([]Activation, error)
 	SavePolicySimulation(context.Context, Simulation) (Simulation, error)
 	ListPolicySimulations(context.Context, int) ([]Simulation, error)
+	SavePolicyTestRun(context.Context, TestRun) (TestRun, error)
+	ListPolicyTestRuns(context.Context, string, int) ([]TestRun, error)
 	RecordPolicyDecision(context.Context, Decision) (Decision, error)
 	ListPolicyDecisions(context.Context, string, int) ([]Decision, error)
 }
@@ -175,7 +218,7 @@ func BuiltinBundle() Bundle {
 }
 
 func (b Bundle) Validate() error {
-	if !safeID.MatchString(b.ID) || b.SchemaVersion != SchemaVersion || strings.TrimSpace(b.Version) == "" ||
+	if (b.ID != "" && !safeID.MatchString(b.ID)) || b.SchemaVersion != SchemaVersion || strings.TrimSpace(b.Version) == "" ||
 		(b.SourceKind != SourceStructuredTemplate && b.SourceKind != SourceAdvancedRego) ||
 		!hex64(b.SourceSHA256) || !hex64(b.CompiledSHA256) || strings.TrimSpace(b.CreatedBy) == "" ||
 		strings.TrimSpace(b.Reason) == "" {
@@ -254,6 +297,63 @@ func (s Simulation) Validate() error {
 	}
 	if err := s.Decision.Validate(); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (t TestCase) Validate() error {
+	if !safeID.MatchString(t.ID) || !KnownDecisionPoint(t.DecisionPoint) || !json.Valid(t.Input) ||
+		len(t.Input) == 0 || len(t.Input) > 256*1024 || len(t.WantStages) > 64 ||
+		len(t.WantExplanation) > 512 {
+		return errors.New("policy test case violates version-one bounds")
+	}
+	for _, stage := range t.WantStages {
+		if !safeID.MatchString(stage) {
+			return errors.New("policy test case has invalid required stage")
+		}
+	}
+	return nil
+}
+
+func (r TestResult) Validate() error {
+	if !safeID.MatchString(r.ID) || len(r.Error) > 4000 {
+		return errors.New("policy test result violates version-one bounds")
+	}
+	if r.Decision.BundleID == "" {
+		if r.Passed {
+			return errors.New("passing policy test result requires a decision")
+		}
+		return nil
+	}
+	copy := r.Decision
+	copy.ID = ""
+	copy.CreatedAt = time.Time{}
+	if err := copy.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r TestRun) Validate() error {
+	if r.ID != "" && !safeID.MatchString(r.ID) {
+		return errors.New("policy test run has invalid id")
+	}
+	if !safeID.MatchString(r.BundleID) || strings.TrimSpace(r.BundleVersion) == "" ||
+		!hex64(r.SourceSHA256) || !hex64(r.FormattedSourceSHA256) ||
+		(r.Status != "passed" && r.Status != "failed") || len(r.Tests) == 0 ||
+		len(r.Tests) > 64 || len(r.Results) != len(r.Tests) || len(r.Errors) > 64 ||
+		strings.TrimSpace(r.ActorID) == "" {
+		return errors.New("policy test run violates version-one bounds")
+	}
+	for _, test := range r.Tests {
+		if err := test.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, result := range r.Results {
+		if err := result.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -28,8 +28,13 @@ type BackupRecord = components["schemas"]["BackupRecord"];
 type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
+type PolicyBundle = components["schemas"]["PolicyBundle"];
+type PolicyActivation = components["schemas"]["PolicyActivation"];
+type PolicySimulation = components["schemas"]["PolicySimulation"];
+type PolicyTestCase = components["schemas"]["PolicyTestCase"];
+type PolicyTestRun = components["schemas"]["PolicyTestRun"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "intelligence" | "models" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -38,6 +43,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "onboarding", label: "Onboarding & packs", icon: <Boxes aria-hidden="true" />, group: "operate" },
   { id: "jobs", label: "Jobs", icon: <TerminalSquare aria-hidden="true" />, group: "operate" },
   { id: "quality", label: "QC / QA", icon: <ClipboardCheck aria-hidden="true" />, group: "operate" },
+  { id: "policy", label: "Policy", icon: <ShieldCheck aria-hidden="true" />, group: "operate" },
   { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
@@ -137,6 +143,7 @@ export function OperatorConsole({
       {page === "onboarding" && <CapabilityPage />}
       {page === "jobs" && <JobsPage initialJobs={initialJobs} expert={expert} />}
       {page === "quality" && <QualityPage jobs={initialJobs} />}
+      {page === "policy" && <PolicyPage expert={expert} />}
       {page === "intelligence" && <IntelligencePage />}
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
       {page === "memory" && <MemoryPage />}
@@ -373,6 +380,142 @@ function QualityPage({ jobs: initialJobs }: { jobs: Job[] }) {
     {message && <p className="inline-message" role="status">{message}</p>}
     <Section title="Findings" eyebrow="Independent QC">
       {loading ? <p className="loading-line" role="status">Loading retained findings…</p> : findings.length === 0 ? <Empty title="No findings retained" detail="Independent QC findings will appear here with their affected code, evidence, and required resolution." /> : <div className="finding-list">{findings.map((finding) => { const key = `${finding.job_id}/${finding.id}`; return <article className="finding-card" key={key}><header><Badge value={finding.severity} /><Badge value={finding.status} /><code>{finding.job_id}</code></header><h3>{finding.claim}</h3><p>{finding.required_resolution}</p><dl><div><dt>Category</dt><dd>{finding.category}</dd></div><div><dt>Verification</dt><dd>{finding.verification_method}</dd></div><div><dt>Cycle</dt><dd>{finding.last_seen_cycle}</dd></div></dl><details><summary>Evidence and location</summary><pre>{JSON.stringify(finding.location, null, 2)}</pre></details><label>Decision rationale<textarea rows={2} maxLength={4096} value={rationales[key] ?? ""} onChange={(event) => setRationales((value) => ({ ...value, [key]: event.target.value }))} /></label><div className="card-actions"><button className="secondary-button" type="button" disabled={finding.status !== "open"} onClick={() => void act(finding, "dispute")}>Dispute</button><button className="secondary-button" type="button" disabled={finding.status !== "disputed"} onClick={() => void act(finding, "accept")}>Accept</button><button className="tertiary-button" type="button" disabled={finding.status !== "open"} onClick={() => void act(finding, "waive")}>Waive with reauthentication</button><button className="tertiary-button" type="button" onClick={() => void act(finding, "escalate")}>Escalate</button></div></article>; })}</div>}
+    </Section>
+  </>;
+}
+
+function PolicyPage({ expert }: { expert: boolean }) {
+  const [bundles, setBundles] = useState<PolicyBundle[]>([]);
+  const [activations, setActivations] = useState<PolicyActivation[]>([]);
+  const [simulations, setSimulations] = useState<PolicySimulation[]>([]);
+  const [testRuns, setTestRuns] = useState<PolicyTestRun[]>([]);
+  const [bundleID, setBundleID] = useState("");
+  const [decisionPoint, setDecisionPoint] = useState("qc_requirement");
+  const [simulationInput, setSimulationInput] = useState(`{"risk_level":"medium","result_sha":"0123456789abcdef0123456789abcdef01234567","full_verification_passed":true,"documentation_status":"passed","golden_status":"passed"}`);
+  const [testsJSON, setTestsJSON] = useState(`[
+  {
+    "id": "QC-ALLOW",
+    "decision_point": "qc_requirement",
+    "input": {
+      "risk_level": "medium",
+      "result_sha": "0123456789abcdef0123456789abcdef01234567",
+      "full_verification_passed": true,
+      "documentation_status": "passed",
+      "golden_status": "passed"
+    },
+    "want_allowed": true
+  }
+]`);
+  const [regoVersion, setRegoVersion] = useState("");
+  const [regoReason, setRegoReason] = useState("");
+  const [regoSource, setRegoSource] = useState(`package codemaintainer.policy
+
+default decision := {
+  "allowed": false,
+  "outcome": "deny",
+  "required_stages": ["baseline", "qc"],
+  "explanation": "policy denied by default",
+}
+`);
+  const [activationReason, setActivationReason] = useState("");
+  const [message, setMessage] = useState("");
+  const load = useCallback(async () => {
+    const [bundleResponse, activationResponse, simulationResponse, testResponse] = await Promise.all([
+      api.GET("/policies/bundles", { params: { query: { limit: 100 } } }),
+      api.GET("/policies/activations", { params: { query: { limit: 100 } } }),
+      api.GET("/policies/simulations", { params: { query: { limit: 50 } } }),
+      api.GET("/policies/test-runs", { params: { query: { limit: 100 } } }),
+    ]);
+    const loaded = bundleResponse.data?.bundles ?? [];
+    setBundles(loaded);
+    setActivations(activationResponse.data?.activations ?? []);
+    setSimulations(simulationResponse.data?.simulations ?? []);
+    setTestRuns(testResponse.data?.test_runs ?? []);
+    setBundleID((current) => current || loaded.find((bundle) => bundle.status === "active")?.id || loaded[0]?.id || "");
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const parseObject = (value: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      // Reported below with a deterministic operator-facing message.
+    }
+    return null;
+  };
+  const parseTests = (): PolicyTestCase[] | null => {
+    try {
+      const parsed = JSON.parse(testsJSON);
+      if (Array.isArray(parsed)) return parsed as PolicyTestCase[];
+    } catch {
+      // Reported below with a deterministic operator-facing message.
+    }
+    return null;
+  };
+  const simulate = async () => {
+    const input = parseObject(simulationInput);
+    if (!input) { setMessage("Simulation input must be a JSON object."); return; }
+    const response = await api.POST("/policies/simulations", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { bundle_id: bundleID || undefined, decision_point: decisionPoint, input } });
+    setMessage(response.data ? `Simulation ${response.data.simulation.status}: ${response.data.simulation.decision.explanation}` : "Policy simulation failed.");
+    await load();
+  };
+  const runTests = async () => {
+    if (!bundleID) { setMessage("Select a bundle before running tests."); return; }
+    const tests = parseTests();
+    if (!tests) { setMessage("Policy tests must be a JSON array."); return; }
+    const response = await api.POST("/policies/bundles/{bundleID}/actions/test", { params: { path: { bundleID }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { tests } });
+    setMessage(response.data ? `Policy test run ${response.data.test_run.status} with ${response.data.test_run.results.length} result(s).` : "Policy tests failed.");
+    await load();
+  };
+  const createAdvanced = async () => {
+    const tests = parseTests();
+    if (!expert) { setMessage("Enable expert mode before creating advanced Rego bundles."); return; }
+    if (!tests || !regoVersion.trim() || !regoReason.trim() || !regoSource.trim()) { setMessage("Advanced Rego creation requires version, reason, source, and test JSON."); return; }
+    const response = await api.POST("/policies/bundles", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { version: regoVersion, reason: regoReason, rego_source: regoSource, tests } });
+    setMessage(response.data ? `Created ${response.data.bundle.id}; retained tests ${response.data.test_run.status}.` : "Advanced policy bundle creation failed.");
+    await load();
+  };
+  const activate = async (bundle: PolicyBundle, action: "activate" | "rollback" = "activate") => {
+    const reason = activationReason.trim();
+    if (!reason) { setMessage("Activation or rollback requires an operator reason."); return; }
+    const response = await api.POST("/policies/bundles/{bundleID}/actions/activate", { params: { path: { bundleID: bundle.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { action, reason, staged_rollout_percent: 100 } });
+    setMessage(response.data ? `${label(action)} recorded for ${bundle.id}.` : `${label(action)} failed; recent reauthentication may be required.`);
+    await load();
+  };
+  const selectedRuns = testRuns.filter((run) => !bundleID || run.bundle_id === bundleID);
+  return <>
+    <PageIntro>Versioned policy bundles are fail-closed, source-retained, and test-gated before activation. Simulations retain redacted inputs and exact decisions for audit.</PageIntro>
+    <div className="metrics-grid compact">
+      <Metric icon={<ShieldCheck aria-hidden="true" />} name="Bundles" value={String(bundles.length)} detail={`${bundles.filter((bundle) => bundle.status === "active").length} active`} />
+      <Metric icon={<ClipboardCheck aria-hidden="true" />} name="Test runs" value={String(testRuns.length)} detail={`${testRuns.filter((run) => run.status === "passed").length} passed`} />
+      <Metric icon={<FileClock aria-hidden="true" />} name="Activations" value={String(activations.length)} detail="Append-only history" />
+      <Metric icon={<CircleDot aria-hidden="true" />} name="Simulations" value={String(simulations.length)} detail="Redacted retained inputs" />
+    </div>
+    {message && <p className="inline-message" role="status">{message}</p>}
+    <Section title="Policy bundles" eyebrow="Source and interpretation" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      <label>Selected bundle<select value={bundleID} onChange={(event) => setBundleID(event.target.value)}>{bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.version} · {bundle.id}</option>)}</select></label>
+      <label>Activation / rollback reason<input maxLength={4000} value={activationReason} onChange={(event) => setActivationReason(event.target.value)} placeholder="Required before activation or rollback" /></label>
+      {bundles.length === 0 ? <Empty title="No bundles retained" detail="The built-in policy bundle will appear after the controller initializes storage." /> : <div className="card-grid">{bundles.map((bundle) => {
+        const runs = testRuns.filter((run) => run.bundle_id === bundle.id).slice(0, 3);
+        return <article className="resource-card" key={bundle.id}><div className="resource-title"><ShieldCheck aria-hidden="true" /><div><h3>{bundle.version}</h3><p>{bundle.id}</p></div><Badge value={bundle.status} /></div><dl><div><dt>Source</dt><dd>{label(bundle.source_kind)}</dd></div><div><dt>Source hash</dt><dd><code>{shortSHA(bundle.source_sha256)}</code></dd></div><div><dt>Compiled hash</dt><dd><code>{shortSHA(bundle.compiled_sha256)}</code></dd></div><div><dt>Created</dt><dd>{date(bundle.created_at)}</dd></div></dl><details open={expert}><summary>Structured interpretation and retained source</summary><pre>{JSON.stringify({ rules: bundle.structured_rules, rego_source: bundle.rego_source, reason: bundle.reason }, null, 2)}</pre></details><details><summary>Recent retained tests</summary>{runs.length === 0 ? <p>No retained tests for this bundle.</p> : <pre>{JSON.stringify(runs, null, 2)}</pre>}</details><div className="card-actions"><button type="button" disabled={bundle.status === "active"} onClick={() => void activate(bundle)}>Activate</button><button className="tertiary-button" type="button" disabled={bundle.status === "active"} onClick={() => void activate(bundle, "rollback")}>Rollback to this bundle</button></div></article>;
+      })}</div>}
+    </Section>
+    <Section title="Simulation and retained tests" eyebrow="Pre-activation evidence">
+      <div className="two-column">
+        <div><label>Decision point<input value={decisionPoint} onChange={(event) => setDecisionPoint(event.target.value)} /></label><label>Simulation input<textarea rows={8} value={simulationInput} onChange={(event) => setSimulationInput(event.target.value)} /></label><button type="button" disabled={!decisionPoint.trim()} onClick={() => void simulate()}>Simulate policy decision</button></div>
+        <div><label>Policy tests JSON<textarea rows={12} value={testsJSON} onChange={(event) => setTestsJSON(event.target.value)} /></label><button className="secondary-button" type="button" disabled={!bundleID} onClick={() => void runTests()}>Run retained tests</button></div>
+      </div>
+      <details open={expert}><summary>Selected bundle test coverage</summary><pre>{JSON.stringify(selectedRuns, null, 2)}</pre></details>
+      <details><summary>Recent simulations</summary><pre>{JSON.stringify(simulations.slice(0, 10), null, 2)}</pre></details>
+    </Section>
+    {expert && <Section title="Advanced Rego authoring" eyebrow="Administrator and reauthentication required">
+      <label>Version<input value={regoVersion} onChange={(event) => setRegoVersion(event.target.value)} placeholder="2026.07.24.1" /></label>
+      <label>Reason<input value={regoReason} onChange={(event) => setRegoReason(event.target.value)} placeholder="Why this policy bundle should exist" /></label>
+      <label>Rego source<textarea rows={14} value={regoSource} onChange={(event) => setRegoSource(event.target.value)} /></label>
+      <button type="button" onClick={() => void createAdvanced()}>Format, test, and retain advanced bundle</button>
+    </Section>}
+    <Section title="Activation history" eyebrow="Append-only">
+      {activations.length === 0 ? <Empty title="No activations retained" detail="Activation and rollback records appear here with actor, reason, rollout percentage, and prior bundle." /> : <div className="backup-list">{activations.map((activation) => <article key={activation.id}><div><strong>{activation.bundle_version}</strong><p>{label(activation.action)} · {activation.actor_id} · {date(activation.created_at)}</p><p>{activation.reason}</p></div><Badge value={`${activation.staged_rollout_percent}%`} /></article>)}</div>}
     </Section>
   </>;
 }

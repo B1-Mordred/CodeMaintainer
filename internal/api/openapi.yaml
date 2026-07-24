@@ -1301,6 +1301,37 @@ paths:
                 properties:
                   bundles: { type: array, items: { $ref: "#/components/schemas/PolicyBundle" } }
         "401": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create an advanced Rego policy bundle after formatting and retained tests
+      operationId: createPolicyBundle
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, reason, rego_source, tests]
+              properties:
+                version: { type: string, minLength: 1, maxLength: 128 }
+                reason: { type: string, minLength: 1, maxLength: 4000 }
+                rego_source: { type: string, minLength: 1, maxLength: 262144 }
+                tests: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/PolicyTestCase" } }
+      responses:
+        "201":
+          description: Created policy bundle plus retained test evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundle, test_run]
+                properties:
+                  bundle: { $ref: "#/components/schemas/PolicyBundle" }
+                  test_run: { $ref: "#/components/schemas/PolicyTestRun" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /policies/bundles/{bundleID}/actions/activate:
     parameters:
       - { name: bundleID, in: path, required: true, schema: { type: string } }
@@ -1332,6 +1363,36 @@ paths:
                   activation: { $ref: "#/components/schemas/PolicyActivation" }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/bundles/{bundleID}/actions/test:
+    parameters:
+      - { name: bundleID, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Run and retain policy tests against an existing bundle
+      operationId: testPolicyBundle
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tests]
+              properties:
+                tests: { type: array, minItems: 1, maxItems: 64, items: { $ref: "#/components/schemas/PolicyTestCase" } }
+      responses:
+        "201":
+          description: Retained policy test run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [test_run]
+                properties:
+                  test_run: { $ref: "#/components/schemas/PolicyTestRun" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /policies/activations:
     get:
@@ -1397,6 +1458,24 @@ paths:
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "500": { $ref: "#/components/responses/ErrorResponse" }
+  /policies/test-runs:
+    get:
+      summary: List retained policy test runs
+      operationId: listPolicyTestRuns
+      parameters:
+        - { name: bundle_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Policy test run history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [test_runs]
+                properties:
+                  test_runs: { type: array, items: { $ref: "#/components/schemas/PolicyTestRun" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/task-contract:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -3687,6 +3766,43 @@ components:
         redacted_input: { type: object, additionalProperties: true }
         decision: { $ref: "#/components/schemas/PolicyDecision" }
         status: { type: string, enum: [passed, failed] }
+        errors: { type: array, items: { type: string } }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
+    PolicyTestCase:
+      type: object
+      additionalProperties: false
+      required: [id, decision_point, input, want_allowed]
+      properties:
+        id: { type: string }
+        decision_point: { type: string }
+        input: { type: object, additionalProperties: true }
+        want_allowed: { type: boolean }
+        want_required_stages: { type: array, items: { type: string } }
+        want_explanation_contains: { type: string }
+    PolicyTestResult:
+      type: object
+      additionalProperties: false
+      required: [id, passed, decision]
+      properties:
+        id: { type: string }
+        passed: { type: boolean }
+        error: { type: string }
+        decision: { $ref: "#/components/schemas/PolicyDecision" }
+    PolicyTestRun:
+      type: object
+      additionalProperties: false
+      required: [id, bundle_id, bundle_version, source_sha256, formatted_source_sha256, status, tests, results, errors, actor_id, created_at]
+      properties:
+        id: { type: string }
+        bundle_id: { type: string }
+        bundle_version: { type: string }
+        source_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        formatted_source_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        status: { type: string, enum: [passed, failed] }
+        tests: { type: array, items: { $ref: "#/components/schemas/PolicyTestCase" } }
+        results: { type: array, items: { $ref: "#/components/schemas/PolicyTestResult" } }
+        coverage: { type: object, additionalProperties: true }
         errors: { type: array, items: { type: string } }
         actor_id: { type: string }
         created_at: { type: string, format: date-time }

@@ -56,3 +56,44 @@ func TestPolicyLifecyclePersistsBundlesActivationsSimulationsAndDecisions(t *tes
 		t.Fatalf("retained decisions = %#v, %v", decisions, err)
 	}
 }
+
+func TestAdvancedPolicyBundleRequiresPassingTestsBeforeActivation(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	source := `package codemaintainer.policy
+
+default decision := {"allowed": false, "outcome": "deny", "required_stages": ["baseline", "qc"], "explanation": "missing exact result"}
+
+decision := {"allowed": true, "outcome": "allow", "required_stages": ["baseline", "full_tests", "qc"], "explanation": "qc allowed by advanced rego"} if {
+  input.decision_point == "qc_requirement"
+  input.input.result_sha != ""
+  input.input.full_verification_passed == true
+}`
+	service := policy.NewService(store)
+	bundle, run, err := service.CreateBundle(ctx, policy.CreateBundleRequest{
+		Version: "advanced.1", SourceKind: policy.SourceAdvancedRego, RegoSource: source,
+		CreatedBy: "admin", Reason: "exercise advanced rego lifecycle",
+		Tests: []policy.TestCase{{
+			ID: "allow-qc", DecisionPoint: policy.DecisionPointQCRequirement,
+			Input:       []byte(`{"risk_level":"medium","result_sha":"0123456789abcdef0123456789abcdef01234567","full_verification_passed":true}`),
+			WantAllowed: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.SourceKind != policy.SourceAdvancedRego || run.Status != "passed" {
+		t.Fatalf("unexpected advanced bundle/run: %#v %#v", bundle, run)
+	}
+	activation, err := service.Activate(ctx, policy.ActivationRequest{
+		BundleID: bundle.ID, Action: "activate", ActorID: "admin", ActorRole: "administrator",
+		Reason: "activate tested advanced bundle", StagedRolloutPercent: 100, Reauthenticated: true,
+	})
+	if err != nil || activation.BundleID != bundle.ID {
+		t.Fatalf("activation failed: %#v %v", activation, err)
+	}
+}
