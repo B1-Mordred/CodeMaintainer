@@ -71,6 +71,24 @@ type CapabilitySet struct {
 	ImmutableModelIDs bool `json:"immutable_model_ids"`
 }
 
+type CapabilityProbe struct {
+	ID                   string        `json:"id"`
+	ProviderID           string        `json:"provider_id"`
+	EndpointID           string        `json:"endpoint_id"`
+	ModelProfileID       string        `json:"model_profile_id"`
+	InterfaceFamily      string        `json:"interface_family"`
+	Status               string        `json:"status"`
+	ObservedModelID      string        `json:"observed_model_id"`
+	NativeAPIShape       string        `json:"native_api_shape"`
+	Capabilities         CapabilitySet `json:"capabilities"`
+	RequestSchemaSHA256  string        `json:"request_schema_sha256"`
+	ResponseSchemaSHA256 string        `json:"response_schema_sha256"`
+	LatencyMillis        int64         `json:"latency_millis"`
+	Errors               []string      `json:"errors"`
+	ActorID              string        `json:"actor_id"`
+	CreatedAt            time.Time     `json:"created_at"`
+}
+
 type ProviderProfile struct {
 	ID                   string    `json:"id"`
 	SchemaVersion        int       `json:"schema_version"`
@@ -193,6 +211,7 @@ type Status struct {
 	Models                 []ModelProfile    `json:"models"`
 	Routes                 []RouteProfile    `json:"routes"`
 	RecentManifests        []EgressManifest  `json:"recent_egress_manifests"`
+	RecentProbes           []CapabilityProbe `json:"recent_capability_probes"`
 	RemoteEnabledByDefault bool              `json:"remote_enabled_by_default"`
 }
 
@@ -207,6 +226,8 @@ type Store interface {
 	UpsertRouteProfile(context.Context, RouteProfile, string) (RouteProfile, error)
 	RecordEgressManifest(context.Context, EgressManifest) (EgressManifest, error)
 	ListEgressManifests(context.Context, string, int) ([]EgressManifest, error)
+	RecordCapabilityProbe(context.Context, CapabilityProbe) (CapabilityProbe, error)
+	ListCapabilityProbes(context.Context, string, int) ([]CapabilityProbe, error)
 }
 
 func RequiredFamilies() []string {
@@ -224,20 +245,38 @@ func DefaultProfiles(now time.Time) ([]ProviderProfile, []EndpointProfile, []Mod
 	providers := []ProviderProfile{
 		{ID: "local-llamacpp", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyLocalLlama, DisplayName: "Local llama.cpp supervisor", TrustTier: TrustLocal, Remote: false, Enabled: true, ApprovedDataClasses: allDataClasses(), OperatorAssertions: []string{"local-only supervisor profile"}, Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-openai-responses", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyOpenAIResponses, DisplayName: "CI fake OpenAI Responses", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata", "documentation_public_source"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-chat", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyOpenAIChat, DisplayName: "CI fake OpenAI Chat Completions", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-compatible", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyOpenAICompatible, DisplayName: "CI fake OpenAI-compatible LAN gateway", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-azure-openai", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyAzureOpenAI, DisplayName: "CI fake Azure OpenAI", TrustTier: TrustEnterprise, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-anthropic-messages", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyAnthropicMessages, DisplayName: "CI fake Anthropic Messages", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-gemini", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyGemini, DisplayName: "CI fake Gemini generateContent", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-vertex-gemini", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyVertexGemini, DisplayName: "CI fake Vertex Gemini", TrustTier: TrustEnterprise, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-bedrock", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyBedrockConverse, DisplayName: "CI fake Bedrock Converse", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-bedrock-responses", SchemaVersion: SchemaVersion, InterfaceFamily: FamilyBedrockResponsesCompat, DisplayName: "CI fake Bedrock Responses-compatible", TrustTier: TrustPrivate, Remote: true, Enabled: false, ApprovedDataClasses: []string{"task_metadata"}, OperatorAssertions: []string{"protocol fake for CI conformance only"}, Version: 1, CreatedAt: now, UpdatedAt: now},
 	}
 	endpoints := []EndpointProfile{
 		{ID: "local-llamacpp-endpoint", ProviderID: "local-llamacpp", BaseURL: "http://127.0.0.1:11438/v1", NetworkZone: NetworkLocal, AllowPrivateAddress: true, TLSMode: "local_http", RedirectPolicy: "reject", DNSPolicy: "loopback_only", TimeoutMillis: 1800000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-openai-responses-endpoint", ProviderID: "fake-openai-responses", BaseURL: "https://providers.invalid/openai-responses", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-chat-endpoint", ProviderID: "fake-openai-chat", BaseURL: "https://providers.invalid/openai-chat", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-compatible-endpoint", ProviderID: "fake-openai-compatible", BaseURL: "https://providers.invalid/openai-compatible", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-azure-openai-endpoint", ProviderID: "fake-azure-openai", BaseURL: "https://providers.invalid/azure-openai", Region: "westeurope", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-anthropic-endpoint", ProviderID: "fake-anthropic-messages", BaseURL: "https://providers.invalid/anthropic", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-gemini-endpoint", ProviderID: "fake-gemini", BaseURL: "https://providers.invalid/gemini", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-vertex-gemini-endpoint", ProviderID: "fake-vertex-gemini", BaseURL: "https://providers.invalid/vertex-gemini", Region: "europe-west4", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-bedrock-endpoint", ProviderID: "fake-bedrock", BaseURL: "https://providers.invalid/bedrock", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-bedrock-responses-endpoint", ProviderID: "fake-bedrock-responses", BaseURL: "https://providers.invalid/bedrock-responses", Region: "eu-central-1", NetworkZone: NetworkPublic, TLSMode: "verify", RedirectPolicy: "reject", DNSPolicy: "public_only", TimeoutMillis: 30000, HealthCheckPath: "/healthz", Version: 1, CreatedAt: now, UpdatedAt: now},
 	}
 	models := []ModelProfile{
 		{ID: "local-implementation", ProviderID: "local-llamacpp", EndpointID: "local-llamacpp-endpoint", ModelID: "active", DisplayName: "Local active implementation model", RoleEligibility: []string{"implementation", "repair", "qc", "test_designer", "documentation"}, Capabilities: CapabilitySet{ChatCompletions: true, Cancellation: true, StructuredOutputs: true, SystemMessages: true, UsageAccounting: true, ImmutableModelIDs: true}, ContextLimit: 32768, OutputLimit: 16384, QualityStatus: "accepted_local_default", Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "fake-remote-json", ProviderID: "fake-openai-responses", EndpointID: "fake-openai-responses-endpoint", ModelID: "fake-openai-responses-json-2026-07", DisplayName: "Fake remote structured JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: CapabilitySet{ResponsesAPI: true, Streaming: true, Cancellation: true, StructuredOutputs: true, ToolCalls: true, StableToolCallIDs: true, SystemMessages: true, DeveloperMessages: true, UsageAccounting: true, PromptCaching: true, Batch: true, Asynchronous: true, ModelListing: true, ImmutableModelIDs: true}, ContextLimit: 128000, OutputLimit: 16384, InputPricePerMTok: 2.0, OutputPricePerMTok: 8.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-chat-json", ProviderID: "fake-openai-chat", EndpointID: "fake-openai-chat-endpoint", ModelID: "fake-openai-chat-json-2026-07", DisplayName: "Fake OpenAI Chat JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyOpenAIChat), ContextLimit: 128000, OutputLimit: 16384, InputPricePerMTok: 2.0, OutputPricePerMTok: 8.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-openai-compatible-json", ProviderID: "fake-openai-compatible", EndpointID: "fake-openai-compatible-endpoint", ModelID: "fake-compatible-json-2026-07", DisplayName: "Fake OpenAI-compatible JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyOpenAICompatible), ContextLimit: 128000, OutputLimit: 16384, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-azure-json", ProviderID: "fake-azure-openai", EndpointID: "fake-azure-openai-endpoint", ModelID: "deployment/fake-json-2026-07", DisplayName: "Fake Azure OpenAI JSON deployment", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyAzureOpenAI), ContextLimit: 128000, OutputLimit: 16384, InputPricePerMTok: 2.0, OutputPricePerMTok: 8.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-anthropic-json", ProviderID: "fake-anthropic-messages", EndpointID: "fake-anthropic-endpoint", ModelID: "fake-claude-json-2026-07", DisplayName: "Fake Anthropic Messages JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyAnthropicMessages), ContextLimit: 200000, OutputLimit: 16384, InputPricePerMTok: 3.0, OutputPricePerMTok: 15.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-gemini-json", ProviderID: "fake-gemini", EndpointID: "fake-gemini-endpoint", ModelID: "fake-gemini-json-2026-07", DisplayName: "Fake Gemini JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyGemini), ContextLimit: 1000000, OutputLimit: 8192, InputPricePerMTok: 1.25, OutputPricePerMTok: 5.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-vertex-gemini-json", ProviderID: "fake-vertex-gemini", EndpointID: "fake-vertex-gemini-endpoint", ModelID: "publishers/google/models/fake-gemini-json-2026-07", DisplayName: "Fake Vertex Gemini JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyVertexGemini), ContextLimit: 1000000, OutputLimit: 8192, InputPricePerMTok: 1.25, OutputPricePerMTok: 5.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-bedrock-json", ProviderID: "fake-bedrock", EndpointID: "fake-bedrock-endpoint", ModelID: "bedrock/fake-converse-json-2026-07", DisplayName: "Fake Bedrock Converse JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyBedrockConverse), ContextLimit: 200000, OutputLimit: 8192, InputPricePerMTok: 3.0, OutputPricePerMTok: 15.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "fake-bedrock-responses-json", ProviderID: "fake-bedrock-responses", EndpointID: "fake-bedrock-responses-endpoint", ModelID: "bedrock/fake-responses-json-2026-07", DisplayName: "Fake Bedrock Responses-compatible JSON model", RoleEligibility: []string{"clarifier", "test_designer", "documentation", "qc", "summarization", "evaluation"}, Capabilities: capabilitiesForFamily(FamilyBedrockResponsesCompat), ContextLimit: 200000, OutputLimit: 8192, InputPricePerMTok: 3.0, OutputPricePerMTok: 15.0, QualityStatus: "ci_fake_only", Version: 1, CreatedAt: now, UpdatedAt: now},
 	}
 	routes := []RouteProfile{
 		{ID: "local-quality-default", Role: "implementation", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: allDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
@@ -366,6 +405,28 @@ func (m EgressManifest) Validate() error {
 	for _, redaction := range m.Redactions {
 		if strings.TrimSpace(redaction) == "" || len(redaction) > 200 {
 			return errors.New("egress manifest redaction is invalid")
+		}
+	}
+	return nil
+}
+
+func (p CapabilityProbe) Validate() error {
+	if !safeID.MatchString(p.ProviderID) || !safeID.MatchString(p.EndpointID) || !safeID.MatchString(p.ModelProfileID) ||
+		!validFamily(p.InterfaceFamily) || (p.Status != "passed" && p.Status != "failed") ||
+		strings.TrimSpace(p.ObservedModelID) == "" || len(p.ObservedModelID) > 200 ||
+		strings.TrimSpace(p.NativeAPIShape) == "" || len(p.NativeAPIShape) > 200 ||
+		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(p.RequestSchemaSHA256) ||
+		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(p.ResponseSchemaSHA256) ||
+		p.LatencyMillis < 0 || p.LatencyMillis > 3_600_000 ||
+		strings.TrimSpace(p.ActorID) == "" || len(p.Errors) > 32 {
+		return errors.New("provider capability probe is invalid")
+	}
+	if p.ID != "" && !safeID.MatchString(p.ID) {
+		return errors.New("provider capability probe id is invalid")
+	}
+	for _, item := range p.Errors {
+		if strings.TrimSpace(item) == "" || len(item) > 1000 {
+			return errors.New("provider capability probe error is invalid")
 		}
 	}
 	return nil

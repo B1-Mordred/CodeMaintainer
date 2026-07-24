@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
@@ -467,6 +468,87 @@ func scanEgressManifest(row scanner) (providers.EgressManifest, error) {
 	var errParse error
 	if item.CreatedAt, errParse = time.Parse(timestampFormat, created); errParse != nil {
 		return providers.EgressManifest{}, errParse
+	}
+	return item, nil
+}
+
+func (s *Store) RecordCapabilityProbe(ctx context.Context, probe providers.CapabilityProbe) (providers.CapabilityProbe, error) {
+	if probe.ID == "" {
+		id, err := NewID("probe")
+		if err != nil {
+			return providers.CapabilityProbe{}, err
+		}
+		probe.ID = id
+	}
+	if probe.CreatedAt.IsZero() {
+		probe.CreatedAt = s.now()
+	}
+	if err := probe.Validate(); err != nil {
+		return providers.CapabilityProbe{}, storage.ErrInvalid
+	}
+	capabilities, _ := json.Marshal(probe.Capabilities)
+	errorsJSON, _ := json.Marshal(probe.Errors)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO provider_capability_probes(
+		id,provider_id,endpoint_id,model_profile_id,interface_family,status,observed_model_id,native_api_shape,
+		capabilities_json,request_schema_sha256,response_schema_sha256,latency_millis,errors_json,actor_id,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		probe.ID, probe.ProviderID, probe.EndpointID, probe.ModelProfileID, probe.InterfaceFamily, probe.Status,
+		probe.ObservedModelID, probe.NativeAPIShape, string(capabilities), probe.RequestSchemaSHA256,
+		probe.ResponseSchemaSHA256, probe.LatencyMillis, string(errorsJSON), probe.ActorID, probe.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return providers.CapabilityProbe{}, err
+	}
+	return probe, nil
+}
+
+func (s *Store) ListCapabilityProbes(ctx context.Context, modelProfileID string, limit int) ([]providers.CapabilityProbe, error) {
+	query := `SELECT id,provider_id,endpoint_id,model_profile_id,interface_family,status,observed_model_id,native_api_shape,
+		capabilities_json,request_schema_sha256,response_schema_sha256,latency_millis,errors_json,actor_id,created_at
+		FROM provider_capability_probes`
+	args := []any{}
+	if strings.TrimSpace(modelProfileID) != "" {
+		query += ` WHERE model_profile_id = ?`
+		args = append(args, modelProfileID)
+	}
+	query += ` ORDER BY created_at DESC,id DESC LIMIT ?`
+	args = append(args, boundedLimit(limit, 100, 500))
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []providers.CapabilityProbe{}
+	for rows.Next() {
+		item, err := scanCapabilityProbe(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanCapabilityProbe(row scanner) (providers.CapabilityProbe, error) {
+	var item providers.CapabilityProbe
+	var capabilities, errorsJSON, created string
+	err := row.Scan(&item.ID, &item.ProviderID, &item.EndpointID, &item.ModelProfileID, &item.InterfaceFamily,
+		&item.Status, &item.ObservedModelID, &item.NativeAPIShape, &capabilities, &item.RequestSchemaSHA256,
+		&item.ResponseSchemaSHA256, &item.LatencyMillis, &errorsJSON, &item.ActorID, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return providers.CapabilityProbe{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return providers.CapabilityProbe{}, err
+	}
+	if err := json.Unmarshal([]byte(capabilities), &item.Capabilities); err != nil {
+		return providers.CapabilityProbe{}, err
+	}
+	if err := json.Unmarshal([]byte(errorsJSON), &item.Errors); err != nil {
+		return providers.CapabilityProbe{}, err
+	}
+	var parseErr error
+	if item.CreatedAt, parseErr = time.Parse(timestampFormat, created); parseErr != nil {
+		return providers.CapabilityProbe{}, parseErr
 	}
 	return item, nil
 }

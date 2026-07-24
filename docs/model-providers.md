@@ -9,11 +9,12 @@ cloud account material, provider-specific request fields, or network authority.
 
 This checkpoint introduces the durable provider-gateway foundation:
 
-- provider, endpoint, model, route, and egress-manifest records in SQLite
-  migration 35;
+- provider, endpoint, model, route, egress-manifest, and capability-probe
+  records in SQLite migrations 35 and 36;
 - seeded local-only llama.cpp defaults plus disabled protocol-fake remote
-  provider templates for OpenAI Responses, Anthropic Messages, Gemini, and
-  Bedrock;
+  provider templates for every required family: OpenAI Responses, OpenAI Chat
+  Completions, OpenAI-compatible APIs, Azure OpenAI, Anthropic Messages, Gemini,
+  Vertex Gemini, Bedrock Converse, and Bedrock Responses-compatible APIs;
 - a provider service that selects only enabled routes and models whose data
   classes, structured-output capability, endpoint policy, trust tier, token
   budget, and cost ceiling match the request;
@@ -23,6 +24,9 @@ This checkpoint introduces the durable provider-gateway foundation:
 - append-only egress manifests with destination profile, model profile, data
   classes, artifact references, redactions, estimate, retention text, decision
   reason, and manifest hash;
+- deterministic fake capability probes that retain observed native API shape,
+  observed model ID, capability set, request/response schema hashes, latency,
+  status, errors, actor, and timestamp without contacting external providers;
 - REST, OpenAPI, generated TypeScript client, `maintainctl model-provider`, and
   Models-page visibility.
 
@@ -83,27 +87,31 @@ REST endpoints:
 - `GET /api/v1/model-providers/status`
 - `POST /api/v1/model-providers/routes/simulations`
 - `GET /api/v1/model-providers/egress-manifests`
+- `POST /api/v1/model-providers/models/{modelID}/actions/probe`
+- `GET /api/v1/model-providers/capability-probes`
 
 CLI:
 
 - `maintainctl model-provider status`
 - `maintainctl model-provider simulate --input <json-file|->`
 - `maintainctl model-provider egress [--project <project-id>]`
+- `maintainctl model-provider probe <model-profile-id>`
+- `maintainctl model-provider probes [--model <model-profile-id>]`
 
 Web:
 
 - Models page: local manifests, provider profiles, trust tiers, credential
-  configured/not-configured status, route simulation, egress manifest preview,
-  and recent manifest history.
+  configured/not-configured status, provider model profiles, deterministic
+  capability probes, route simulation, egress manifest preview, and recent
+  manifest/probe history.
 
 ## Remaining provider milestone work
 
 The full Increment 2 provider milestone is still open. Remaining work includes:
 
-- real protocol adapters and fake conformance fixtures for every required
-  provider family;
+- real protocol adapters behind the fake conformance adapter boundary;
 - write-only credential rotation workflows;
-- capability probing, override/revalidation history, and drift pausing;
+- override/revalidation history and drift pausing;
 - provider-native streaming, cancellation, batch/asynchronous resumability, and
   usage reconciliation;
 - OPA-bound project data-class policy and per-job approval when required;

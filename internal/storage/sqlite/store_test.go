@@ -221,8 +221,8 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 35 {
-		t.Fatalf("applied migration count = %d, want 35", migrations)
+	if migrations != 36 {
+		t.Fatalf("applied migration count = %d, want 36", migrations)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -306,6 +306,12 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 		var name string
 		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
 			t.Fatalf("migration 35 table %s missing: %v", table, err)
+		}
+	}
+	for _, table := range []string{"provider_capability_probes"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
+			t.Fatalf("migration 36 table %s missing: %v", table, err)
 		}
 	}
 }

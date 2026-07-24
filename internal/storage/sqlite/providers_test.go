@@ -51,6 +51,23 @@ func TestProviderGatewayProfilesAndEgressManifestsPersist(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, "UPDATE provider_egress_manifests SET purpose='mutated' WHERE id=?", manifests[0].ID); err == nil {
 		t.Fatal("provider egress manifest update unexpectedly succeeded")
 	}
+	probe, err := service.ProbeModel(ctx, "fake-remote-json", "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probe.Status != "passed" || !probe.Capabilities.ResponsesAPI || probe.RequestSchemaSHA256 == "" {
+		t.Fatalf("probe %#v", probe)
+	}
+	probes, err := store.ListCapabilityProbes(ctx, "fake-remote-json", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(probes) != 1 || probes[0].ID != probe.ID {
+		t.Fatalf("probes %#v", probes)
+	}
+	if _, err := store.db.ExecContext(ctx, "UPDATE provider_capability_probes SET status='failed' WHERE id=?", probe.ID); err == nil {
+		t.Fatal("provider capability probe update unexpectedly succeeded")
+	}
 }
 
 func TestProviderEndpointRejectsUnsafeRemoteURL(t *testing.T) {

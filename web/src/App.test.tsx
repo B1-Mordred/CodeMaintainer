@@ -11,11 +11,27 @@ const providerStatus = {
     { id: "local-llamacpp", schema_version: 1, interface_family: "local_llamacpp", display_name: "Local llama.cpp supervisor", trust_tier: "local", remote: false, enabled: true, approved_data_classes: ["task_metadata", "candidate_diff"], credential_configured: false, operator_assertions: ["local-only supervisor profile"], version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
     { id: "fake-openai-responses", schema_version: 1, interface_family: "openai_responses", display_name: "CI fake OpenAI Responses", trust_tier: "approved_private", remote: true, enabled: false, approved_data_classes: ["task_metadata"], credential_configured: false, operator_assertions: ["protocol fake"], version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
   ],
-  endpoints: [],
-  models: [],
+  endpoints: [
+    { id: "local-llamacpp-endpoint", provider_id: "local-llamacpp", base_url: "http://127.0.0.1:11434", network_zone: "local", allow_private_address: true, tls_mode: "local_http", redirect_policy: "reject", dns_policy: "loopback_only", timeout_millis: 30000, health_check_path: "/health", version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+    { id: "fake-openai-responses-endpoint", provider_id: "fake-openai-responses", base_url: "https://example.invalid/v1", network_zone: "public_internet", allow_private_address: false, tls_mode: "verify", redirect_policy: "reject", dns_policy: "public_only", timeout_millis: 30000, health_check_path: "/models", version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+  ],
+  models: [
+    { id: "local-implementation", provider_id: "local-llamacpp", endpoint_id: "local-llamacpp-endpoint", model_id: "local-implementation", display_name: "Local implementation model", role_eligibility: ["implementation", "quality"], capabilities: { responses_api: false, chat_completions: true, streaming: true, cancellation: true, structured_outputs: true, tool_calls: false, parallel_tool_calls: false, stable_tool_call_ids: false, system_messages: true, developer_messages: false, usage_accounting: true, reasoning_controls: false, prompt_caching: false, batch: false, asynchronous: false, model_listing: false, immutable_model_ids: true }, context_limit: 32768, output_limit: 8192, input_price_per_mtok: 0, output_price_per_mtok: 0, quality_status: "accepted_local_default", capability_override: false, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+    { id: "fake-remote-json", provider_id: "fake-openai-responses", endpoint_id: "fake-openai-responses-endpoint", model_id: "gpt-5.6-fake", display_name: "CI fake OpenAI Responses JSON", role_eligibility: ["implementation"], capabilities: { responses_api: true, chat_completions: false, streaming: true, cancellation: true, structured_outputs: true, tool_calls: true, parallel_tool_calls: true, stable_tool_call_ids: true, system_messages: true, developer_messages: true, usage_accounting: true, reasoning_controls: true, prompt_caching: true, batch: true, asynchronous: true, model_listing: true, immutable_model_ids: true }, context_limit: 128000, output_limit: 16384, input_price_per_mtok: 0, output_price_per_mtok: 0, quality_status: "ci_fake_only", capability_override: false, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" },
+  ],
   routes: [{ id: "local-quality-default", role: "implementation", preference: "local_first", ordered_model_ids: ["local-implementation"], allowed_data_classes: ["task_metadata", "candidate_diff"], max_tokens_per_request: 32768, max_cost_usd: 0, retry_budget: 2, fallback_policy: "same_trust_or_stricter", batch_policy: "disabled", enabled: true, version: 1, created_at: "2026-07-24T04:00:00Z", updated_at: "2026-07-24T04:00:00Z" }],
   recent_egress_manifests: [],
+  recent_capability_probes: [],
   remote_enabled_by_default: false,
+};
+const capabilityProbe = {
+  probe: {
+    id: "provider-probe-fixture", provider_id: "fake-openai-responses", endpoint_id: "fake-openai-responses-endpoint",
+    model_profile_id: "fake-remote-json", interface_family: "openai_responses", status: "passed",
+    observed_model_id: "gpt-5.6-fake", native_api_shape: "openai.responses.create",
+    capabilities: providerStatus.models[1].capabilities, request_schema_sha256: "b".repeat(64), response_schema_sha256: "c".repeat(64),
+    latency_millis: 2, errors: [], actor_id: "operator-console", created_at: "2026-07-24T04:00:00Z",
+  },
 };
 const routeDecision = {
   decision: {
@@ -55,6 +71,8 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/models") return jsonResponse({ items: [], status: { state: "unloaded", profile_id: "", memory_bytes: 0, prompt_tokens_second: 0, decode_tokens_second: 0 } });
   if (path === "/api/v1/model-providers/status") return jsonResponse(providerStatus);
   if (path === "/api/v1/model-providers/routes/simulations") return jsonResponse(routeDecision);
+  if (path === "/api/v1/model-providers/models/fake-remote-json/actions/probe") return new Response(JSON.stringify(capabilityProbe), { status: 201, headers: { "Content-Type": "application/json" } });
+  if (path === "/api/v1/model-providers/capability-probes") return jsonResponse({ probes: [capabilityProbe.probe] });
   if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
   return new Response(JSON.stringify({ error: { code: "unmocked", message: path } }), { status: 404, headers: { "Content-Type": "application/json" } });
 };
@@ -88,8 +106,12 @@ describe("App", () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /Models/i }));
     expect(await screen.findByRole("heading", { name: "Provider gateway" })).toBeInTheDocument();
-    expect(await screen.findByText("CI fake OpenAI Responses")).toBeInTheDocument();
+    expect((await screen.findAllByText("CI fake OpenAI Responses")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Remote provider")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Provider model probes" })).toBeInTheDocument();
+    expect(await screen.findByText("CI fake OpenAI Responses JSON")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Probe capabilities for fake-remote-json" }));
+    expect(await screen.findByText(/openai\.responses\.create/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Simulate provider route" }));
     expect(await screen.findByText("local-implementation")).toBeInTheDocument();
     expect(screen.getByText("local-quality-default")).toBeInTheDocument();

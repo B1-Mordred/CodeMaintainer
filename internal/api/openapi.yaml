@@ -1111,6 +1111,48 @@ paths:
                 properties:
                   manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/models/{modelID}/actions/probe:
+    parameters:
+      - name: modelID
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Run a safe provider capability probe and retain the observed manifest
+      operationId: probeModelProviderModel
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        "201":
+          description: Retained provider capability probe
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [probe]
+                properties:
+                  probe: { $ref: "#/components/schemas/ProviderCapabilityProbe" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/capability-probes:
+    get:
+      summary: List retained provider capability probes
+      operationId: listModelProviderCapabilityProbes
+      parameters:
+        - { name: model_profile_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Provider capability probes
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [probes]
+                properties:
+                  probes: { type: array, items: { $ref: "#/components/schemas/ProviderCapabilityProbe" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /skill-proposals:
     get:
       summary: List inert Hermes skill proposals and administrator decisions
@@ -3876,10 +3918,30 @@ components:
         endpoint: { $ref: "#/components/schemas/ProviderEndpointProfile" }
         model: { $ref: "#/components/schemas/ProviderModelProfile" }
         egress_manifest: { $ref: "#/components/schemas/ProviderEgressManifest" }
+    ProviderCapabilityProbe:
+      type: object
+      additionalProperties: false
+      required: [id, provider_id, endpoint_id, model_profile_id, interface_family, status, observed_model_id, native_api_shape, capabilities, request_schema_sha256, response_schema_sha256, latency_millis, errors, actor_id, created_at]
+      properties:
+        id: { type: string }
+        provider_id: { type: string }
+        endpoint_id: { type: string }
+        model_profile_id: { type: string }
+        interface_family: { type: string, enum: [local_llamacpp, openai_responses, openai_chat_completions, openai_compatible, azure_openai, anthropic_messages, gemini_generate_content, vertex_gemini, bedrock_converse, bedrock_responses_compatible] }
+        status: { type: string, enum: [passed, failed] }
+        observed_model_id: { type: string }
+        native_api_shape: { type: string }
+        capabilities: { $ref: "#/components/schemas/ProviderCapabilitySet" }
+        request_schema_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        response_schema_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        latency_millis: { type: integer, minimum: 0 }
+        errors: { type: array, maxItems: 32, items: { type: string } }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
     ProviderGatewayStatus:
       type: object
       additionalProperties: false
-      required: [families, providers, endpoints, models, routes, recent_egress_manifests, remote_enabled_by_default]
+      required: [families, providers, endpoints, models, routes, recent_egress_manifests, recent_capability_probes, remote_enabled_by_default]
       properties:
         families: { type: array, items: { type: string } }
         providers: { type: array, items: { $ref: "#/components/schemas/ProviderProfile" } }
@@ -3887,6 +3949,7 @@ components:
         models: { type: array, items: { $ref: "#/components/schemas/ProviderModelProfile" } }
         routes: { type: array, items: { $ref: "#/components/schemas/ProviderRouteProfile" } }
         recent_egress_manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
+        recent_capability_probes: { type: array, items: { $ref: "#/components/schemas/ProviderCapabilityProbe" } }
         remote_enabled_by_default: { type: boolean }
     SkillProposalInput:
       type: object

@@ -302,6 +302,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/model-providers/status", s.providerStatus)
 	mux.HandleFunc("POST /api/v1/model-providers/routes/simulations", s.simulateProviderRoute)
 	mux.HandleFunc("GET /api/v1/model-providers/egress-manifests", s.listProviderEgressManifests)
+	mux.HandleFunc("POST /api/v1/model-providers/models/{modelID}/actions/probe", s.probeProviderModel)
+	mux.HandleFunc("GET /api/v1/model-providers/capability-probes", s.listProviderCapabilityProbes)
 	mux.HandleFunc("GET /api/v1/config", s.getConfig)
 	mux.HandleFunc("POST /api/v1/config/validate", s.validateConfig)
 	mux.HandleFunc("GET /api/v1/config/revisions", s.listConfigRevisions)

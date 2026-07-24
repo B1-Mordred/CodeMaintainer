@@ -92,6 +92,34 @@ func TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview(t *testing.
 	if manifests.StatusCode != http.StatusOK || len(retained.Manifests) != 1 || retained.Manifests[0].ManifestSHA256 == "" {
 		t.Fatalf("manifests %d %#v", manifests.StatusCode, retained)
 	}
+	probeResponse, err := http.Post(server.URL+"/api/v1/model-providers/models/fake-remote-json/actions/probe", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probeResult struct {
+		Probe providers.CapabilityProbe `json:"probe"`
+	}
+	if err := json.NewDecoder(probeResponse.Body).Decode(&probeResult); err != nil {
+		t.Fatal(err)
+	}
+	probeResponse.Body.Close()
+	if probeResponse.StatusCode != http.StatusCreated || probeResult.Probe.Status != "passed" || !probeResult.Probe.Capabilities.ResponsesAPI {
+		t.Fatalf("probe %d %#v", probeResponse.StatusCode, probeResult)
+	}
+	probesResponse, err := http.Get(server.URL + "/api/v1/model-providers/capability-probes?model_profile_id=fake-remote-json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probesResult struct {
+		Probes []providers.CapabilityProbe `json:"probes"`
+	}
+	if err := json.NewDecoder(probesResponse.Body).Decode(&probesResult); err != nil {
+		t.Fatal(err)
+	}
+	probesResponse.Body.Close()
+	if probesResponse.StatusCode != http.StatusOK || len(probesResult.Probes) != 1 || probesResult.Probes[0].ID != probeResult.Probe.ID {
+		t.Fatalf("probes %d %#v", probesResponse.StatusCode, probesResult)
+	}
 	bad, err := http.Post(server.URL+"/api/v1/model-providers/routes/simulations", "application/json", strings.NewReader(`{"project_id":"owner-repo","role":"documentation","purpose":"bad","data_classes":["secrets"],"estimated_bytes":1,"estimated_tokens":1}`))
 	if err != nil {
 		t.Fatal(err)

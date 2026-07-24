@@ -40,3 +40,21 @@ func (s *Server) listProviderEgressManifests(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"manifests": items})
 }
+
+func (s *Server) probeProviderModel(w http.ResponseWriter, r *http.Request) {
+	probe, err := providers.NewService(s.store).ProbeModel(r.Context(), r.PathValue("modelID"), actorID(r))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "provider_probe_invalid", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"probe": probe})
+}
+
+func (s *Server) listProviderCapabilityProbes(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListCapabilityProbes(r.Context(), r.URL.Query().Get("model_profile_id"), queryInt(r, "limit", 100))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"probes": items})
+}

@@ -44,9 +44,13 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	probes, err := s.store.ListCapabilityProbes(ctx, "", 25)
+	if err != nil {
+		return Status{}, err
+	}
 	return Status{
 		Families: RequiredFamilies(), Providers: providers, Endpoints: endpoints,
-		Models: models, Routes: routes, RecentManifests: manifests,
+		Models: models, Routes: routes, RecentManifests: manifests, RecentProbes: probes,
 		RemoteEnabledByDefault: false,
 	}, nil
 }
@@ -154,6 +158,60 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 		}
 	}
 	return s.recordDenied(ctx, request, candidates[0].ID, "no enabled model satisfied route, data, capability, endpoint, cost, and trust constraints")
+}
+
+func (s *Service) ProbeModel(ctx context.Context, modelProfileID, actor string) (CapabilityProbe, error) {
+	if s == nil || s.store == nil {
+		return CapabilityProbe{}, errors.New("provider store is required")
+	}
+	if err := s.EnsureDefaults(ctx, actor); err != nil {
+		return CapabilityProbe{}, err
+	}
+	if !safeID.MatchString(modelProfileID) || actor == "" {
+		return CapabilityProbe{}, errors.New("model profile id and actor are required")
+	}
+	providerItems, endpointItems, modelItems, _, err := s.load(ctx)
+	if err != nil {
+		return CapabilityProbe{}, err
+	}
+	model, ok := modelItems[modelProfileID]
+	if !ok {
+		return CapabilityProbe{}, errors.New("model profile not found")
+	}
+	provider, ok := providerItems[model.ProviderID]
+	if !ok {
+		return CapabilityProbe{}, errors.New("provider profile not found")
+	}
+	endpoint, ok := endpointItems[model.EndpointID]
+	if !ok {
+		return CapabilityProbe{}, errors.New("endpoint profile not found")
+	}
+	adapter, ok := AdapterForFamily(provider.InterfaceFamily)
+	if !ok {
+		return CapabilityProbe{}, errors.New("provider adapter is not registered")
+	}
+	started := s.now()
+	observation, err := adapter.Probe(ctx, provider, endpoint, model)
+	probe := CapabilityProbe{
+		ProviderID: provider.ID, EndpointID: endpoint.ID, ModelProfileID: model.ID,
+		InterfaceFamily: provider.InterfaceFamily, Status: "passed", ObservedModelID: model.ModelID,
+		NativeAPIShape: nativeShapeForFamily(provider.InterfaceFamily), Capabilities: CapabilitySet{},
+		RequestSchemaSHA256:  sha256Text(requestShapeForFamily(provider.InterfaceFamily)),
+		ResponseSchemaSHA256: sha256Text(responseShapeForFamily(provider.InterfaceFamily)),
+		LatencyMillis:        s.now().Sub(started).Milliseconds(), ActorID: actor, CreatedAt: s.now(),
+	}
+	if err != nil {
+		probe.Status = "failed"
+		probe.Errors = []string{err.Error()}
+	} else {
+		probe.ObservedModelID = observation.ObservedModelID
+		probe.NativeAPIShape = observation.NativeAPIShape
+		probe.Capabilities = observation.Capabilities
+		probe.RequestSchemaSHA256 = observation.RequestSchemaSHA256
+		probe.ResponseSchemaSHA256 = observation.ResponseSchemaSHA256
+		probe.LatencyMillis = observation.LatencyMillis
+	}
+	return s.store.RecordCapabilityProbe(ctx, probe)
 }
 
 func (s *Service) recordAllowed(ctx context.Context, route RouteProfile, provider ProviderProfile, endpoint EndpointProfile, model ModelProfile, manifest EgressManifest) (RouteDecision, error) {

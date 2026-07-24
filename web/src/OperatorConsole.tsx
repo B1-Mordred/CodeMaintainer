@@ -35,6 +35,7 @@ type ModelStatus = components["schemas"]["ModelStatus"];
 type ProviderGatewayStatus = components["schemas"]["ProviderGatewayStatus"];
 type ProviderRouteDecision = components["schemas"]["ProviderRouteDecision"];
 type ProviderRouteRequest = components["schemas"]["ProviderRouteRequest"];
+type ProviderCapabilityProbe = components["schemas"]["ProviderCapabilityProbe"];
 type PolicyBundle = components["schemas"]["PolicyBundle"];
 type PolicyActivation = components["schemas"]["PolicyActivation"];
 type PolicySimulation = components["schemas"]["PolicySimulation"];
@@ -606,6 +607,7 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [providerStatus, setProviderStatus] = useState<ProviderGatewayStatus | null>(null);
   const [providerDecision, setProviderDecision] = useState<ProviderRouteDecision | null>(null);
+  const [providerProbe, setProviderProbe] = useState<ProviderCapabilityProbe | null>(null);
   const [routeInput, setRouteInput] = useState(`{
   "project_id": "owner-repo",
   "role": "implementation",
@@ -640,8 +642,16 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
     setMessage(response.data ? `${label(response.data.decision.status)}: ${response.data.decision.reason}` : "Provider route simulation failed.");
     if (response.data) await load();
   };
+  const probeProviderModel = async (modelID: string) => {
+    const response = await api.POST("/model-providers/models/{modelID}/actions/probe", { params: { path: { modelID }, header: { "X-CSRF-Token": getCSRFToken() } } });
+    setProviderProbe(response.data?.probe ?? null);
+    setMessage(response.data ? `${label(response.data.probe.status)} capability probe retained for ${modelID}.` : `Capability probe failed for ${modelID}.`);
+    if (response.data) await load();
+  };
   const remoteProfiles = providerStatus?.providers.filter((provider) => provider.remote) ?? [];
   const enabledRemoteProfiles = remoteProfiles.filter((provider) => provider.enabled);
+  const providerByID = new Map((providerStatus?.providers ?? []).map((provider) => [provider.id, provider]));
+  const probesByModel = new Map((providerStatus?.recent_capability_probes ?? []).map((probe) => [probe.model_profile_id, probe]));
   return <>
     <PageIntro>Models are imported only through checksum-bound manifests. Remote providers are optional and route through the controller-owned gateway with retained egress previews.</PageIntro>
     <div className="metrics-grid"><Metric icon={<Cpu aria-hidden="true" />} name="Load state" value={modelStatus?.state ?? status?.components.model ?? "Unknown"} detail={modelStatus?.profile_id || "No weights required for CI"} /><Metric icon={<MemoryStick aria-hidden="true" />} name="Resident memory" value={`${((modelStatus?.memory_bytes ?? 0) / 1073741824).toFixed(2)} GiB`} detail="One model maximum" /><Metric icon={<Gauge aria-hidden="true" />} name="Inference timing" value={`${modelStatus?.prompt_tokens_second ?? 0} / ${modelStatus?.decode_tokens_second ?? 0} tok/s`} detail="Prompt / decode" /><Metric icon={<HardDrive aria-hidden="true" />} name="Gateway routes" value={String(providerStatus?.routes.length ?? 0)} detail={`${enabledRemoteProfiles.length} remote enabled / ${remoteProfiles.length} remote profiles`} /></div>
@@ -651,6 +661,15 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
       {!providerStatus ? <Empty title="Provider gateway status unavailable" detail="The controller will seed safe local defaults when storage is ready." /> : <div className="card-grid">
         {providerStatus.providers.map((provider) => <article className="resource-card" key={provider.id}><div className="resource-title"><BrainCircuit aria-hidden="true" /><div><h3>{provider.display_name}</h3><p>{provider.interface_family}</p></div><Badge value={provider.enabled ? "enabled" : "disabled"} /></div><dl><div><dt>Trust tier</dt><dd>{label(provider.trust_tier)}</dd></div><div><dt>Boundary</dt><dd>{provider.remote ? "Remote provider" : "Local-only"}</dd></div><div><dt>Credentials</dt><dd>{provider.credential_configured ? "Configured write-only" : "Not configured"}</dd></div><div><dt>Data classes</dt><dd>{provider.approved_data_classes.join(", ")}</dd></div></dl>{expert && <details><summary>Operator assertions</summary><pre>{JSON.stringify(provider.operator_assertions, null, 2)}</pre></details>}</article>)}
       </div>}
+    </Section>
+    <Section title="Provider model probes" eyebrow="Protocol conformance">
+      {!providerStatus || providerStatus.models.length === 0 ? <Empty title="No provider model profiles" detail="Default local and fake remote model profiles appear after the provider gateway is initialized." /> : <div className="card-grid">{providerStatus.models.map((model) => {
+        const provider = providerByID.get(model.provider_id);
+        const lastProbe = providerProbe?.model_profile_id === model.id ? providerProbe : probesByModel.get(model.id);
+        const capabilityList = Object.entries(model.capabilities).filter(([, enabled]) => enabled).map(([name]) => label(name));
+        return <article className="resource-card" key={model.id}><div className="resource-title"><BrainCircuit aria-hidden="true" /><div><h3>{model.display_name}</h3><p>{provider?.interface_family ?? model.provider_id}</p></div><Badge value={lastProbe?.status ?? model.quality_status} /></div><dl><div><dt>Model profile</dt><dd>{model.id}</dd></div><div><dt>Provider</dt><dd>{provider?.display_name ?? model.provider_id}</dd></div><div><dt>Context</dt><dd>{model.context_limit.toLocaleString()} / {model.output_limit.toLocaleString()}</dd></div><div><dt>Capabilities</dt><dd>{capabilityList.slice(0, 5).join(", ") || "None declared"}</dd></div></dl>{lastProbe && <details open><summary>Latest capability probe</summary><pre>{JSON.stringify({ status: lastProbe.status, native_api_shape: lastProbe.native_api_shape, observed_model_id: lastProbe.observed_model_id, request_schema_sha256: lastProbe.request_schema_sha256.slice(0, 16), response_schema_sha256: lastProbe.response_schema_sha256.slice(0, 16), latency_millis: lastProbe.latency_millis, errors: lastProbe.errors }, null, 2)}</pre></details>}<div className="card-actions"><button type="button" aria-label={`Probe capabilities for ${model.id}`} onClick={() => void probeProviderModel(model.id)}>Probe capabilities</button></div></article>;
+      })}</div>}
+      <details><summary>Recent retained capability probes</summary>{(providerStatus?.recent_capability_probes.length ?? 0) === 0 ? <p>No provider capability probes retained.</p> : <div className="audit-list">{providerStatus!.recent_capability_probes.map((probe) => <div key={probe.id}><time>{date(probe.created_at)}</time><strong>{label(probe.status)} · {probe.model_profile_id}</strong><span>{probe.native_api_shape} · {probe.observed_model_id} · {probe.latency_millis}ms</span></div>)}</div>}</details>
     </Section>
     <Section title="Route and egress preview" eyebrow="Controller-owned simulation">
       <div className="two-column">

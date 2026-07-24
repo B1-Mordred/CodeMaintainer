@@ -12,6 +12,7 @@ type memoryStore struct {
 	models    []ModelProfile
 	routes    []RouteProfile
 	manifests []EgressManifest
+	probes    []CapabilityProbe
 }
 
 func (m *memoryStore) ListProviderProfiles(context.Context, int) ([]ProviderProfile, error) {
@@ -80,6 +81,16 @@ func (m *memoryStore) RecordEgressManifest(_ context.Context, manifest EgressMan
 func (m *memoryStore) ListEgressManifests(context.Context, string, int) ([]EgressManifest, error) {
 	return append([]EgressManifest(nil), m.manifests...), nil
 }
+func (m *memoryStore) RecordCapabilityProbe(_ context.Context, probe CapabilityProbe) (CapabilityProbe, error) {
+	if probe.ID == "" {
+		probe.ID = "probe-memory"
+	}
+	m.probes = append(m.probes, probe)
+	return probe, nil
+}
+func (m *memoryStore) ListCapabilityProbes(context.Context, string, int) ([]CapabilityProbe, error) {
+	return append([]CapabilityProbe(nil), m.probes...), nil
+}
 
 func TestDefaultsKeepRemoteProvidersDisabledAndRouteLocal(t *testing.T) {
 	store := &memoryStore{}
@@ -91,6 +102,9 @@ func TestDefaultsKeepRemoteProvidersDisabledAndRouteLocal(t *testing.T) {
 	}
 	if len(status.Families) != 10 || status.RemoteEnabledByDefault {
 		t.Fatalf("status %#v", status)
+	}
+	if len(status.Providers) != len(status.Families) || len(status.Models) != len(status.Families) {
+		t.Fatalf("default provider/model coverage providers=%d models=%d families=%d", len(status.Providers), len(status.Models), len(status.Families))
 	}
 	for _, provider := range status.Providers {
 		if provider.Remote && provider.Enabled {
@@ -110,6 +124,46 @@ func TestDefaultsKeepRemoteProvidersDisabledAndRouteLocal(t *testing.T) {
 	}
 	if decision.EgressManifest.ManifestSHA256 == "" || len(store.manifests) != 1 {
 		t.Fatalf("manifest not retained: %#v", decision.EgressManifest)
+	}
+}
+
+func TestEveryRequiredFamilyHasFakeAdapterAndRetainedProbe(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	service.now = func() time.Time { return time.Date(2026, 7, 24, 4, 30, 0, 0, time.UTC) }
+	status, err := service.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelByFamily := map[string]string{}
+	for _, model := range status.Models {
+		for _, provider := range status.Providers {
+			if provider.ID == model.ProviderID {
+				modelByFamily[provider.InterfaceFamily] = model.ID
+			}
+		}
+	}
+	for _, family := range RequiredFamilies() {
+		if _, ok := AdapterForFamily(family); !ok {
+			t.Fatalf("no adapter for %s", family)
+		}
+		modelID, ok := modelByFamily[family]
+		if !ok {
+			t.Fatalf("no seeded model profile for %s", family)
+		}
+		probe, err := service.ProbeModel(context.Background(), modelID, "tester")
+		if err != nil {
+			t.Fatalf("probe %s: %v", family, err)
+		}
+		if probe.Status != "passed" || probe.InterfaceFamily != family || probe.RequestSchemaSHA256 == "" || probe.ResponseSchemaSHA256 == "" {
+			t.Fatalf("bad probe for %s: %#v", family, probe)
+		}
+		if family == FamilyOpenAICompatible && !probe.Capabilities.ChatCompletions {
+			t.Fatalf("openai-compatible probe did not record chat-completion support: %#v", probe)
+		}
+	}
+	if len(store.probes) != len(RequiredFamilies()) {
+		t.Fatalf("retained probes = %d, want %d", len(store.probes), len(RequiredFamilies()))
 	}
 }
 

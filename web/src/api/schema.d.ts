@@ -1176,6 +1176,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/model-providers/models/{modelID}/actions/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                modelID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a safe provider capability probe and retain the observed manifest */
+        post: operations["probeModelProviderModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/capability-probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained provider capability probes */
+        get: operations["listModelProviderCapabilityProbes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skill-proposals": {
         parameters: {
             query?: never;
@@ -3789,6 +3825,26 @@ export interface components {
             model?: components["schemas"]["ProviderModelProfile"];
             egress_manifest: components["schemas"]["ProviderEgressManifest"];
         };
+        ProviderCapabilityProbe: {
+            id: string;
+            provider_id: string;
+            endpoint_id: string;
+            model_profile_id: string;
+            /** @enum {string} */
+            interface_family: "local_llamacpp" | "openai_responses" | "openai_chat_completions" | "openai_compatible" | "azure_openai" | "anthropic_messages" | "gemini_generate_content" | "vertex_gemini" | "bedrock_converse" | "bedrock_responses_compatible";
+            /** @enum {string} */
+            status: "passed" | "failed";
+            observed_model_id: string;
+            native_api_shape: string;
+            capabilities: components["schemas"]["ProviderCapabilitySet"];
+            request_schema_sha256: string;
+            response_schema_sha256: string;
+            latency_millis: number;
+            errors: string[];
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         ProviderGatewayStatus: {
             families: string[];
             providers: components["schemas"]["ProviderProfile"][];
@@ -3796,6 +3852,7 @@ export interface components {
             models: components["schemas"]["ProviderModelProfile"][];
             routes: components["schemas"]["ProviderRouteProfile"][];
             recent_egress_manifests: components["schemas"]["ProviderEgressManifest"][];
+            recent_capability_probes: components["schemas"]["ProviderCapabilityProbe"][];
             remote_enabled_by_default: boolean;
         };
         SkillProposalInput: {
@@ -7175,6 +7232,60 @@ export interface operations {
                 content: {
                     "application/json": {
                         manifests: components["schemas"]["ProviderEgressManifest"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    probeModelProviderModel: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                modelID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retained provider capability probe */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        probe: components["schemas"]["ProviderCapabilityProbe"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listModelProviderCapabilityProbes: {
+        parameters: {
+            query?: {
+                model_profile_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider capability probes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        probes: components["schemas"]["ProviderCapabilityProbe"][];
                     };
                 };
             };

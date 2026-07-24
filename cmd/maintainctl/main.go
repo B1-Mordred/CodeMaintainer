@@ -213,7 +213,7 @@ func (c client) scheduler(arguments []string) error {
 
 func (c client) modelProvider(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: maintainctl model-provider <status|simulate|egress> ...")
+		return errors.New("usage: maintainctl model-provider <status|simulate|egress|probe|probes> ...")
 	}
 	switch arguments[0] {
 	case "status":
@@ -251,6 +251,25 @@ func (c client) modelProvider(arguments []string) error {
 		path := "/api/v1/model-providers/egress-manifests"
 		if *projectID != "" {
 			path += "?project_id=" + url.QueryEscape(*projectID)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	case "probe":
+		if len(arguments) != 2 || arguments[1] == "" {
+			return errors.New("usage: maintainctl model-provider probe <model-profile-id>")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/model-providers/models/"+url.PathEscape(arguments[1])+"/actions/probe", map[string]any{})
+	case "probes":
+		flags := flag.NewFlagSet("model-provider probes", flag.ContinueOnError)
+		modelID := flags.String("model", "", "optional model profile id")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl model-provider probes [--model <model-profile-id>]")
+		}
+		path := "/api/v1/model-providers/capability-probes"
+		if *modelID != "" {
+			path += "?model_profile_id=" + url.QueryEscape(*modelID)
 		}
 		return c.printJSON(http.MethodGet, path, nil)
 	default:
@@ -1537,6 +1556,8 @@ Commands:
   model-provider status
   model-provider simulate --input <json-file|->
   model-provider egress [--project <project-id>]
+  model-provider probe <model-profile-id>
+  model-provider probes [--model <model-profile-id>]
   scheduler status
   scheduler decisions
   scheduler simulate --input <json-file|->
