@@ -22,8 +22,17 @@ func TestProviderGatewayProfilesAndEgressManifestsPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(status.Providers) < 5 || len(status.Routes) != 2 || len(status.Models) < 2 {
+	if len(status.Providers) < 5 || len(status.Routes) < 6 || len(status.Models) < 2 {
 		t.Fatalf("seeded provider status %#v", status)
+	}
+	roles := map[string]bool{}
+	for _, route := range status.Routes {
+		roles[route.Role] = true
+	}
+	for _, role := range []string{"implementation", "repair", "test_designer", "documentation", "qc"} {
+		if !roles[role] {
+			t.Fatalf("seeded provider routes omitted %s: %#v", role, status.Routes)
+		}
 	}
 	for _, provider := range status.Providers {
 		if provider.Remote && provider.Enabled {

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T12:45:00Z",
+  "updated_at": "2026-07-24T13:45:00Z",
   "steps": [
     {
       "step": 1,
@@ -190,17 +190,19 @@
       "status": "in_progress",
       "title": "Configure a fake remote endpoint from the UI, probe, route, approve egress, complete a job, and retain safe usage/cost evidence",
       "fixtures": [],
-      "implementation": ["internal/providers", "internal/api/providers.go", "web/src/OperatorConsole.tsx"],
-      "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go", "internal/acceptance/local_fake_e2e_test.go"],
+      "implementation": ["internal/providers", "internal/api/providers.go", "internal/workflow/coordinator.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "internal/workflow/coordinator_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go", "internal/acceptance/local_fake_e2e_test.go"],
       "ui": ["web/src/OperatorConsole.tsx#models-agents"],
       "docs": ["docs/model-providers.md", "docs/acceptance.md"],
       "proof": [
         {"path": "web/src/App.test.tsx", "contains": ["Simulate provider route", "fake-remote-json", "local-quality-default"]},
         {"path": "internal/api/server_test.go", "contains": ["TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview", "fake-remote-json"]},
         {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "ManifestSHA256"]},
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["provider_egress_manifest_sha256", "implementation worker task packet", "repair worker task packet"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["routeModelCall", "withProviderRouteDetails", "provider_egress_manifest_sha256"]},
         {"path": "internal/acceptance/local_fake_e2e_test.go", "contains": ["SimulateExecution", "browser approved fake remote documentation route", "NetworkContacted"]}
       ],
-      "remaining_work": ["Add editable provider/endpoint/model/route browser controls, explicit egress approval, and a local-fake job that actually routes through the provider gateway without exposing credentials."]
+      "remaining_work": ["Add editable provider/endpoint/model/route browser controls and explicit egress approval in the browser workflow."]
     },
     {
       "step": 13,

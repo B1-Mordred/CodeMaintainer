@@ -141,6 +141,21 @@ Web:
   capability probes, route simulation, egress manifest preview, and recent
   manifest/probe history.
 
+## Workflow route snapshots
+
+Model-backed workflow phases now retain a provider-gateway route snapshot before
+calling the implementation, repair, Test Designer, Documentation Agent, or QC
+worker. The retained phase outcome contains only route and manifest identifiers
+plus the manifest hash. Full endpoint, provider, model, policy-decision,
+data-class, redaction, token, and retention evidence stays in the append-only
+provider egress manifest store.
+
+The controller does not pass provider credentials, endpoint URLs, arbitrary
+model arguments, or reusable egress authority to workers. Local mock operation
+uses local llama.cpp route profiles for the worker packet classes, while explicit
+remote provider simulations still exercise the default-off remote documentation
+route.
+
 ## Remaining provider milestone work
 
 The full Increment 2 provider milestone is still open. Remaining work includes:
@@ -154,5 +169,4 @@ The full Increment 2 provider milestone is still open. Remaining work includes:
 - OPA-bound project data-class policy and per-job approval when required;
 - editable provider/endpoint/model/route workbench controls with rollback and
   export/import through the configuration registry;
-- integration of gateway route snapshots into all model-backed worker calls;
 - benchmark-backed local runtime optimization profiles.

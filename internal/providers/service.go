@@ -59,31 +59,68 @@ func (s *Service) EnsureDefaults(ctx context.Context, actor string) error {
 	if s == nil || s.store == nil {
 		return errors.New("provider store is required")
 	}
-	existing, err := s.store.ListProviderProfiles(ctx, 1)
+	now := s.now()
+	providers, endpoints, models, routes := DefaultProfiles(now)
+	existingProviders, err := s.store.ListProviderProfiles(ctx, 500)
 	if err != nil {
 		return err
 	}
-	if len(existing) != 0 {
-		return nil
+	providerIDs := make(map[string]bool, len(existingProviders))
+	for _, profile := range existingProviders {
+		providerIDs[profile.ID] = true
 	}
-	now := s.now()
-	providers, endpoints, models, routes := DefaultProfiles(now)
 	for _, profile := range providers {
+		if providerIDs[profile.ID] {
+			continue
+		}
 		if _, err := s.store.UpsertProviderProfile(ctx, profile, actor); err != nil {
 			return err
 		}
 	}
+	existingEndpoints, err := s.store.ListEndpointProfiles(ctx, 500)
+	if err != nil {
+		return err
+	}
+	endpointIDs := make(map[string]bool, len(existingEndpoints))
+	for _, endpoint := range existingEndpoints {
+		endpointIDs[endpoint.ID] = true
+	}
 	for _, endpoint := range endpoints {
+		if endpointIDs[endpoint.ID] {
+			continue
+		}
 		if _, err := s.store.UpsertEndpointProfile(ctx, endpoint, actor); err != nil {
 			return err
 		}
 	}
+	existingModels, err := s.store.ListModelProfiles(ctx, 500)
+	if err != nil {
+		return err
+	}
+	modelIDs := make(map[string]bool, len(existingModels))
+	for _, model := range existingModels {
+		modelIDs[model.ID] = true
+	}
 	for _, model := range models {
+		if modelIDs[model.ID] {
+			continue
+		}
 		if _, err := s.store.UpsertModelProfile(ctx, model, actor); err != nil {
 			return err
 		}
 	}
+	existingRoutes, err := s.store.ListRouteProfiles(ctx, 500)
+	if err != nil {
+		return err
+	}
+	routeIDs := make(map[string]bool, len(existingRoutes))
+	for _, route := range existingRoutes {
+		routeIDs[route.ID] = true
+	}
 	for _, route := range routes {
+		if routeIDs[route.ID] {
+			continue
+		}
 		if _, err := s.store.UpsertRouteProfile(ctx, route, actor); err != nil {
 			return err
 		}
@@ -113,6 +150,7 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 		return s.recordDenied(ctx, request, "", "no route profile is enabled for the requested role")
 	}
 	denyReason := "no enabled model satisfied route, data, capability, endpoint, cost, and trust constraints"
+	denyRouteID := candidates[0].ID
 	for _, route := range candidates {
 		if !dataClassesAllowed(request.DataClasses, route.AllowedDataClasses) {
 			continue
@@ -148,11 +186,13 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 			}
 			if fallbackPreservesTrust(route.FallbackPolicy) && trustFloor > 0 && candidateTrust < trustFloor {
 				denyReason = fmt.Sprintf("route %s rejected lower-trust fallback from %s to %s", route.ID, trustFloorTier, provider.TrustTier)
+				denyRouteID = route.ID
 				continue
 			}
 			if provider.Remote {
 				if err := s.remoteProbeAllows(ctx, provider, endpoint, model, request); err != nil {
 					denyReason = err.Error()
+					denyRouteID = route.ID
 					continue
 				}
 			}
@@ -165,6 +205,7 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 			estimatedCost := estimateCostUSD(request.EstimatedTokens, model)
 			if route.MaxCostUSD > 0 && estimatedCost > route.MaxCostUSD {
 				denyReason = fmt.Sprintf("route %s rejected estimated cost %.6f above maximum %.6f", route.ID, estimatedCost, route.MaxCostUSD)
+				denyRouteID = route.ID
 				continue
 			}
 			manifest := EgressManifest{
@@ -179,7 +220,7 @@ func (s *Service) SimulateRoute(ctx context.Context, request RouteRequest, actor
 			return s.recordAllowed(ctx, route, provider, endpoint, model, manifest)
 		}
 	}
-	return s.recordDenied(ctx, request, candidates[0].ID, denyReason)
+	return s.recordDenied(ctx, request, denyRouteID, denyReason)
 }
 
 func (s *Service) ProbeModel(ctx context.Context, modelProfileID, actor string) (CapabilityProbe, error) {

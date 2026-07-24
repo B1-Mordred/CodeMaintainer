@@ -385,6 +385,49 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil || len(phaseRecords) < 22 {
 		t.Fatalf("phase records = %d, %v", len(phaseRecords), err)
 	}
+	modelPhaseSnapshots := map[jobs.State]bool{}
+	for _, phase := range phaseRecords {
+		var details map[string]any
+		if len(phase.Outcome) != 0 {
+			var outcome Outcome
+			if err := json.Unmarshal(phase.Outcome, &outcome); err == nil && len(outcome.Details) != 0 {
+				_ = json.Unmarshal(outcome.Details, &details)
+			}
+		}
+		if len(details) == 0 && len(phase.Outcome) != 0 {
+			_ = json.Unmarshal(phase.Outcome, &details)
+		}
+		if hash, ok := details["provider_egress_manifest_sha256"].(string); ok && len(hash) == 64 {
+			modelPhaseSnapshots[phase.PhaseState] = true
+		}
+	}
+	for _, required := range []jobs.State{
+		jobs.StateImplementing, jobs.StateTestDesignReview, jobs.StateDocumentationReview, jobs.StateQCReview, jobs.StateRepairing,
+	} {
+		if !modelPhaseSnapshots[required] {
+			t.Fatalf("model phase %s did not retain provider route snapshot evidence: %#v", required, modelPhaseSnapshots)
+		}
+	}
+	providerManifests, err := store.ListEgressManifests(ctx, "fixture", 100)
+	if err != nil || len(providerManifests) < 5 {
+		t.Fatalf("workflow provider manifests = %#v, %v", providerManifests, err)
+	}
+	manifestPurposes := map[string]bool{}
+	for _, manifest := range providerManifests {
+		if manifest.JobID != job.ID || manifest.ProjectID != "fixture" || manifest.PolicyDecision != "allowed" ||
+			manifest.ManifestSHA256 == "" || manifest.ProviderID != "local-llamacpp" {
+			t.Fatalf("workflow provider manifest lost bounded local route evidence: %#v", manifest)
+		}
+		manifestPurposes[manifest.Purpose] = true
+	}
+	for _, purpose := range []string{
+		"implementation worker task packet", "test designer worker task packet", "documentation worker task packet",
+		"qc worker task packet", "repair worker task packet",
+	} {
+		if !manifestPurposes[purpose] {
+			t.Fatalf("workflow provider manifests omitted %q: %#v", purpose, manifestPurposes)
+		}
+	}
 	manifests, err := store.ListContextManifests(ctx, "fixture", 100)
 	if err != nil || len(manifests) < 3 {
 		t.Fatalf("context manifests = %#v, %v", manifests, err)

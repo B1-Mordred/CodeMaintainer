@@ -280,6 +280,10 @@ func DefaultProfiles(now time.Time) ([]ProviderProfile, []EndpointProfile, []Mod
 	}
 	routes := []RouteProfile{
 		{ID: "local-quality-default", Role: "implementation", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: allDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "local-repair-default", Role: "repair", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: allDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "local-test-designer-default", Role: "test_designer", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: allDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "local-documentation-default", Role: "documentation", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: localDocumentationDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
+		{ID: "local-qc-default", Role: "qc", Preference: "local_first", OrderedModelIDs: []string{"local-implementation"}, AllowedDataClasses: allDataClasses(), MaxTokensPerRequest: 32768, MaxCostUSD: 0, RetryBudget: 2, FallbackPolicy: "same_trust_or_stricter", BatchPolicy: "disabled", Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now},
 		{ID: "remote-documentation-ci-preview", Role: "documentation", Preference: "remote_when_policy_allows", OrderedModelIDs: []string{"fake-remote-json"}, AllowedDataClasses: []string{"task_metadata", "documentation_public_source"}, MaxTokensPerRequest: 16000, MaxCostUSD: 0.10, RetryBudget: 1, FallbackPolicy: "explicit_same_or_higher_trust_only", BatchPolicy: "project_isolated", Enabled: false, Version: 1, CreatedAt: now, UpdatedAt: now},
 	}
 	return providers, endpoints, models, routes
@@ -287,6 +291,10 @@ func DefaultProfiles(now time.Time) ([]ProviderProfile, []EndpointProfile, []Mod
 
 func allDataClasses() []string {
 	return []string{"task_metadata", "documentation_public_source", "selected_symbols_tests", "candidate_diff", "context_packet", "memory_excerpt", "security_findings", "sbom_data", "logs_artifacts"}
+}
+
+func localDocumentationDataClasses() []string {
+	return []string{"documentation_public_source", "selected_symbols_tests", "candidate_diff", "context_packet"}
 }
 
 func (p ProviderProfile) Validate() error {

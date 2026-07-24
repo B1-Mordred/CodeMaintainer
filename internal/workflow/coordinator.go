@@ -27,6 +27,7 @@ import (
 	projectmemory "github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
 	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
+	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
@@ -57,6 +58,7 @@ type coordinatorStore interface {
 	golden.Store
 	documentation.Store
 	policy.Store
+	providers.Store
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -70,6 +72,7 @@ type Coordinator struct {
 	worktreesRoot   string
 	maxReviewCycles int
 	intelligence    *intelligence.Service
+	providerRoutes  *providers.Service
 }
 
 func NewCoordinator(store coordinatorStore, git GitBackend, modelManager models.Manager, execution ExecutionBackend,
@@ -89,6 +92,7 @@ func NewCoordinator(store coordinatorStore, git GitBackend, modelManager models.
 	return &Coordinator{
 		store: store, git: git, models: modelManager, execution: execution, artifacts: artifacts,
 		worktreesRoot: filepath.Clean(worktreesRoot), maxReviewCycles: maxReviewCycles, intelligence: intelligenceService,
+		providerRoutes: providers.NewService(store),
 	}, nil
 }
 
@@ -218,6 +222,10 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 		if err != nil {
 			return Outcome{}, err
 		}
+		route, err := c.routeModelCall(ctx, job, "implementation", "implementation worker task packet", packet, []string{"task_metadata", "context_packet", "selected_symbols_tests", "candidate_diff", "memory_excerpt", "security_findings"})
+		if err != nil {
+			return Outcome{}, err
+		}
 		implementation, err := c.execution.Implement(ctx, job, packet)
 		if err != nil {
 			return Outcome{}, err
@@ -236,7 +244,7 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 			return Outcome{}, err
 		}
 		return Outcome{
-			Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "edit_count": len(implementation.Edits), "test_impact_id": impact.ID}),
+			Details:  mustJSON(withProviderRouteDetails(map[string]any{"result_sha": committed.ResultSHA, "edit_count": len(implementation.Edits), "test_impact_id": impact.ID}, route)),
 			Metadata: storage.JobMetadataPatch{ResultSHA: &committed.ResultSHA},
 		}, nil
 	case jobs.StateVerifyingTargeted:
@@ -589,6 +597,10 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 		{Class: "diff_policy", Passed: true, Summary: "protected-path and secret policy scan passed for the exact result commit"},
 		{Class: "documentation_policy", Passed: true, Summary: "Documentation Agent manifest was retained and any documentation commit received fresh exact-commit verification"},
 	}
+	route, err := c.routeModelCall(ctx, job, "qc", "qc worker task packet", packet, []string{"task_metadata", "context_packet", "candidate_diff", "security_findings", "logs_artifacts"})
+	if err != nil {
+		return Outcome{}, err
+	}
 	report, err := c.execution.Review(ctx, job, packet)
 	if err != nil {
 		return Outcome{}, err
@@ -610,7 +622,7 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 		exhausted := job.ReviewCycle+1 >= c.maxReviewCycles
 		return Outcome{
 			NeedsRepair: !exhausted,
-			Details:     mustJSON(map[string]any{"verdict": report.Verdict, "blocking_findings": blocking, "cycle_exhausted": exhausted}),
+			Details:     mustJSON(withProviderRouteDetails(map[string]any{"verdict": report.Verdict, "blocking_findings": blocking, "cycle_exhausted": exhausted}, route)),
 		}, nil
 	}
 	if err := c.transitionFindings(ctx, job.ID, findings.StatusVerified, findings.StatusClosed,
@@ -620,7 +632,7 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 	if err := c.writeFinalReport(ctx, job, report); err != nil {
 		return Outcome{}, err
 	}
-	return detailOutcome(map[string]any{"verdict": report.Verdict, "blocking_findings": 0, "review_cycle": job.ReviewCycle}), nil
+	return detailOutcome(withProviderRouteDetails(map[string]any{"verdict": report.Verdict, "blocking_findings": 0, "review_cycle": job.ReviewCycle}, route)), nil
 }
 
 func (c *Coordinator) testDesignerRequired(ctx context.Context, jobID string) (bool, error) {
@@ -672,6 +684,10 @@ func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, e
 	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
 		return Outcome{}, err
 	}
+	route, err := c.routeModelCall(ctx, job, "test_designer", "test designer worker task packet", packet, []string{"task_metadata", "context_packet", "candidate_diff", "selected_symbols_tests"})
+	if err != nil {
+		return Outcome{}, err
+	}
 	report, err := c.execution.DesignTests(ctx, job, packet)
 	if err != nil {
 		return Outcome{}, err
@@ -687,10 +703,10 @@ func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, e
 		return Outcome{}, err
 	}
 	pending := testdesigner.PendingDispositionCount([]testdesigner.Report{report}, nil)
-	outcome := detailOutcome(map[string]any{
+	outcome := detailOutcome(withProviderRouteDetails(map[string]any{
 		"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID,
 		"proposals": len(report.Proposals), "pending_dispositions": pending,
-	})
+	}, route))
 	if pending > 0 {
 		outcome.NextState = jobs.StateAwaitingTestDesignDisposition
 		return outcome, nil
@@ -797,6 +813,10 @@ func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Ou
 	} else if _, err := c.store.RecordAgentContractValidation(ctx, record); err != nil {
 		return Outcome{}, err
 	}
+	route, err := c.routeModelCall(ctx, job, "documentation", "documentation worker task packet", packet, []string{"documentation_public_source", "context_packet", "candidate_diff"})
+	if err != nil {
+		return Outcome{}, err
+	}
 	manifest, err := c.execution.Document(ctx, job, packet)
 	if err != nil {
 		return Outcome{}, err
@@ -822,6 +842,7 @@ func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Ou
 		"requirements": len(manifest.Requirements), "changes": len(manifest.Changes),
 		"documentation_findings": len(documentationFindings),
 	}
+	details = withProviderRouteDetails(details, route)
 	if manifest.Status == "blocked" || len(documentationFindings) != 0 {
 		return Outcome{Details: mustJSON(details)}, errors.New("documentation policy blocked final QC until documentation findings are resolved")
 	}
@@ -1060,6 +1081,10 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 	if err != nil {
 		return Outcome{}, err
 	}
+	route, err := c.routeModelCall(ctx, job, "repair", "repair worker task packet", packet, []string{"task_metadata", "context_packet", "selected_symbols_tests", "candidate_diff", "memory_excerpt", "security_findings"})
+	if err != nil {
+		return Outcome{}, err
+	}
 	repairResult, err := c.execution.Implement(ctx, job, packet)
 	if err != nil {
 		return Outcome{}, err
@@ -1086,7 +1111,7 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 		return Outcome{}, err
 	}
 	return Outcome{
-		Details:  mustJSON(map[string]any{"result_sha": committed.ResultSHA, "review_cycle": nextCycle, "repaired_findings": len(blocking), "test_impact_id": impact.ID}),
+		Details:  mustJSON(withProviderRouteDetails(map[string]any{"result_sha": committed.ResultSHA, "review_cycle": nextCycle, "repaired_findings": len(blocking), "test_impact_id": impact.ID}, route)),
 		Metadata: storage.JobMetadataPatch{ResultSHA: &committed.ResultSHA, ReviewCycle: &nextCycle},
 	}, nil
 }
@@ -1274,6 +1299,49 @@ func (c *Coordinator) recordAgentValidation(ctx context.Context, job jobs.Job, p
 	}
 	_, err = c.store.RecordAgentContractValidation(ctx, record)
 	return err
+}
+
+func (c *Coordinator) routeModelCall(ctx context.Context, job jobs.Job, role, purpose string, packet agents.TaskPacket, dataClasses []string) (providers.RouteDecision, error) {
+	payload, err := json.Marshal(packet)
+	if err != nil {
+		return providers.RouteDecision{}, err
+	}
+	decision, err := c.providerRoutes.SimulateRoute(ctx, providers.RouteRequest{
+		JobID: job.ID, ProjectID: job.ProjectID, Role: role, Purpose: purpose,
+		DataClasses: dataClasses, EstimatedBytes: int64(len(payload)), EstimatedTokens: estimateTokens(len(payload)),
+		RequiresStructuredOutput: true,
+	}, "workflow-controller")
+	if err != nil {
+		return providers.RouteDecision{}, err
+	}
+	if decision.Status != providers.DecisionAllowed {
+		return providers.RouteDecision{}, fmt.Errorf("provider route denied for %s worker call: %s", role, decision.Reason)
+	}
+	return decision, nil
+}
+
+func estimateTokens(bytes int) int {
+	if bytes <= 0 {
+		return 1
+	}
+	tokens := (bytes + 3) / 4
+	if tokens < 1 {
+		return 1
+	}
+	return tokens
+}
+
+func withProviderRouteDetails(details map[string]any, decision providers.RouteDecision) map[string]any {
+	manifest := decision.EgressManifest
+	details["provider_route_id"] = manifest.RouteID
+	details["provider_id"] = manifest.ProviderID
+	details["provider_endpoint_id"] = manifest.EndpointID
+	details["provider_model_profile_id"] = manifest.ModelProfileID
+	details["provider_policy_decision"] = manifest.PolicyDecision
+	details["provider_egress_manifest_id"] = manifest.ID
+	details["provider_egress_manifest_sha256"] = manifest.ManifestSHA256
+	details["provider_trust_tier"] = decision.Provider.TrustTier
+	return details
 }
 
 func sourceLineRange(content string, startLine, endLine int) string {
