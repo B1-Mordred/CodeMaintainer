@@ -301,10 +301,8 @@ describe("App", () => {
     const { container } = render(<App />);
     expect(await screen.findByText("job_fixture")).toBeInTheDocument();
     expect(screen.getAllByText("Healthy", { exact: false }).length).toBeGreaterThan(0);
-    await waitFor(async () => {
-      const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
-      expect(result.violations).toEqual([]);
-    });
+    const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
+    expect(result.violations).toEqual([]);
   });
 
   it("renders the one-time administrator bootstrap without critical accessibility violations", async () => {
