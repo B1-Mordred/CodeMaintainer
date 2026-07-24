@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T09:45:00Z",
+  "surfaces": [
+    {
+      "id": "authorization-reauth-stale-edit",
+      "title": "Authorization, reauthentication, CSRF, and stale edit gates",
+      "policy": "Sensitive state changes derive identity, role, CSRF, reauthentication, and expected revisions from trusted server state; browser or CLI request bodies cannot forge them.",
+      "implementation": ["internal/auth/service.go", "internal/api/auth.go", "internal/api/config_registry.go", "internal/storage/sqlite/config_drafts.go"],
+      "tests": ["internal/auth/service_test.go", "internal/storage/sqlite/config_drafts_test.go", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health", "web/src/ConfigurationPage.tsx#configuration"],
+      "docs": ["docs/security.md", "docs/configuration.md", "docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/auth/service_test.go", "contains": ["TestServiceBootstrapLoginCSRFReauthenticationAndLogout", "CSRF rotation did not invalidate the prior token"]},
+        {"path": "internal/storage/sqlite/config_drafts_test.go", "contains": ["TestConfigDraftBecomesStaleWhenScopeChanges", "stale draft review error"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["TestRiskWaiverUsesServerSideReauthenticationContract", "reauthenticated"]}
+      ]
+    },
+    {
+      "id": "untrusted-input-command-injection",
+      "title": "Untrusted API, task, and worker packet inputs cannot select execution authority",
+      "policy": "Repository text, issue text, browser payloads, model output, and worker packets are schema bounded and cannot provide arbitrary commands, repositories, images, mounts, paths, networks, or execution modes.",
+      "implementation": ["internal/api/server.go", "internal/api/openapi.yaml", "internal/taskcontract/types.go", "cmd/maintainer-worker/main.go"],
+      "tests": ["internal/api/server_test.go", "cmd/maintainer-worker/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#jobs"],
+      "docs": ["docs/security.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/api/server_test.go", "contains": ["TestRequestBoundaryRejectsUnknownFieldsAndBadRepository", "\"command\":\"rm\"", "repository\":\"../../host"]},
+        {"path": "cmd/maintainer-worker/main_test.go", "contains": ["TestWorkerRejectsUnknownModesAndUnformattedGo", "arbitrary worker mode was accepted"]},
+        {"path": "cmd/maintainer-worker/main_test.go", "contains": ["TestWorkerPacketAndArtifactPublicationAreBoundedAndImmutable", "packet with arbitrary command was accepted"]}
+      ]
+    },
+    {
+      "id": "worker-container-isolation",
+      "title": "Worker containers remain non-root, least-privilege, mount-bounded, and network-bounded",
+      "policy": "Runnerd derives Docker create requests from server policy only and rejects downgrades before they reach the worker daemon.",
+      "implementation": ["internal/runnerd/policy.go", "internal/runnerd/docker.go", "config/examples/runner-policy.production.example.json"],
+      "tests": ["internal/runnerd/policy_test.go", "internal/runnerd/docker_test.go", "internal/runnerd/service_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#automation"],
+      "docs": ["docs/security.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/runnerd/docker_test.go", "contains": ["TestDockerExecutorTranslatesOnlyHardenedPolicyAndImplementsContract", "no-new-privileges", "CapDrop"]},
+        {"path": "internal/runnerd/docker_test.go", "contains": ["TestDockerExecutorRejectsEscapingMountAndPolicyDowngradesBeforeDaemon", "unsafe specifications reached daemon"]},
+        {"path": "internal/runnerd/service_test.go", "contains": ["image", "command", "mounts", "network", "capabilities", "environment"]}
+      ]
+    },
+    {
+      "id": "provider-ssrf-egress-fallback-cost",
+      "title": "Provider SSRF, egress, fallback, and budget controls fail closed",
+      "policy": "Provider routing rejects forbidden data classes, unsafe endpoints, disabled remotes, capability gaps, cost excess, and unsafe model download redirects before an external request can be made.",
+      "implementation": ["internal/providers/service.go", "internal/providers/types.go", "cmd/model-tool/main.go"],
+      "tests": ["internal/providers/service_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#models-agents"],
+      "docs": ["docs/model-providers.md", "docs/security.md"],
+      "proof": [
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "DataClasses: []string{\"secrets\"}"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestEndpointRejectsPrivateAddressUnlessProfileAllowsIt", "loopback"]},
+        {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect", "parsed.User != nil"]}
+      ]
+    },
+    {
+      "id": "forge-webhook-auth-replay",
+      "title": "Forge webhook authentication, exact payload identity, and replay boundaries",
+      "policy": "Webhook validation stays inside the credential-isolated Git bridge, authenticates exact bytes, keeps GitHub/GitLab validators separate, and persists replay-safe normalized outcomes.",
+      "implementation": ["internal/gitbridge/webhook.go", "internal/gitbridge/service.go", "internal/storage/sqlite/forges.go"],
+      "tests": ["internal/gitbridge/webhook_test.go", "internal/storage/sqlite/github_test.go", "internal/forges/service_test.go"],
+      "ui": ["web/src/ForgePage.tsx#forges"],
+      "docs": ["docs/forges.md", "docs/github-app.md"],
+      "proof": [
+        {"path": "internal/gitbridge/webhook_test.go", "contains": ["tampered webhook was accepted", "invalid GitLab secret token accepted"]},
+        {"path": "internal/gitbridge/webhook_test.go", "contains": ["TestWebhookMultiplexerKeepsProviderValidatorsSeparate", "gitlab-client-close-41"]},
+        {"path": "docs/forges.md", "contains": ["reject replays with different bytes", "GitHub keeps its HMAC flow"]}
+      ]
+    },
+    {
+      "id": "cross-project-memory-evaluation-isolation",
+      "title": "Project memory, cache, and evaluation namespaces do not cross trust boundaries",
+      "policy": "Project memory is filtered before ranking, restores stay same-project and quarantined, cache keys include project identity, and historical evaluation uses isolated review-only namespaces.",
+      "implementation": ["internal/storage/sqlite/memory.go", "internal/intelligence/service.go", "internal/evaluation/types.go"],
+      "tests": ["internal/storage/sqlite/memory_test.go", "internal/intelligence/service_integration_test.go", "internal/evaluation/types_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#memory-evidence", "web/src/OperatorConsole.tsx#evaluation"],
+      "docs": ["docs/memory.md", "docs/intelligence.md", "docs/evaluation.md", "docs/security.md"],
+      "proof": [
+        {"path": "internal/storage/sqlite/memory_test.go", "contains": ["cross-project lookup disclosed record", "cross-project restore returned"]},
+        {"path": "internal/evaluation/types_test.go", "contains": ["TestEvaluationValidationRejectsProjectMemoryLeakage", "project memory namespace was accepted"]},
+        {"path": "internal/intelligence/service.go", "contains": ["cache-v1\\x00", "projectID"]}
+      ]
+    },
+    {
+      "id": "archive-restore-path-safety",
+      "title": "Backup and restore archive paths are checksum-bound and root-confined",
+      "policy": "Restore validates the manifest, every file checksum, schema compatibility, and safe relative paths before staging or applying data.",
+      "implementation": ["internal/backup/manager.go"],
+      "tests": ["internal/backup/manager_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/backup-restore.md", "docs/security.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/backup/manager.go", "contains": ["pending restore contains an unsafe path", "backup manifest checksum mismatch"]},
+        {"path": "internal/backup/manager_test.go", "contains": ["TestBackupRestoreRejectsUnsafePendingPath", "../outside"]}
+      ]
+    },
+    {
+      "id": "unsafe-preview-no-mutation",
+      "title": "Repo Doctor and capability previews remain no-write until explicit reviewed acceptance",
+      "policy": "Repository-derived onboarding evidence can propose disabled changes and dry-run previews, but cannot install packs, change assignments, edit config, or mutate repositories without an explicit exact-version review.",
+      "implementation": ["internal/capabilities/service.go", "internal/capabilities/types.go", "internal/api/capabilities.go"],
+      "tests": ["internal/capabilities/service_integration_test.go", "web/src/CapabilityPage.test.tsx", "internal/api/server_test.go"],
+      "ui": ["web/src/CapabilityPage.tsx#capability-packs"],
+      "docs": ["docs/capability-packs.md", "docs/security.md"],
+      "proof": [
+        {"path": "internal/capabilities/service_integration_test.go", "contains": ["scan silently applied configuration", "unsafe dry run"]},
+        {"path": "docs/capability-packs.md", "contains": ["It does not install a pack, create an assignment", "A stale review conflicts"]}
+      ]
+    },
+    {
+      "id": "redaction-secret-suppression",
+      "title": "Secret-bearing outputs and failure evidence are redacted before storage or display",
+      "policy": "Configuration, egress, telemetry, support bundle, memory, auth, forge, Windows-worker, and policy-decision outputs retain redacted evidence instead of raw credentials, prompts, request bodies, source content, or hidden reasoning.",
+      "implementation": ["config/redaction-coverage.json", "internal/observability/types.go", "internal/storage/sqlite/policy.go"],
+      "tests": ["internal/config/redaction_coverage_test.go", "internal/observability/types_test.go", "internal/storage/sqlite/policy_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#observability"],
+      "docs": ["docs/security.md", "docs/observability.md"],
+      "proof": [
+        {"path": "config/redaction-coverage.json", "contains": ["provider-egress-manifests", "policy-decision-inputs"]},
+        {"path": "docs/security.md", "contains": ["config/redaction-coverage.json", "write-only secrets"]}
+      ]
+    }
+  ]
+}

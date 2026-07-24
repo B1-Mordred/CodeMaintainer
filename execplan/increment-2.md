@@ -65,6 +65,7 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - [ ] (2026-07-24 08:45Z) Milestone 7 DOD-11 intelligence evidence checkpoint: `config/intelligence-coverage.json` now maps seven surfaces for project-separated incremental indexing, deterministic context manifests, workflow baselines, differential verification, test-impact records, cache integrity/quota/retention, and REST/CLI/browser parity. `internal/config/intelligence_coverage_test.go` verifies required surface coverage, referenced evidence paths, and proof snippets; full acceptance remains open.
 - [ ] (2026-07-24 09:05Z) Milestone 7 DOD-13 verification-safety checkpoint: `config/verification-safety-coverage.json` now maps non-waivable newly introduced findings, mandatory final full-suite impact evidence, explicit golden-update approval, and REST/CLI/browser parity. `internal/config/verification_safety_coverage_test.go` verifies required surface coverage, evidence paths, and proof snippets; broader final acceptance remains open.
 - [ ] (2026-07-24 09:25Z) Milestone 7 DOD-14 documentation-policy checkpoint: `config/documentation-policy-coverage.json` now maps policy impact selection, source-controlled Documentation Agent generation, render/check validation blockers, fresh verification/traceability, and REST/CLI/browser parity. `internal/config/documentation_policy_coverage_test.go` verifies coverage, proof snippets, and explicit remaining documentation QC/tool-profile work.
+- [ ] (2026-07-24 09:45Z) Milestone 7 security/adversarial checkpoint: `config/security-adversarial-coverage.json` now maps authorization/reauthentication/stale-edit gates, untrusted-input injection rejection, worker container isolation, provider SSRF/egress/fallback/cost controls, forge webhook authentication, cross-project memory/evaluation isolation, backup restore path safety, no-write previews, and redaction to existing implementation/tests/docs/UI. `internal/config/security_adversarial_coverage_test.go` verifies the required coverage and proof snippets, and `internal/backup/manager_test.go` now has an explicit unsafe pending-restore path regression. Increment 2 remains active pending broader final acceptance.
 - [x] Milestone 1 — replace the single-document configuration surface with the complete typed registry, seven-scope effective-value resolver, immutable job snapshots, drafts/review/apply/rollback/import/export/dry-run/prerequisite APIs, CLI parity, and dedicated accessible workbench.
 - [x] Milestone 2 — add incremental code intelligence, deterministic Context Compiler, baseline/differential verification, test-impact analysis, isolated content-addressed caches, and their status/query/rebuild browser surfaces.
 - [x] Milestone 3 — add evidence-backed Repo Doctor onboarding, signed/checksummed capability-pack lifecycle, PHP/R/security packs, and catalog/assignment/upgrade/rollback UI.
@@ -151,6 +152,8 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: service tests reject classifying a newly introduced finding away, workflow code refuses final verification without full-suite impact evidence, golden tests require approval status, and browser/API/CLI code exposes the operations; `config/increment-2-coverage.json` still marked `I2-DOD-13` as `missing`.
 - Observation: DOD-14 had substantial implementation evidence but also known remaining scope, so a binary implemented/missing row was hiding the useful boundary.
   Evidence: the documentation policy profile, simulation API/CLI/UI, Documentation Agent manifest binding, blocked-finding conversion, fresh documentation verification, and retained manifest surfaces exist; persistent editable policy profiles, renderer/tool profile management, rich render previews, and independent documentation QC actions remain explicit work.
+- Observation: DOD-23 security/adversarial evidence was broad but scattered across package tests.
+  Evidence: authorization, request-boundary, runnerd, provider, webhook, memory, evaluation, backup, capability-preview, and redaction regressions already existed, but `config/increment-2-coverage.json` still marked `I2-28` and `I2-DOD-23` missing until the security/adversarial matrix tied those proofs together.
 
 ## Decision Log
 
@@ -198,6 +201,9 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Date/Author: 2026-07-24 / Codex
 - Decision: make DOD-14 an in-progress checked matrix with explicit known remaining work.
   Rationale: documentation policy crosses the documentation agent, workflow coordinator, API, CLI, browser, finding lifecycle, and source-controlled verification. A checked matrix proves current behavior without overstating the unfinished renderer/tool-profile and independent documentation-QC scope.
+  Date/Author: 2026-07-24 / Codex
+- Decision: treat Increment 2 security/adversarial acceptance as a checked cross-surface inventory before final acceptance.
+  Rationale: no single package owns authorization, injection, isolation, SSRF, webhook, restore, preview, and redaction behavior. A machine-readable matrix lets CI fail when a boundary loses implementation, test, documentation, or proof evidence without falsely claiming final acceptance is complete.
   Date/Author: 2026-07-24 / Codex
 - Decision: model evidence corrections, baseline updates, and targeted-test overrides as append-only review ledgers, with replacement baselines derived only from stored candidate observations.
   Rationale: original evidence stays reviewable; privileged changes are explicit, attributed, reasoned, and audited; and neither a correction nor an inner-loop override can weaken the newly-introduced-failure or fresh-full-suite safety invariants.
@@ -309,6 +315,8 @@ DOD-11 intelligence acceptance evidence is now explicit but remains part of the 
 DOD-13 verification-safety evidence is now explicit but still part of the broader open Milestone 7 final acceptance. The checked matrix covers newly introduced finding non-waiver, immutable full-suite final verification policy, explicit golden-update approval, and REST/CLI/browser parity.
 
 DOD-14 documentation-policy evidence is now explicit but remains in progress. The checked matrix covers source-controlled generation, render/check validation evidence, blocked documentation findings, fresh verification and context reuse, and REST/CLI/browser parity while preserving the remaining renderer/tool-profile and independent documentation-QC work.
+
+The security/adversarial acceptance boundary is now explicit but remains in progress. The checked matrix binds authorization, stale edits, injection, worker isolation, SSRF/egress/fallback/cost, webhook authentication, cross-project isolation, restore path safety, no-write preview, and redaction evidence to existing tests and docs while final acceptance remains open.
 
 ## Context and Orientation
 
@@ -501,3 +509,5 @@ Revision note (2026-07-24 08:45Z): added the checked DOD-11 intelligence evidenc
 Revision note (2026-07-24 09:05Z): added the checked DOD-13 verification-safety inventory. `config/verification-safety-coverage.json` maps new-failure non-waiver, final full-suite non-waiver, golden-update approval, and operator parity to existing implementation, UI, docs, and proof snippets; Increment 2 remains active pending final acceptance.
 
 Revision note (2026-07-24 09:25Z): added the checked DOD-14 documentation-policy inventory. `config/documentation-policy-coverage.json` maps policy impact selection, source-controlled documentation generation, render/check validation blockers, fresh verification/traceability, and operator parity to existing implementation, UI, docs, and proof snippets while retaining known remaining documentation QC/tool-profile work; Increment 2 remains active.
+
+Revision note (2026-07-24 09:45Z): added the checked security/adversarial inventory for `I2-28` and `I2-DOD-23`. The matrix binds authorization, reauthentication, stale-edit, injection, worker isolation, SSRF/egress/fallback/cost, webhook authentication, cross-project isolation, restore path safety, no-write preview, and redaction boundaries to existing evidence, and backup restore now has an explicit unsafe pending-path regression. Increment 2 remains active pending final acceptance.

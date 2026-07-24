@@ -8,7 +8,7 @@ Local passwords use Argon2id. Server sessions and CSRF values are random and sto
 
 Review `config/examples/runner-policy.production.example.json`, use a dedicated rootless daemon, protect all secret files with mode `0600`, keep the UI on loopback or authenticated TLS, and treat audit/history retention as security evidence.
 
-`config/redaction-coverage.json` is the checked redaction map for write-only secrets across configuration, provider egress, observability/support bundles, project memory, authentication, forge credentials, Windows-worker credentials, and policy decisions. CI verifies every listed surface has implementation, test, UI, documentation, and proof markers before `I2-DOD-07` can advance.
+`config/redaction-coverage.json` is the checked redaction map for write-only secrets across configuration, provider egress, observability/support bundles, project memory, authentication, forge credentials, Windows-worker credentials, and policy decisions. CI verifies every listed surface has implementation, test, UI, documentation, and proof markers before `I2-DOD-07` can advance. `config/security-adversarial-coverage.json` extends that release evidence across authorization/reauthentication, injection, worker isolation, SSRF/egress/fallback/cost, webhook authentication, cross-project isolation, restore path safety, and no-write preview boundaries before `I2-28` and `I2-DOD-23` can advance.
 
 ## Threat model
 
