@@ -23,6 +23,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
+	"github.com/B1-Mordred/CodeMaintainer/internal/scheduler"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
 	"github.com/B1-Mordred/CodeMaintainer/internal/windowsworker"
@@ -218,6 +219,7 @@ type Store interface {
 	documentation.Store
 	policy.Store
 	risk.Store
+	scheduler.Store
 	windowsworker.Store
 	Close() error
 }

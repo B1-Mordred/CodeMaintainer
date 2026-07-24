@@ -159,6 +159,8 @@ func run(arguments []string) error {
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/test-designer", nil)
 	case "documentation":
 		return api.documentation(arguments[1:])
+	case "scheduler":
+		return api.scheduler(arguments[1:])
 	case "policy":
 		return api.policy(arguments[1:])
 	case "golden":
@@ -166,6 +168,44 @@ func run(arguments []string) error {
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) scheduler(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl scheduler <status|decisions|simulate> ...")
+	}
+	switch arguments[0] {
+	case "status":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl scheduler status")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/scheduler/status", nil)
+	case "decisions":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl scheduler decisions")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/scheduler/decisions", nil)
+	case "simulate":
+		flags := flag.NewFlagSet("scheduler simulate", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "scheduler simulation JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl scheduler simulate --input <json-file|->")
+		}
+		raw, err := readJSONDocument(*inputFile)
+		if err != nil {
+			return err
+		}
+		var input any
+		if err := json.Unmarshal(raw, &input); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/scheduler/simulations", input)
+	default:
+		return fmt.Errorf("scheduler action %q is not implemented", arguments[0])
 	}
 }
 
@@ -1445,6 +1485,9 @@ Commands:
   documentation <job-id>
   documentation policy
   documentation simulate --input <json-file|->
+  scheduler status
+  scheduler decisions
+  scheduler simulate --input <json-file|->
   golden reports <job-id>
   golden approve|reject <report-id> <comparison-id> --reason text
   golden configure-profile <report-id> <comparison-id> --reason text --absolute <n> --relative <n> [--mask-dynamic] [--mask-selector selector]

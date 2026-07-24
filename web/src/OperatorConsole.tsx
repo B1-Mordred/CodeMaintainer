@@ -19,6 +19,10 @@ type Project = components["schemas"]["Project"];
 type MemoryRecord = components["schemas"]["MemoryRecord"];
 type Schedule = components["schemas"]["Schedule"];
 type ScheduleRun = components["schemas"]["ScheduleRun"];
+type SchedulerDecision = components["schemas"]["SchedulerDecision"];
+type SchedulerResourceProfile = components["schemas"]["SchedulerResourceProfile"];
+type SchedulerTopology = components["schemas"]["SchedulerTopology"];
+type SchedulerSimulationRequest = components["schemas"]["SchedulerSimulationRequest"];
 type SkillProposal = components["schemas"]["SkillProposal"];
 type Notification = components["schemas"]["Notification"];
 type ConfigRevision = components["schemas"]["ConfigRevision"];
@@ -67,6 +71,10 @@ function date(value?: string): string {
 
 function shortSHA(value?: string): string {
   return value ? value.slice(0, 10) : "—";
+}
+
+function gibibytes(value?: number): string {
+  return `${((value ?? 0) / 1073741824).toFixed(1)} GiB`;
 }
 
 function statusTone(value: string): "good" | "warn" | "bad" | "neutral" {
@@ -645,19 +653,53 @@ function AutomationPage({ expert }: { expert: boolean }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [runs, setRuns] = useState<ScheduleRun[]>([]);
   const [proposals, setProposals] = useState<SkillProposal[]>([]);
+  const [schedulerTopology, setSchedulerTopology] = useState<SchedulerTopology | null>(null);
+  const [schedulerProfiles, setSchedulerProfiles] = useState<SchedulerResourceProfile[]>([]);
+  const [schedulerDecisions, setSchedulerDecisions] = useState<SchedulerDecision[]>([]);
+  const [schedulerDecision, setSchedulerDecision] = useState<SchedulerDecision | null>(null);
+  const [schedulerInput, setSchedulerInput] = useState(`{
+  "mode": "quality_latency",
+  "active": [],
+  "queued": [
+    {
+      "job_id": "job_simulated",
+      "project_id": "project_simulated",
+      "state": "queued",
+      "priority": 100,
+      "profile_id": "verification_offline",
+      "created_at": "2026-07-24T02:45:00Z",
+      "reason": "operator simulation"
+    }
+  ],
+  "maintenance_window": true,
+  "fairness_window": 1
+}`);
   const [scheduleProject, setScheduleProject] = useState("");
   const [scheduleName, setScheduleName] = useState("");
   const [scheduleTask, setScheduleTask] = useState("");
   const [scheduleType, setScheduleType] = useState<"maintenance" | "sync" | "audit">("maintenance");
   const [message, setMessage] = useState("");
-  const load = useCallback(async () => { const [scheduleResult, notificationResult, requestResult, projectResult, runResult, proposalResult] = await Promise.all([api.GET("/schedules"), api.GET("/notifications"), api.GET("/automation-requests"), api.GET("/projects"), api.GET("/schedule-runs"), api.GET("/skill-proposals")]); setSchedules(scheduleResult.data?.items ?? []); setNotifications(notificationResult.data?.items ?? []); setRequests((requestResult.data as { items?: any[] } | undefined)?.items ?? []); setRuns(runResult.data?.items ?? []); setProposals(proposalResult.data?.items ?? []); const projectItems = projectResult.data?.items ?? []; setProjects(projectItems); setScheduleProject((value) => value || projectItems[0]?.id || ""); }, []);
+  const load = useCallback(async () => { const [scheduleResult, notificationResult, requestResult, projectResult, runResult, proposalResult, schedulerResult] = await Promise.all([api.GET("/schedules"), api.GET("/notifications"), api.GET("/automation-requests"), api.GET("/projects"), api.GET("/schedule-runs"), api.GET("/skill-proposals"), api.GET("/scheduler/status")]); setSchedules(scheduleResult.data?.items ?? []); setNotifications(notificationResult.data?.items ?? []); setRequests((requestResult.data as { items?: any[] } | undefined)?.items ?? []); setRuns(runResult.data?.items ?? []); setProposals(proposalResult.data?.items ?? []); setSchedulerTopology(schedulerResult.data?.topology ?? null); setSchedulerProfiles(schedulerResult.data?.profiles ?? []); setSchedulerDecisions(schedulerResult.data?.decisions ?? []); const projectItems = projectResult.data?.items ?? []; setProjects(projectItems); setScheduleProject((value) => value || projectItems[0]?.id || ""); }, []);
   useEffect(() => { void load(); }, [load]);
   const createSchedule = async (event: FormEvent) => { event.preventDefault(); const now = new Date(Date.now() + 60000).toISOString(); const response = await api.POST("/schedules", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { project_id: scheduleProject, name: scheduleName, task_type: scheduleType, task: scheduleTask, interval_seconds: 86400, window_start_minute: 0, window_end_minute: 1439, max_wall_seconds: 3600, max_tokens: 100000, enabled: true, next_run_at: now } }); setMessage(response.data ? `Created schedule ${response.data.name}.` : "Schedule creation failed."); if (response.data) { setScheduleName(""); setScheduleTask(""); await load(); } };
+  const simulateScheduler = async () => { let input: SchedulerSimulationRequest; try { const parsed = JSON.parse(schedulerInput); if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required"); input = parsed as SchedulerSimulationRequest; } catch { setMessage("Scheduler simulation input must be a JSON object."); return; } const response = await api.POST("/scheduler/simulations", { body: input }); setSchedulerDecision(response.data?.decision ?? null); setMessage(response.data ? `${label(response.data.decision.status)}: ${response.data.decision.reason}` : "Scheduler simulation failed."); if (response.data) await load(); };
   const readNotification = async (item: Notification) => { const response = await api.POST("/notifications/{notificationID}/actions/read", { params: { path: { notificationID: item.id }, header: { "X-CSRF-Token": getCSRFToken() } } }); if (response.data) await load(); };
   const reviewProposal = async (proposal: SkillProposal, decision: "approve" | "reject") => { const response = await api.POST("/skill-proposals/{proposalID}/actions/review", { params: { path: { proposalID: proposal.id }, header: { "X-CSRF-Token": getCSRFToken() } }, body: { decision, rationale: `${label(decision)} through the authenticated operator console.`, expected_version: proposal.version } }); setMessage(response.data ? `${label(decision)} recorded; proposals remain inert until separately installed.` : "Proposal review failed."); await load(); };
   return <>
     <PageIntro>Automation is serial, budgeted, maintenance-window constrained, and non-authoritative. Hermes may request review but cannot approve publication.</PageIntro>
-    <div className="metrics-grid"><Metric icon={<FileClock aria-hidden="true" />} name="Schedules" value={String(schedules.length)} detail={`${schedules.filter((item) => item.enabled).length} enabled`} /><Metric icon={<Bell aria-hidden="true" />} name="Unread inbox" value={String(notifications.filter((item) => item.state === "delivered").length)} detail="Durable local notifications" /><Metric icon={<ShieldCheck aria-hidden="true" />} name="Approval requests" value={String(requests.length)} detail="No authority conferred" /><Metric icon={<TimerReset aria-hidden="true" />} name="Queue policy" value="Serial" detail="Per-project recurring work" /></div>
+    <div className="metrics-grid"><Metric icon={<FileClock aria-hidden="true" />} name="Schedules" value={String(schedules.length)} detail={`${schedules.filter((item) => item.enabled).length} enabled`} /><Metric icon={<Bell aria-hidden="true" />} name="Unread inbox" value={String(notifications.filter((item) => item.state === "delivered").length)} detail="Durable local notifications" /><Metric icon={<ShieldCheck aria-hidden="true" />} name="Approval requests" value={String(requests.length)} detail="No authority conferred" /><Metric icon={<TimerReset aria-hidden="true" />} name="Scheduler profiles" value={String(schedulerProfiles.length)} detail={`${schedulerDecisions.length} retained decision(s)`} /></div>
+    <Section title="Resource scheduler" eyebrow="Topology, profiles, and simulation" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      <div className="card-grid">
+        <article className="resource-card"><div className="resource-title"><Cpu aria-hidden="true" /><div><h3>{schedulerTopology?.host_id ?? "Unknown host"}</h3><p>Advisory capacity snapshot</p></div><Badge value={schedulerTopology?.thermal_state ?? "unknown"} /></div><dl><div><dt>CPU</dt><dd>{schedulerTopology ? `${schedulerTopology.physical_cores} physical / ${schedulerTopology.logical_cores} logical` : "—"}</dd></div><div><dt>Memory</dt><dd>{gibibytes(schedulerTopology?.total_memory_bytes)} total</dd></div><div><dt>Reserved</dt><dd>{gibibytes(schedulerTopology?.reserved_memory_bytes)}</dd></div><div><dt>I/O pressure</dt><dd>{schedulerTopology?.io_pressure ?? "—"}</dd></div></dl></article>
+        <article className="resource-card"><div className="resource-title"><MemoryStick aria-hidden="true" /><div><h3>Safe profiles</h3><p>Bounded runner, model, memory, CPU, and network envelopes</p></div><Badge value="advisory" /></div>{schedulerProfiles.length === 0 ? <p>No resource profiles returned.</p> : <dl>{schedulerProfiles.map((profile) => <div key={profile.id}><dt>{profile.id}</dt><dd>{profile.cpu_cores} CPU · {gibibytes(profile.memory_bytes)} · {profile.network}</dd></div>)}</dl>}</article>
+      </div>
+      <div className="two-column">
+        <div><label>Queue simulation JSON<textarea rows={14} value={schedulerInput} onChange={(event) => setSchedulerInput(event.target.value)} /></label><button type="button" onClick={() => void simulateScheduler()}>Simulate scheduler decision</button></div>
+        <div>{schedulerDecision ? <article className="resource-card"><div className="resource-title"><TimerReset aria-hidden="true" /><div><h3>{schedulerDecision.selected_job_id || "No job selected"}</h3><p>{schedulerDecision.reason}</p></div><Badge value={schedulerDecision.status} /></div><dl><div><dt>Mode</dt><dd>{label(schedulerDecision.mode)}</dd></div><div><dt>Profile</dt><dd>{schedulerDecision.selected_profile_id || "—"}</dd></div><div><dt>Co-residence</dt><dd>{schedulerDecision.co_residence_safe ? "Safe" : "Unsafe"}</dd></div><div><dt>Fairness</dt><dd>{schedulerDecision.fairness_applied ? "Applied" : "Not applied"}</dd></div></dl><details open><summary>Decision evidence</summary><pre>{JSON.stringify(schedulerDecision, null, 2)}</pre></details></article> : <Empty title="No simulation run in this session" detail="Run a simulation to retain an auditable scheduling recommendation." />}</div>
+      </div>
+      <details><summary>Recent scheduler decision history</summary>{schedulerDecisions.length === 0 ? <p>No retained scheduler decisions.</p> : <div className="audit-list">{schedulerDecisions.slice(0, 30).map((decision) => <div key={decision.id}><time>{date(decision.created_at)}</time><strong>{decision.selected_job_id || decision.status}</strong><span>{label(decision.mode)} · {decision.reason}</span></div>)}</div>}</details>
+      <p className="expert-note">This checkpoint records advisory decisions and unsafe co-residence deferrals. It does not yet replace the live durable lease dispatcher.</p>
+    </Section>
     <Section title="Create recurring work" eyebrow="Bounded automation"><form className="inline-form" onSubmit={(event) => void createSchedule(event)}><label>Project<select required value={scheduleProject} onChange={(event) => setScheduleProject(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.repository}</option>)}</select></label><label>Name<input required maxLength={128} value={scheduleName} onChange={(event) => setScheduleName(event.target.value)} /></label><label>Task type<select value={scheduleType} onChange={(event) => setScheduleType(event.target.value as typeof scheduleType)}><option value="maintenance">Maintenance</option><option value="sync">Sync</option><option value="audit">Audit</option></select></label><label>Task<input required maxLength={65536} value={scheduleTask} onChange={(event) => setScheduleTask(event.target.value)} /></label><button type="submit" disabled={!scheduleProject}>Create daily schedule</button></form>{message && <p className="inline-message" role="status">{message}</p>}<p className="expert-note">Safe defaults: daily, UTC all-day window, one-hour wall budget, and 100,000 tokens. Versioned expert editing remains API-driven.</p></Section>
     <Section title="Recurring schedules" eyebrow="UTC maintenance windows">{schedules.length === 0 ? <Empty title="No recurring work configured" detail="Create maintenance, synchronization, or audit schedules with explicit wall-time and token budgets." /> : <div className="card-grid">{schedules.map((schedule) => <article className="resource-card" key={schedule.id}><div className="resource-title"><FileClock aria-hidden="true" /><div><h3>{schedule.name}</h3><p>{schedule.project_id}</p></div><Badge value={schedule.enabled ? "enabled" : "disabled"} /></div><p>{schedule.task}</p><dl><div><dt>Task type</dt><dd>{label(schedule.task_type)}</dd></div><div><dt>Next run</dt><dd>{date(schedule.next_run_at)}</dd></div><div><dt>Budget</dt><dd>{schedule.max_wall_seconds}s / {schedule.max_tokens} tokens</dd></div></dl></article>)}</div>}</Section>
     <Section title="Operator inbox" eyebrow="Notifications" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>{notifications.length === 0 ? <Empty title="Inbox is clear" detail="Schedule outcomes and jobs requiring attention appear here transactionally." /> : <div className="notification-list">{notifications.map((item) => <article key={item.id}><Bell aria-hidden="true" /><div><strong>{item.title}</strong><p>{item.message}</p><time>{date(item.created_at)}</time></div><Badge value={item.state} />{item.state === "delivered" && <button className="tertiary-button" type="button" onClick={() => void readNotification(item)}>Mark read</button>}</article>)}</div>}</Section>

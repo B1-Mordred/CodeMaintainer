@@ -30,6 +30,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/scheduler"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
 	"github.com/B1-Mordred/CodeMaintainer/internal/testdesigner"
@@ -755,6 +756,58 @@ func TestNotificationInboxListsAndAcknowledgesDeliveredEvents(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || read.State != "read" {
 		t.Fatalf("notification acknowledgement returned %d: %#v", response.StatusCode, read)
+	}
+}
+
+func TestSchedulerStatusSimulationAndDecisionHistoryAreExposed(t *testing.T) {
+	server, _ := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/scheduler/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status struct {
+		Topology  scheduler.Topology          `json:"topology"`
+		Profiles  []scheduler.ResourceProfile `json:"profiles"`
+		Modes     []string                    `json:"modes"`
+		Decisions []scheduler.Decision        `json:"decisions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || status.Topology.HostID == "" || len(status.Profiles) == 0 || len(status.Modes) != 2 {
+		t.Fatalf("scheduler status returned %d: %#v", response.StatusCode, status)
+	}
+
+	payload := `{"mode":"quality_latency","active":[],"queued":[{"job_id":"job_sched_api","project_id":"project_sched","state":"queued","priority":100,"profile_id":"verification_offline","created_at":"2026-07-24T02:45:00Z","reason":"api regression"}],"maintenance_window":true,"fairness_window":1}`
+	simulation, err := http.Post(server.URL+"/api/v1/scheduler/simulations", "application/json", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var simulated struct {
+		Decision scheduler.Decision `json:"decision"`
+	}
+	if err := json.NewDecoder(simulation.Body).Decode(&simulated); err != nil {
+		t.Fatal(err)
+	}
+	simulation.Body.Close()
+	if simulation.StatusCode != http.StatusCreated || simulated.Decision.ID == "" || simulated.Decision.SelectedJobID != "job_sched_api" {
+		t.Fatalf("scheduler simulation returned %d: %#v", simulation.StatusCode, simulated)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/scheduler/decisions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var history struct {
+		Decisions []scheduler.Decision `json:"decisions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&history); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(history.Decisions) != 1 || history.Decisions[0].SelectedJobID != "job_sched_api" {
+		t.Fatalf("scheduler history returned %d: %#v", response.StatusCode, history)
 	}
 }
 

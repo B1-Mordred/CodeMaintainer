@@ -999,6 +999,58 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/ScheduleRun" } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /scheduler/status:
+    get:
+      summary: Show scheduler topology, safe resource profiles, supported modes, and recent decisions
+      operationId: getSchedulerStatus
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 20 } }
+      responses:
+        "200":
+          description: Advisory scheduler status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SchedulerStatus" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /scheduler/simulations:
+    post:
+      summary: Simulate one scheduler decision and retain the audited reason
+      operationId: simulateScheduler
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SchedulerSimulationRequest" } } }
+      responses:
+        "201":
+          description: Retained advisory scheduler decision
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [decision]
+                properties:
+                  decision: { $ref: "#/components/schemas/SchedulerDecision" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /scheduler/decisions:
+    get:
+      summary: List retained scheduler simulation decisions newest first
+      operationId: listSchedulerDecisions
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Retained scheduler decisions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [decisions]
+                properties:
+                  decisions: { type: array, items: { $ref: "#/components/schemas/SchedulerDecision" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /skill-proposals:
     get:
       summary: List inert Hermes skill proposals and administrator decisions
@@ -1677,6 +1729,7 @@ paths:
                 required: [profile]
                 properties:
                   profile: { $ref: "#/components/schemas/DocumentationPolicyProfile" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /documentation/policy/simulations:
     post:
       summary: Simulate documentation policy impact for bounded change evidence
@@ -3518,6 +3571,100 @@ components:
         reason: { type: string }
         due_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
+    SchedulerTopology:
+      type: object
+      additionalProperties: false
+      required: [host_id, physical_cores, logical_cores, total_memory_bytes, reserved_memory_bytes, io_pressure, thermal_state]
+      properties:
+        host_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        physical_cores: { type: integer, minimum: 1, maximum: 1024 }
+        logical_cores: { type: integer, minimum: 1, maximum: 2048 }
+        total_memory_bytes: { type: integer, minimum: 1073741824 }
+        reserved_memory_bytes: { type: integer, minimum: 0 }
+        io_pressure: { type: string, enum: [normal, elevated, high] }
+        thermal_state: { type: string, enum: [unknown, normal, hot] }
+    SchedulerResourceProfile:
+      type: object
+      additionalProperties: false
+      required: [id, kind, cpu_cores, memory_bytes, network]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        kind: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        cpu_cores: { type: integer, minimum: 1, maximum: 1024 }
+        memory_bytes: { type: integer, minimum: 1048576 }
+        model_id: { type: string }
+        runner_id: { type: string }
+        network: { type: string, enum: [none, offline, inference_only, dependency_egress] }
+    SchedulerQueueItem:
+      type: object
+      additionalProperties: false
+      required: [job_id, project_id, state, priority, profile_id, created_at, reason]
+      properties:
+        job_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        project_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+        state: { type: string, minLength: 1, maxLength: 128 }
+        priority: { type: integer, minimum: 0, maximum: 1000 }
+        profile_id: { type: string }
+        created_at: { type: string, format: date-time }
+        deadline_at: { type: string, format: date-time }
+        model_id: { type: string }
+        runner_id: { type: string }
+        reason: { type: string, maxLength: 4000 }
+    SchedulerSimulationRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, active, queued, maintenance_window, fairness_window]
+      properties:
+        mode: { type: string, enum: [quality_latency, throughput_batching] }
+        topology: { $ref: "#/components/schemas/SchedulerTopology" }
+        profiles:
+          type: array
+          maxItems: 64
+          items: { $ref: "#/components/schemas/SchedulerResourceProfile" }
+        active:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/SchedulerQueueItem" }
+        queued:
+          type: array
+          maxItems: 256
+          items: { $ref: "#/components/schemas/SchedulerQueueItem" }
+        maintenance_window: { type: boolean }
+        fairness_window: { type: integer, minimum: 0, maximum: 1000 }
+    SchedulerDecision:
+      type: object
+      additionalProperties: false
+      required: [id, mode, status, reason, rejected_job_ids, deferred_job_ids, co_residence_safe, fairness_applied, resource_summary, created_at]
+      properties:
+        id: { type: string }
+        mode: { type: string, enum: [quality_latency, throughput_batching] }
+        selected_job_id: { type: string }
+        selected_project_id: { type: string }
+        selected_profile_id: { type: string }
+        status: { type: string, enum: [scheduled, deferred, rejected] }
+        reason: { type: string }
+        rejected_job_ids: { type: array, maxItems: 256, items: { type: string } }
+        deferred_job_ids: { type: array, maxItems: 256, items: { type: string } }
+        co_residence_safe: { type: boolean }
+        fairness_applied: { type: boolean }
+        model_batch_group: { type: string }
+        resource_summary: { type: string }
+        created_at: { type: string, format: date-time }
+    SchedulerStatus:
+      type: object
+      additionalProperties: false
+      required: [topology, profiles, modes, decisions]
+      properties:
+        topology: { $ref: "#/components/schemas/SchedulerTopology" }
+        profiles:
+          type: array
+          items: { $ref: "#/components/schemas/SchedulerResourceProfile" }
+        modes:
+          type: array
+          items: { type: string, enum: [quality_latency, throughput_batching] }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/SchedulerDecision" }
     SkillProposalInput:
       type: object
       additionalProperties: false

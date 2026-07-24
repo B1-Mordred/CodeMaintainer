@@ -1074,6 +1074,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scheduler/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show scheduler topology, safe resource profiles, supported modes, and recent decisions */
+        get: operations["getSchedulerStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scheduler/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate one scheduler decision and retain the audited reason */
+        post: operations["simulateScheduler"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scheduler/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained scheduler simulation decisions newest first */
+        get: operations["listSchedulerDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skill-proposals": {
         parameters: {
             query?: never;
@@ -3466,6 +3517,76 @@ export interface components {
             due_at: string;
             /** Format: date-time */
             created_at: string;
+        };
+        SchedulerTopology: {
+            host_id: string;
+            physical_cores: number;
+            logical_cores: number;
+            total_memory_bytes: number;
+            reserved_memory_bytes: number;
+            /** @enum {string} */
+            io_pressure: "normal" | "elevated" | "high";
+            /** @enum {string} */
+            thermal_state: "unknown" | "normal" | "hot";
+        };
+        SchedulerResourceProfile: {
+            id: string;
+            kind: string;
+            cpu_cores: number;
+            memory_bytes: number;
+            model_id?: string;
+            runner_id?: string;
+            /** @enum {string} */
+            network: "none" | "offline" | "inference_only" | "dependency_egress";
+        };
+        SchedulerQueueItem: {
+            job_id: string;
+            project_id: string;
+            state: string;
+            priority: number;
+            profile_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deadline_at?: string;
+            model_id?: string;
+            runner_id?: string;
+            reason: string;
+        };
+        SchedulerSimulationRequest: {
+            /** @enum {string} */
+            mode: "quality_latency" | "throughput_batching";
+            topology?: components["schemas"]["SchedulerTopology"];
+            profiles?: components["schemas"]["SchedulerResourceProfile"][];
+            active: components["schemas"]["SchedulerQueueItem"][];
+            queued: components["schemas"]["SchedulerQueueItem"][];
+            maintenance_window: boolean;
+            fairness_window: number;
+        };
+        SchedulerDecision: {
+            id: string;
+            /** @enum {string} */
+            mode: "quality_latency" | "throughput_batching";
+            selected_job_id?: string;
+            selected_project_id?: string;
+            selected_profile_id?: string;
+            /** @enum {string} */
+            status: "scheduled" | "deferred" | "rejected";
+            reason: string;
+            rejected_job_ids: string[];
+            deferred_job_ids: string[];
+            co_residence_safe: boolean;
+            fairness_applied: boolean;
+            model_batch_group?: string;
+            resource_summary: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        SchedulerStatus: {
+            topology: components["schemas"]["SchedulerTopology"];
+            profiles: components["schemas"]["SchedulerResourceProfile"][];
+            modes: ("quality_latency" | "throughput_batching")[];
+            decisions: components["schemas"]["SchedulerDecision"][];
         };
         SkillProposalInput: {
             name: string;
@@ -6687,6 +6808,83 @@ export interface operations {
             403: components["responses"]["ErrorResponse"];
         };
     };
+    getSchedulerStatus: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Advisory scheduler status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerStatus"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    simulateScheduler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SchedulerSimulationRequest"];
+            };
+        };
+        responses: {
+            /** @description Retained advisory scheduler decision */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        decision: components["schemas"]["SchedulerDecision"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    listSchedulerDecisions: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retained scheduler decisions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        decisions: components["schemas"]["SchedulerDecision"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
     listSkillProposals: {
         parameters: {
             query?: never;
@@ -7708,6 +7906,7 @@ export interface operations {
                     };
                 };
             };
+            403: components["responses"]["ErrorResponse"];
         };
     };
     simulateDocumentationPolicy: {

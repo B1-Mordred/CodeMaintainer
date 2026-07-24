@@ -298,6 +298,57 @@ func TestDocumentationCLIListsJobManifests(t *testing.T) {
 	}
 }
 
+func TestSchedulerCLIExposesStatusDecisionsAndSimulation(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if body["mode"] != "quality_latency" || body["maintenance_window"] != true {
+				t.Errorf("unexpected simulation body %#v", body)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/scheduler/status":
+			_, _ = w.Write([]byte(`{"topology":{"host_id":"local","physical_cores":1,"logical_cores":1,"total_memory_bytes":1073741824,"reserved_memory_bytes":0,"io_pressure":"normal","thermal_state":"unknown"},"profiles":[],"modes":["quality_latency"],"decisions":[]}`))
+		case "/api/v1/scheduler/decisions":
+			_, _ = w.Write([]byte(`{"decisions":[]}`))
+		case "/api/v1/scheduler/simulations":
+			_, _ = w.Write([]byte(`{"decision":{"id":"scheduler_one","mode":"quality_latency","status":"scheduled","reason":"test","rejected_job_ids":[],"deferred_job_ids":[],"co_residence_safe":true,"fairness_applied":false,"resource_summary":"test","created_at":"2026-07-24T00:00:00Z"}}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("MAINTAINER_URL", server.URL)
+	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
+	if err := run([]string{"scheduler", "status"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"scheduler", "decisions"}); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "scheduler.json")
+	if err := os.WriteFile(input, []byte(`{"mode":"quality_latency","active":[],"queued":[],"maintenance_window":true,"fairness_window":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"scheduler", "simulate", "--input", input}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET /api/v1/scheduler/status",
+		"GET /api/v1/scheduler/decisions",
+		"POST /api/v1/scheduler/simulations",
+	}
+	if strings.Join(requests, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests = %#v", requests)
+	}
+}
+
 func TestGoldenCLIListsReportsAndApprovesUpdates(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
