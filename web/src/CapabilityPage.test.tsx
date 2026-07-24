@@ -414,9 +414,8 @@ describe("CapabilityPage", () => {
         "Reproducible R checks and numerical golden comparisons.",
       ),
     ).toBeInTheDocument();
-    expect(await screen.findByLabelText(/Absolute tolerance/)).toHaveValue(
-      0.01,
-    );
+    const absoluteTolerance = await screen.findByLabelText(/Absolute tolerance/);
+    await waitFor(() => expect(absoluteTolerance).toHaveValue(0.01));
     expect(screen.getByLabelText(/Golden dataset reference/)).toHaveValue(
       "tests/golden",
     );
@@ -424,7 +423,7 @@ describe("CapabilityPage", () => {
     expect(
       screen.getByLabelText("R statistical comparison profile"),
     ).toHaveTextContent("review-required");
-    fireEvent.change(screen.getByLabelText(/Absolute tolerance/), {
+    fireEvent.change(absoluteTolerance, {
       target: { value: "0.02" },
     });
     fireEvent.change(screen.getByLabelText("Audited reason"), {

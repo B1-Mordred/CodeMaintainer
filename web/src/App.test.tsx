@@ -80,6 +80,92 @@ const evidenceGraph = {
 const projects = {
   items: [{ id: "owner-repo", provider: "local", repository: "owner/repo", default_branch: "main", local_remote_name: "fixture.git", enabled: true, created_at: "2026-07-20T09:00:00Z", updated_at: "2026-07-20T09:00:00Z" }],
 };
+const documentationPolicyProfile = {
+  profile: {
+    id: "documentation-policy-default",
+    version: "documentation-policy-v1",
+    summary: "Public API and CLI changes require source-controlled docs, render checks, and reviewer gates.",
+    rules: [{
+      id: "public-api-cli-docs",
+      name: "Public API and CLI docs",
+      description: "Require API, CLI, changelog, and troubleshooting documentation for public surfaces.",
+      match: { paths: ["internal/api/**", "cmd/**"], change_classes: ["public_api", "cli"], risk_levels: ["medium", "high"], languages: ["go"], capability_packs: [], labels: [] },
+      documents: ["docs/api.md", "docs/operations.md"],
+      render_targets: ["html"],
+      checks: ["links", "openapi"],
+      reviewer_roles: ["reviewer"],
+      publication_gate: true,
+      source_of_truth: "git",
+      publication_target: "repository",
+    }],
+    tool_profile: { id: "documentation-tools-default", render_targets: ["html"], checks: ["links", "anchors", "openapi"], preview_modes: ["side_by_side"] },
+  },
+};
+const documentationSimulation = {
+  simulation: {
+    profile_id: "documentation-policy-default",
+    profile_version: "documentation-policy-v1",
+    matched_rules: documentationPolicyProfile.profile.rules,
+    requirements: [{ id: "DOC-API", document: "docs/api.md", reason: "public API changed", required: true, source: "policy" }],
+    checks: [{ id: "DOC-LINKS", kind: "links", target: "docs/api.md", status: "passed", summary: "links validated" }],
+    render_targets: ["html"],
+    reviewer_roles: ["reviewer"],
+    publication_gates: ["documentation_qc"],
+    source_mappings: [{ path: "internal/api/openapi.yaml", summary: "OpenAPI changed", source_hash: "1".repeat(64), documents: ["docs/api.md"] }],
+    policy_summary: "Documentation required for public API and CLI surfaces.",
+    publication_ready: false,
+    no_documentation_required: false,
+  },
+};
+const documentationManifest = {
+  id: "docmanifest_fixture", job_id: "job_fixture", schema_version: 1, project_id: "owner-repo",
+  contract_sha256: "1".repeat(64), risk_level: "medium", result_sha: "2".repeat(40),
+  source_context: "documentation agent fixture", policy_version: "documentation-policy-v1",
+  requirements: documentationSimulation.simulation.requirements,
+  changes: documentationSimulation.simulation.source_mappings,
+  checks: documentationSimulation.simulation.checks,
+  unsupported_claims: [],
+  edits: [{ path: "docs/observability.md", content: "updated docs", expected_sha256: "3".repeat(64) }],
+  status: "changes_applied", policy_summary: "Documentation required for public API and CLI surfaces.",
+  created_at: "2026-07-24T06:30:00Z",
+};
+const documentationFinding = {
+  job_id: "job_fixture", id: "finding_doc_fixture", severity: "must_fix", category: "documentation.links",
+  claim: "Documentation link validation must be retained.", location: { path: "docs/observability.md" },
+  required_resolution: "Retain passing link validation evidence.", verification_method: "documentation_qc",
+  status: "open", first_seen_cycle: 1, last_seen_cycle: 1, version: 1,
+  created_at: "2026-07-24T06:31:00Z", updated_at: "2026-07-24T06:31:00Z",
+};
+const securityFinding = {
+  job_id: "job_fixture", id: "finding_security_fixture", severity: "blocker", category: "security.sbom",
+  claim: "SBOM release diff must be reviewed before publication.", location: { artifact: "sbom-diff" },
+  required_resolution: "Review the SBOM diff or record an expiring suppression.", verification_method: "sbom-release-diff",
+  status: "open", first_seen_cycle: 1, last_seen_cycle: 1, version: 1,
+  created_at: "2026-07-24T06:32:00Z", updated_at: "2026-07-24T06:32:00Z",
+};
+const securityManifest = {
+  schema_version: 1,
+  id: "sbom-fmea-security",
+  name: "SBOM, FMEA, and security",
+  version: "1.0.0",
+  checksum_sha256: "d".repeat(64),
+  description: "Selectable security evidence.",
+  languages: ["mixed"],
+  compatibility: { controller_constraint: ">=2.0.0", platforms: ["linux/amd64"] },
+  prerequisites: [],
+  detection_rules: [],
+  runner_profile_ids: ["security-verify"],
+  operation_classes: ["syft-sbom", "sbom-diff"],
+  parser_ids: ["sbom-v1"],
+  policy_fragments: [],
+  context_selectors: [],
+  risk_rules: [],
+  documentation_rules: [],
+  workflow_changes: [{ stage: "verify", operation_id: "syft-sbom", required: true, description: "Generate pinned SBOM evidence." }],
+  ui_schema: [{ key: "scanner.syft", label: "Syft SBOM", kind: "boolean", default: true, help: "Generate a pinned SBOM." }],
+  rehearsals: [{ id: "sbom-release-diff", kind: "security", operation_id: "sbom-diff", artifact_kinds: ["sbom-diff"], comparison_class: "structured", approval_policy: "release-review" }],
+};
+const jobDetail = { ...jobs.items[0], transitions: [], phases: [], findings: [documentationFinding, securityFinding], documentation_manifests: [documentationManifest] };
 const evaluationDatasets = {
   items: [{
     id: "evaldataset_fixture", schema_version: 1, project_id: "owner-repo", name: "Historical fixture sample",
@@ -140,6 +226,9 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/system/status") return jsonResponse(status);
   if (path === "/api/v1/jobs") return jsonResponse(jobs);
   if (path === "/api/v1/projects") return jsonResponse(projects);
+  if (path === "/api/v1/capability-packs") return jsonResponse({ items: [securityManifest] });
+  if (path === "/api/v1/documentation/policy/profile") return jsonResponse(documentationPolicyProfile);
+  if (path === "/api/v1/documentation/policy/simulations") return jsonResponse(documentationSimulation);
   if (path === "/api/v1/models") return jsonResponse({ items: [], status: { state: "unloaded", profile_id: "", memory_bytes: 0, prompt_tokens_second: 0, decode_tokens_second: 0 } });
   if (path === "/api/v1/models/runtime-benchmarks") return jsonResponse(runtimeBenchmarks);
   if (path === "/api/v1/model-providers/status") return jsonResponse(providerStatus);
@@ -151,7 +240,7 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/observability/status") return jsonResponse(observabilityStatus);
   if (path === "/api/v1/observability/events") return request.method === "POST" ? new Response(JSON.stringify({ event: observabilityEvent }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse({ items: [observabilityEvent] });
   if (path === "/api/v1/observability/support-bundles") return request.method === "POST" ? new Response(JSON.stringify({ bundle: supportBundle }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse({ items: [supportBundle] });
-  if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
+  if (path === "/api/v1/jobs/job_fixture") return jsonResponse(jobDetail);
   if (path === "/api/v1/jobs/job_fixture/artifacts") return jsonResponse({ items: [{ id: "artifact_fixture", job_id: "job_fixture", project_id: "owner-repo", sha256: "3".repeat(64), bytes: 16, kind: "command_result", media_type: "application/json", producer: "verifier", metadata: {}, created_at: "2026-07-24T05:00:00Z" }] });
   if (path === "/api/v1/jobs/job_fixture/evidence-graph") return jsonResponse(evidenceGraph);
   return new Response(JSON.stringify({ error: { code: "unmocked", message: path } }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -232,6 +321,40 @@ describe("App", () => {
     expect((await screen.findAllByText(/9999999999999999/)).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Create redacted support bundle" }));
     expect(await screen.findByText(/operator export review/)).toBeInTheDocument();
+    const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
+    expect(result.violations).toEqual([]);
+  });
+
+  it("exposes the required seventeen operational dashboard areas", async () => {
+    render(<App />);
+    const labels = [
+      "Setup and health", "Repositories", "Capability packs", "Jobs", "Quality", "Documentation",
+      "Code intelligence", "Forges", "Runners and Windows", "Models and agents", "Scheduling and resources",
+      "Policy and risk", "Security and SBOM", "Evaluation", "Memory and evidence", "Observability", "Configuration",
+    ];
+    for (const label of labels) {
+      expect((await screen.findAllByRole("button", { name: label })).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("shows documentation operations as a dedicated page", async () => {
+    const { container } = render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Documentation" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Documentation policy workbench" })).toBeInTheDocument();
+    expect(await screen.findByText("docmanifest_fixture")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Simulate documentation impact" }));
+    expect((await screen.findAllByText(/Documentation required for public API and CLI surfaces/)).length).toBeGreaterThan(0);
+    const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
+    expect(result.violations).toEqual([]);
+  });
+
+  it("shows security and SBOM operations as a dedicated page", async () => {
+    const { container } = render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Security and SBOM" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Security and SBOM scan profiles" })).toBeInTheDocument();
+    expect(await screen.findByText("SBOM, FMEA, and security")).toBeInTheDocument();
+    expect((await screen.findAllByText("sbom-release-diff")).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/SBOM release diff must be reviewed/)).toBeInTheDocument();
     const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
     expect(result.violations).toEqual([]);
   });

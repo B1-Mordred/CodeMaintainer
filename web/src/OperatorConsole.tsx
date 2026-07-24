@@ -2,7 +2,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import {
   Activity, Bell, BookOpen, Boxes, BrainCircuit, CheckCircle2, ChevronRight,
   CircleDot, ClipboardCheck, Cpu, Database, FileClock, FolderGit2,
-  Gauge, GitBranch, HardDrive, ListChecks, MemoryStick, MonitorCog, RefreshCw, Settings,
+  Gauge, GitBranch, HardDrive, ListChecks, MemoryStick, MonitorCog, RefreshCw,
   ShieldCheck, SlidersHorizontal, TerminalSquare, TimerReset, Users,
 } from "lucide-react";
 import { api, getCSRFToken } from "./api/client";
@@ -45,35 +45,37 @@ type EvaluationLaunchRunRequest = components["schemas"]["EvaluationLaunchRunRequ
 type ObservabilityEvent = components["schemas"]["ObservabilityEvent"];
 type ObservabilityStatus = components["schemas"]["ObservabilityStatus"];
 type SupportBundle = components["schemas"]["SupportBundle"];
+type CapabilityManifest = components["schemas"]["CapabilityManifest"];
 type PolicyBundle = components["schemas"]["PolicyBundle"];
 type PolicyActivation = components["schemas"]["PolicyActivation"];
 type PolicySimulation = components["schemas"]["PolicySimulation"];
 type PolicyTestCase = components["schemas"]["PolicyTestCase"];
 type PolicyTestRun = components["schemas"]["PolicyTestRun"];
 type TestDesignerReport = components["schemas"]["TestDesignerReport"];
+type DocumentationManifest = components["schemas"]["DocumentationManifest"];
 type DocumentationPolicyProfile = components["schemas"]["DocumentationPolicyProfile"];
 type DocumentationPolicySimulationResult = components["schemas"]["DocumentationPolicySimulationResult"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "evaluation" | "observability" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
+type PageID = "setup-health" | "repositories" | "capability-packs" | "jobs" | "quality" | "documentation" | "code-intelligence" | "forges" | "runners-windows" | "models-agents" | "scheduling-resources" | "policy-risk" | "security-sbom" | "evaluation" | "memory-evidence" | "observability" | "configuration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
-  { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
-  { id: "overview", label: "Overview", icon: <Gauge aria-hidden="true" />, group: "operate" },
-  { id: "projects", label: "Projects", icon: <FolderGit2 aria-hidden="true" />, group: "operate" },
-  { id: "onboarding", label: "Onboarding & packs", icon: <Boxes aria-hidden="true" />, group: "operate" },
+  { id: "setup-health", label: "Setup and health", icon: <ListChecks aria-hidden="true" />, group: "operate" },
+  { id: "repositories", label: "Repositories", icon: <FolderGit2 aria-hidden="true" />, group: "operate" },
+  { id: "capability-packs", label: "Capability packs", icon: <Boxes aria-hidden="true" />, group: "operate" },
   { id: "jobs", label: "Jobs", icon: <TerminalSquare aria-hidden="true" />, group: "operate" },
-  { id: "quality", label: "QC / QA", icon: <ClipboardCheck aria-hidden="true" />, group: "operate" },
-  { id: "policy", label: "Policy", icon: <ShieldCheck aria-hidden="true" />, group: "operate" },
-  { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
-  { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
-  { id: "evaluation", label: "Evaluation", icon: <ClipboardCheck aria-hidden="true" />, group: "integrate" },
-  { id: "observability", label: "Observability", icon: <Activity aria-hidden="true" />, group: "integrate" },
-  { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
-  { id: "forges", label: "Git forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
-  { id: "windows-workers", label: "Windows workers", icon: <MonitorCog aria-hidden="true" />, group: "integrate" },
-  { id: "automation", label: "Scheduling / Hermes", icon: <FileClock aria-hidden="true" />, group: "integrate" },
+  { id: "quality", label: "Quality", icon: <ClipboardCheck aria-hidden="true" />, group: "operate" },
+  { id: "documentation", label: "Documentation", icon: <BookOpen aria-hidden="true" />, group: "operate" },
+  { id: "code-intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
+  { id: "forges", label: "Forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
+  { id: "runners-windows", label: "Runners and Windows", icon: <MonitorCog aria-hidden="true" />, group: "integrate" },
+  { id: "models-agents", label: "Models and agents", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
+  { id: "scheduling-resources", label: "Scheduling and resources", icon: <FileClock aria-hidden="true" />, group: "integrate" },
+  { id: "policy-risk", label: "Policy and risk", icon: <ShieldCheck aria-hidden="true" />, group: "manage" },
+  { id: "security-sbom", label: "Security and SBOM", icon: <ShieldCheck aria-hidden="true" />, group: "manage" },
+  { id: "evaluation", label: "Evaluation", icon: <ClipboardCheck aria-hidden="true" />, group: "manage" },
+  { id: "memory-evidence", label: "Memory and evidence", icon: <Database aria-hidden="true" />, group: "manage" },
+  { id: "observability", label: "Observability", icon: <Activity aria-hidden="true" />, group: "manage" },
   { id: "configuration", label: "Configuration", icon: <SlidersHorizontal aria-hidden="true" />, group: "manage" },
-  { id: "administration", label: "Administration", icon: <Settings aria-hidden="true" />, group: "manage" },
 ];
 
 function label(value: string): string {
@@ -109,7 +111,7 @@ export function OperatorConsole({
   reloadOverview: () => Promise<void>;
 }) {
   const initialPage = window.location.hash.slice(1) as PageID;
-  const [page, setPage] = useState<PageID>(navigation.some((item) => item.id === initialPage) ? initialPage : "overview");
+  const [page, setPage] = useState<PageID>(navigation.some((item) => item.id === initialPage) ? initialPage : "setup-health");
   const [expert, setExpert] = useState(false);
   const initialHeadingFocus = useRef(true);
   const current = navigation.find((item) => item.id === page)!;
@@ -163,23 +165,23 @@ export function OperatorConsole({
         <span className="mode-badge"><SlidersHorizontal aria-hidden="true" /> {expert ? "Expert" : "Safe"} mode</span>
       </header>
       {initialError && <p className="error" role="alert">{initialError}</p>}
-      {page === "first-run" && <FirstRunPage status={initialStatus} jobs={initialJobs} navigate={navigate} />}
-      {page === "overview" && <OverviewPage status={initialStatus} jobs={initialJobs} loading={initialLoading} reload={reloadOverview} />}
-      {page === "projects" && <ProjectsPage expert={expert} />}
-      {page === "onboarding" && <CapabilityPage />}
+      {page === "setup-health" && <SetupHealthPage status={initialStatus} jobs={initialJobs} loading={initialLoading} reload={reloadOverview} navigate={navigate} />}
+      {page === "repositories" && <ProjectsPage expert={expert} />}
+      {page === "capability-packs" && <CapabilityPage />}
       {page === "jobs" && <JobsPage initialJobs={initialJobs} expert={expert} />}
       {page === "quality" && <QualityPage jobs={initialJobs} />}
-      {page === "policy" && <PolicyPage expert={expert} />}
-      {page === "intelligence" && <IntelligencePage />}
-      {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
+      {page === "documentation" && <DocumentationPage jobs={initialJobs} expert={expert} />}
+      {page === "code-intelligence" && <IntelligencePage />}
+      {page === "forges" && <ForgePage />}
+      {page === "runners-windows" && <WindowsWorkersPage />}
+      {page === "models-agents" && <ModelsPage status={initialStatus} expert={expert} />}
+      {page === "scheduling-resources" && <AutomationPage expert={expert} />}
+      {page === "policy-risk" && <PolicyPage expert={expert} />}
+      {page === "security-sbom" && <SecuritySBOMPage jobs={initialJobs} expert={expert} />}
       {page === "evaluation" && <EvaluationPage expert={expert} />}
       {page === "observability" && <ObservabilityPage expert={expert} />}
-      {page === "memory" && <MemoryPage />}
-      {page === "forges" && <ForgePage />}
-      {page === "windows-workers" && <WindowsWorkersPage />}
-      {page === "automation" && <AutomationPage expert={expert} />}
+      {page === "memory-evidence" && <MemoryPage />}
       {page === "configuration" && <ConfigurationPage expert={expert} />}
-      {page === "administration" && <AdministrationPage status={initialStatus} />}
     </div>
   </div>;
 }
@@ -207,16 +209,24 @@ function Metric({ icon, name, value, detail }: { icon: ReactNode; name: string; 
   return <article className="metric-card"><div className="card-label">{icon}<span>{name}</span></div><p className="metric-value">{value}</p>{detail && <p className="metric-detail">{detail}</p>}</article>;
 }
 
+function SetupHealthPage({ status, jobs, loading, reload, navigate }: { status: SystemStatus | null; jobs: Job[]; loading: boolean; reload: () => Promise<void>; navigate: (page: PageID) => void }) {
+  return <>
+    <FirstRunPage status={status} jobs={jobs} navigate={navigate} />
+    <OverviewPage status={status} jobs={jobs} loading={loading} reload={reload} />
+    <AdministrationPage status={status} />
+  </>;
+}
+
 function FirstRunPage({ status, jobs, navigate }: { status: SystemStatus | null; jobs: Job[]; navigate: (page: PageID) => void }) {
   const steps = [
-    ["Administrator account", "Complete", "The authenticated local administrator is active.", "administration"],
-    ["Host capacity", status ? "Detected" : "Check", "Review CPU, memory, storage, SMT and NUMA guidance.", "overview"],
-    ["Model manifests", "Review", "Import a checksum-bound manifest or retain the CI fake model.", "models"],
+    ["Administrator account", "Complete", "The authenticated local administrator is active.", "setup-health"],
+    ["Host capacity", status ? "Detected" : "Check", "Review CPU, memory, storage, SMT and NUMA guidance.", "setup-health"],
+    ["Model manifests", "Review", "Import a checksum-bound manifest or retain the CI fake model.", "models-agents"],
     ["Git provider", "Review", "Use local bare Git or configure the narrow GitHub or GitLab bridge boundary.", "forges"],
-    ["Repository", "Required", "Register a repository and its exact default branch.", "projects"],
-    ["Toolchains", "Per project", "Detection occurs during the isolated dependency and verification phases.", "projects"],
-    ["OpenViking", "Optional", "Validate the scoped index before enabling semantic memory.", "memory"],
-    ["Hermes", "Optional", "Review the ten-tool, non-authoritative automation boundary.", "automation"],
+    ["Repository", "Required", "Register a repository and its exact default branch.", "repositories"],
+    ["Toolchains", "Per project", "Detection occurs during the isolated dependency and verification phases.", "repositories"],
+    ["OpenViking", "Optional", "Validate the scoped index before enabling semantic memory.", "memory-evidence"],
+    ["Hermes", "Optional", "Review the ten-tool, non-authoritative automation boundary.", "scheduling-resources"],
     ["Smoke-test job", jobs.length ? "Complete" : "Required", "Submit one deterministic maintenance task and inspect its final report.", "jobs"],
   ] as const;
   return <>
@@ -614,6 +624,113 @@ default decision := {
     </Section>}
     <Section title="Activation history" eyebrow="Append-only">
       {activations.length === 0 ? <Empty title="No activations retained" detail="Activation and rollback records appear here with actor, reason, rollout percentage, and prior bundle." /> : <div className="backup-list">{activations.map((activation) => <article key={activation.id}><div><strong>{activation.bundle_version}</strong><p>{label(activation.action)} · {activation.actor_id} · {date(activation.created_at)}</p><p>{activation.reason}</p></div><Badge value={`${activation.staged_rollout_percent}%`} /></article>)}</div>}
+    </Section>
+  </>;
+}
+
+function DocumentationPage({ jobs: initialJobs, expert }: { jobs: Job[]; expert: boolean }) {
+  const [profile, setProfile] = useState<DocumentationPolicyProfile | null>(null);
+  const [simulation, setSimulation] = useState<DocumentationPolicySimulationResult | null>(null);
+  const [manifests, setManifests] = useState<DocumentationManifest[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [message, setMessage] = useState("");
+  const [input, setInput] = useState(`{
+  "paths": ["docs/observability.md", "internal/api/openapi.yaml"],
+  "change_classes": ["public_api", "documentation"],
+  "risk_level": "medium",
+  "languages": ["go", "typescript"],
+  "capability_packs": [],
+  "labels": []
+}`);
+  const load = useCallback(async () => {
+    const [profileResponse, jobsResponse] = await Promise.all([
+      api.GET("/documentation/policy/profile"),
+      api.GET("/jobs"),
+    ]);
+    setProfile(profileResponse.data?.profile ?? null);
+    const jobs = jobsResponse.data?.items ?? initialJobs;
+    const details = await Promise.all(jobs.slice(0, 50).map((job) => api.GET("/jobs/{jobID}", { params: { path: { jobID: job.id } } })));
+    setManifests(details.flatMap((detail) => (detail.data?.documentation_manifests ?? []) as DocumentationManifest[]));
+    setFindings(details.flatMap((detail) => (detail.data?.findings ?? []) as Finding[]).filter((finding) => finding.category.startsWith("documentation")));
+  }, [initialJobs]);
+  useEffect(() => { void load(); }, [load]);
+  const simulate = async () => {
+    let body: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(input);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
+      body = parsed as Record<string, unknown>;
+    } catch {
+      setMessage("Documentation impact input must be a JSON object.");
+      return;
+    }
+    const response = await api.POST("/documentation/policy/simulations", { body: body as any });
+    setSimulation(response.data?.simulation ?? null);
+    setMessage(response.data ? response.data.simulation.policy_summary : "Documentation policy simulation failed.");
+  };
+  return <>
+    <PageIntro>Documentation has a dedicated agent stage, declarative impact policy, retained manifests, render/check requirements, findings, and publication-readiness gates.</PageIntro>
+    <div className="metrics-grid compact">
+      <Metric icon={<BookOpen aria-hidden="true" />} name="Policy rules" value={String(profile?.rules.length ?? 0)} detail={profile?.version ?? "loading"} />
+      <Metric icon={<ClipboardCheck aria-hidden="true" />} name="Tool checks" value={String(profile?.tool_profile.checks.length ?? 0)} detail={profile?.tool_profile.id ?? "loading"} />
+      <Metric icon={<FileClock aria-hidden="true" />} name="Retained manifests" value={String(manifests.length)} detail="Agent outputs" />
+      <Metric icon={<ShieldCheck aria-hidden="true" />} name="Documentation findings" value={String(findings.length)} detail="QC lifecycle" />
+    </div>
+    {message && <p className="inline-message" role="status">{message}</p>}
+    <Section title="Documentation policy workbench" eyebrow="Impact simulation" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      <div className="two-column">
+        <div>
+          <p>{profile?.summary ?? "Documentation policy profile is loading."}</p>
+          <dl><div><dt>Render targets</dt><dd>{profile?.tool_profile.render_targets.join(", ") || "—"}</dd></div><div><dt>Reviewer roles</dt><dd>{profile?.rules.flatMap((rule) => rule.reviewer_roles).join(", ") || "—"}</dd></div></dl>
+          <details open={expert}><summary>Policy rules and pinned tool profile</summary><pre>{JSON.stringify(profile, null, 2)}</pre></details>
+        </div>
+        <div>
+          <label>Change evidence JSON<textarea rows={12} value={input} onChange={(event) => setInput(event.target.value)} /></label>
+          <button type="button" onClick={() => void simulate()}>Simulate documentation impact</button>
+        </div>
+      </div>
+      {simulation && <article className="resource-card"><div className="resource-title"><BookOpen aria-hidden="true" /><div><h3>Required documentation</h3><p>{simulation.policy_summary}</p></div><Badge value={simulation.no_documentation_required ? "not_required" : "required"} /></div><dl><div><dt>Requirements</dt><dd>{simulation.requirements.length}</dd></div><div><dt>Checks</dt><dd>{simulation.checks.length}</dd></div><div><dt>Render targets</dt><dd>{simulation.render_targets.join(", ") || "—"}</dd></div><div><dt>Publication ready</dt><dd>{simulation.publication_ready ? "Yes" : "No"}</dd></div></dl><details open><summary>Requirements, mappings, checks, reviewers, and gates</summary><pre>{JSON.stringify(simulation, null, 2)}</pre></details></article>}
+    </Section>
+    <Section title="Documentation Agent manifests" eyebrow="Source-controlled docs">
+      {manifests.length === 0 ? <Empty title="No documentation manifests retained" detail="Jobs that require documentation will retain exact task/code/test/source-of-truth mappings here." /> : <div className="card-grid">{manifests.slice(0, 12).map((manifest) => <article className="resource-card" key={manifest.id}><div className="resource-title"><BookOpen aria-hidden="true" /><div><h3>{manifest.id}</h3><p>{manifest.policy_summary}</p></div><Badge value={manifest.status} /></div><dl><div><dt>Job</dt><dd>{manifest.job_id}</dd></div><div><dt>Requirements</dt><dd>{manifest.requirements.length}</dd></div><div><dt>Changes</dt><dd>{manifest.changes.length}</dd></div><div><dt>Checks</dt><dd>{manifest.checks.length}</dd></div></dl><details open={expert}><summary>Manifest evidence</summary><pre>{JSON.stringify(manifest, null, 2)}</pre></details></article>)}</div>}
+    </Section>
+    <Section title="Documentation findings and readiness" eyebrow="Independent QC">
+      {findings.length === 0 ? <Empty title="No documentation findings" detail="Broken links, stale examples, unsupported claims, and missing required docs will appear here with the normal finding lifecycle." /> : <div className="finding-list">{findings.map((finding) => <article className="finding-card" key={`${finding.job_id}/${finding.id}`}><header><Badge value={finding.severity} /><Badge value={finding.status} /><code>{finding.job_id}</code></header><h3>{finding.claim}</h3><p>{finding.required_resolution}</p><dl><div><dt>Verification</dt><dd>{finding.verification_method}</dd></div><div><dt>Cycle</dt><dd>{finding.last_seen_cycle}</dd></div></dl></article>)}</div>}
+    </Section>
+  </>;
+}
+
+function SecuritySBOMPage({ jobs: initialJobs, expert }: { jobs: Job[]; expert: boolean }) {
+  const [packs, setPacks] = useState<CapabilityManifest[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [message, setMessage] = useState("");
+  const load = useCallback(async () => {
+    const [packResponse, jobsResponse] = await Promise.all([api.GET("/capability-packs"), api.GET("/jobs")]);
+    setPacks((packResponse.data?.items ?? []).filter((pack) => pack.id.includes("security") || pack.id.includes("sbom")));
+    const jobs = jobsResponse.data?.items ?? initialJobs;
+    const details = await Promise.all(jobs.slice(0, 50).map((job) => api.GET("/jobs/{jobID}", { params: { path: { jobID: job.id } } })));
+    setFindings(details.flatMap((detail) => (detail.data?.findings ?? []) as Finding[]).filter((finding) => finding.category.includes("security") || finding.category.includes("sbom") || finding.category.includes("vulnerability") || finding.category.includes("fmea")));
+    setMessage(packResponse.data ? "Security and SBOM evidence refreshed from controller data." : "Security pack catalog could not be loaded.");
+  }, [initialJobs]);
+  useEffect(() => { void load(); }, [load]);
+  const rehearsals = packs.flatMap((pack) => pack.rehearsals.map((rehearsal) => ({ pack, rehearsal })));
+  return <>
+    <PageIntro>Security and SBOM operations use selected capability-pack scanners, retained findings, suppressions through policy/finding lifecycle, FMEA mappings, SBOM release-diff rehearsals, and release evidence.</PageIntro>
+    <div className="metrics-grid compact">
+      <Metric icon={<ShieldCheck aria-hidden="true" />} name="Security packs" value={String(packs.length)} detail="Controller-trusted manifests" />
+      <Metric icon={<ClipboardCheck aria-hidden="true" />} name="SBOM rehearsals" value={String(rehearsals.length)} detail="Release-diff gates" />
+      <Metric icon={<CircleDot aria-hidden="true" />} name="Security findings" value={String(findings.length)} detail="Open, disputed, waived, or closed" />
+      <Metric icon={<HardDrive aria-hidden="true" />} name="Release evidence" value={rehearsals.some((item) => item.rehearsal.id.includes("sbom")) ? "Configured" : "Pending"} detail="SBOM/FMEA capability evidence" />
+    </div>
+    {message && <p className="inline-message" role="status">{message}</p>}
+    <Section title="Security and SBOM scan profiles" eyebrow="Capability-pack controlled" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      {packs.length === 0 ? <Empty title="No security pack in catalog response" detail="Install or expose the sbom-fmea-security capability pack before enforcing SBOM release evidence." /> : <div className="card-grid">{packs.map((pack) => <article className="resource-card" key={pack.id}><div className="resource-title"><ShieldCheck aria-hidden="true" /><div><h3>{pack.name}</h3><p>{pack.description}</p></div><Badge value={pack.version} /></div><dl><div><dt>Operations</dt><dd>{pack.operation_classes.join(", ") || "—"}</dd></div><div><dt>Trust checksum</dt><dd><code>{pack.checksum_sha256.slice(0, 16)}</code></dd></div><div><dt>Fields</dt><dd>{pack.ui_schema.length}</dd></div></dl><details open={expert}><summary>Scan profile fields and policy hooks</summary><pre>{JSON.stringify({ ui_schema: pack.ui_schema, workflow_changes: pack.workflow_changes, policy_fragments: pack.policy_fragments }, null, 2)}</pre></details></article>)}</div>}
+    </Section>
+    <Section title="SBOM release evidence" eyebrow="Golden/rehearsal integration">
+      {rehearsals.length === 0 ? <Empty title="No SBOM rehearsal registered" detail="The sbom-fmea-security pack registers SBOM diff artifacts and release-review approval policy." /> : <div className="audit-list">{rehearsals.map(({ pack, rehearsal }) => <div key={`${pack.id}/${rehearsal.id}`}><time>{pack.version}</time><strong>{rehearsal.id}</strong><span>{label(rehearsal.kind)} · {rehearsal.operation_id} · {rehearsal.artifact_kinds.join(", ")} · {rehearsal.approval_policy}</span></div>)}</div>}
+    </Section>
+    <Section title="Security findings, suppressions, and FMEA" eyebrow="Release gate state">
+      {findings.length === 0 ? <Empty title="No retained security findings" detail="Scanner findings, suppression reviews, FMEA correlations, and SBOM release blockers will appear through the same deterministic finding lifecycle." /> : <div className="finding-list">{findings.map((finding) => <article className="finding-card" key={`${finding.job_id}/${finding.id}`}><header><Badge value={finding.severity} /><Badge value={finding.status} /><code>{finding.job_id}</code></header><h3>{finding.claim}</h3><p>{finding.required_resolution}</p><dl><div><dt>Category</dt><dd>{finding.category}</dd></div><div><dt>Verification</dt><dd>{finding.verification_method}</dd></div></dl><details open={expert}><summary>Location and retained evidence</summary><pre>{JSON.stringify(finding.location, null, 2)}</pre></details></article>)}</div>}
     </Section>
   </>;
 }
