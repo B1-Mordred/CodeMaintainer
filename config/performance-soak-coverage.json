@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T11:45:00Z",
+  "updated_at": "2026-07-24T12:30:00Z",
   "surfaces": [
     {
       "id": "scheduler-resource-safety-and-fairness",
@@ -66,12 +66,13 @@
       "id": "deterministic-local-acceptance-smoke",
       "status": "in_progress",
       "title": "Deterministic local acceptance commands cover the bounded smoke path without external credentials or model weights",
-      "implementation": ["scripts/acceptance.sh", "scripts/agent-image-acceptance.sh", "scripts/vulnerability-scan.sh", "scripts/sbom.sh", "compose.yaml"],
-      "tests": ["go test ./...", "go test -race ./...", "go vet ./...", "web npm test", "web npm run build", "docker compose config --quiet"],
+      "implementation": ["scripts/acceptance.sh", "scripts/soak.sh", "scripts/agent-image-acceptance.sh", "scripts/vulnerability-scan.sh", "scripts/sbom.sh", "compose.yaml"],
+      "tests": ["go test ./...", "go test -race ./...", "go vet ./...", "web npm test", "web npm run build", "docker compose config --quiet", "cmd/soak-runner/main_test.go"],
       "ui": ["web/src/OperatorConsole.tsx#setup-health", "web/src/OperatorConsole.tsx#jobs"],
       "docs": ["docs/acceptance.md", "docs/performance-soak.md"],
       "proof": [
         {"path": "scripts/acceptance.sh", "contains": ["go test ./...", "npx tsc --noEmit", "browser-tool"]},
+        {"path": "scripts/soak.sh", "contains": ["go run ./cmd/soak-runner", ".data/acceptance/soak-report.json"]},
         {"path": "docs/acceptance.md", "contains": ["Deterministic local gate", "No default gate fetches a model weight"]},
         {"path": "web/src/OperatorConsole.tsx", "contains": ["Smoke-test job", "Submit one deterministic maintenance task"]}
       ],
@@ -79,16 +80,18 @@
     },
     {
       "id": "bounded-soak-thresholds-and-reports",
-      "status": "remaining",
+      "status": "covered",
       "title": "Bounded soak thresholds produce retained pass/fail reports for queue, scheduler, provider gateway, observability, and support-bundle behavior",
-      "implementation": ["docs/performance-soak.md"],
-      "tests": ["docs/performance-soak.md"],
+      "implementation": ["internal/soak/report.go", "cmd/soak-runner/main.go", "scripts/soak.sh", "docs/performance-soak.md"],
+      "tests": ["internal/soak/report_test.go", "cmd/soak-runner/main_test.go", "internal/config/performance_soak_coverage_test.go"],
       "ui": ["web/src/OperatorConsole.tsx#observability", "web/src/OperatorConsole.tsx#scheduling-resources"],
       "docs": ["docs/performance-soak.md", "execplan/increment-2.md"],
       "proof": [
-        {"path": "docs/performance-soak.md", "contains": ["Remaining soak closure", "No current CI job claims a long-duration soak pass"]}
+        {"path": "internal/soak/report.go", "contains": ["local-bounded-soak-v1", "queue_latency_p95_millis", "provider-retry-circuit-denials", "support_bundle_manifest_bytes"]},
+        {"path": "cmd/soak-runner/main_test.go", "contains": ["TestSoakRunnerWritesValidRetainedJSONReport", "report.Validate"]},
+        {"path": "docs/performance-soak.md", "contains": ["Bounded retained soak report", "No current CI job claims a long-duration soak pass"]}
       ],
-      "remaining_work": ["Add a deterministic bounded soak runner and retained JSON report schema with explicit thresholds for queue latency, scheduler decisions, memory growth, support-bundle size, provider retry/circuit behavior, and local-fake workflow throughput."]
+      "remaining_work": []
     }
   ]
 }

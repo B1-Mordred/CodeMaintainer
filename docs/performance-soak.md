@@ -13,16 +13,25 @@ The current deterministic gate proves these bounded performance controls without
 - Observability records bounded local duration, queue time, retry count, resource bytes, redaction counts, and support-bundle manifests.
 - The deterministic acceptance script runs Go, frontend, OpenAPI, Compose, live mock health, and browser checks without fetching model weights or contacting real forges/providers.
 
+## Bounded retained soak report
+
+The bounded soak runner is a CI-safe acceptance artifact. It produces a retained JSON report without external network access, credentials, large model weights, arbitrary commands, or unbounded duration:
+
+```sh
+./scripts/soak.sh
+```
+
+The script runs `go run ./cmd/soak-runner` inside the supported Compose Go tool container and retains `.data/acceptance/soak-report.json`. The report schema is versioned as `local-bounded-soak-v1`, self-validates its SHA-256 identity, caps the report at 256 KiB, and records pass/fail thresholds for:
+
+- queue latency p95;
+- scheduler decision stability, fairness, and co-residence behavior;
+- memory growth across the deterministic local-fake telemetry timeline;
+- support-bundle manifest size and redaction evidence;
+- provider gateway cost/capability circuit denials with retained manifests;
+- local-fake workflow throughput.
+
+No current CI job claims a long-duration soak pass. Final closure still needs a retained final run after all local-fake E2E and runnable-stack rows are closed, plus restart/resume behavior during or after the soak window and any operator-only production benchmarking.
+
 ## Remaining soak closure
-
-No current CI job claims a long-duration soak pass. Final closure still needs a deterministic bounded soak runner and retained JSON report with explicit pass/fail thresholds for:
-
-- queue latency and live scheduler decision stability under repeated local-fake jobs;
-- memory growth across repeated indexing, workflow, evidence, and support-bundle operations;
-- scheduler fairness and co-residence behavior across mixed project workloads;
-- provider gateway retry, circuit-breaker, capability-drift, and cost-budget behavior once outbound fake execution is integrated;
-- support-bundle size and telemetry redaction counts over repeated runs;
-- local-fake workflow throughput and phase-duration distribution;
-- restart/resume behavior during or after the soak window.
 
 The soak runner must remain bounded: fixed fixture repositories, fixed fake providers, no external network dependency, no real credentials, no large model weights, finite duration, finite artifact sizes, and deterministic failure reports. Operator-only production benchmarking, such as physical NUMA comparisons with licensed GGUF weights, remains documented separately in `docs/acceptance.md`.
