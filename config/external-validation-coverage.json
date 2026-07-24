@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "contract": "LOCAL_CODE_MAINTAINER_INCREMENT_2_GOAL.md",
+  "updated_at": "2026-07-24T07:35:00Z",
+  "items": [
+    {
+      "id": "external-rootless-worker-topology",
+      "title": "Dedicated rootless worker daemon and isolated networks",
+      "operator_prerequisites": ["rootless worker daemon socket", "dependency-egress network", "inference-only network", "production runner policy file"],
+      "safe_fake_evidence": ["internal/runnerd/policy_test.go", "scripts/agent-image-acceptance.sh", "compose.yaml", "compose.production.yaml"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation"],
+      "not_claimed_by_ci": "CI proves the policy and immutable fake worker boundary, not host rootless-daemon installation or production network topology."
+    },
+    {
+      "id": "external-licensed-model-weights",
+      "title": "Licensed implementation and QC GGUF model weights",
+      "operator_prerequisites": ["licensed implementation GGUF", "licensed QC GGUF", "model manifests", "physical-core and NUMA benchmark host"],
+      "safe_fake_evidence": ["cmd/fake-model-server", "internal/models", "internal/providers", "internal/runtimeopt"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation", "docs/models.md", "docs/model-providers.md"],
+      "not_claimed_by_ci": "CI uses deterministic fake model/provider/runtime evidence and does not download or benchmark multi-gigabyte weights."
+    },
+    {
+      "id": "external-github-app-installation",
+      "title": "Real GitHub App installation in an approved disposable repository",
+      "operator_prerequisites": ["GitHub App installation", "authorized disposable repository", "webhook secret", "branch protection"],
+      "safe_fake_evidence": ["internal/gitbridge/githubapp_test.go", "internal/gitbridge/manager_test.go", "internal/githubsync", "docs/github-app.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation", "docs/github-app.md"],
+      "not_claimed_by_ci": "CI covers signing, token expiry, replay, polling, and local bare-Git behavior with fakes only."
+    },
+    {
+      "id": "external-openviking-embeddings",
+      "title": "OpenViking embedding provider and scoped memory rebuild",
+      "operator_prerequisites": ["configured embedding provider", "OpenViking service profile", "license/source review"],
+      "safe_fake_evidence": ["internal/memory", "integrations/openviking", "docs/acceptance.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation"],
+      "not_claimed_by_ci": "CI proves project namespace isolation and memory restore behavior without external embeddings."
+    },
+    {
+      "id": "external-hermes-profile",
+      "title": "Official pinned Hermes runtime profile",
+      "operator_prerequisites": ["official Hermes image/profile", "controller bridge token", "local network route"],
+      "safe_fake_evidence": ["internal/hermesbridge", "cmd/hermes-tool-bridge", "integrations/hermes", "docs/acceptance.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation"],
+      "not_claimed_by_ci": "CI validates the controller bridge and tool boundary without claiming a live official Hermes runtime."
+    },
+    {
+      "id": "external-remote-auth-tls",
+      "title": "Remote OIDC/passkey forward-auth and TLS",
+      "operator_prerequisites": ["real certificates", "trusted OIDC/passkey gateway", "firewall policy"],
+      "safe_fake_evidence": ["compose.remote.yaml", "internal/auth", "internal/api/server_test.go", "web/src/App.test.tsx", "docs/acceptance.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation"],
+      "not_claimed_by_ci": "CI proves local sessions, RBAC, CSRF, and Compose remote config shape, not production identity-provider availability."
+    },
+    {
+      "id": "external-separate-host-encrypted-restore",
+      "title": "Encrypted backup restore, update promotion, and image rollback on a separate host",
+      "operator_prerequisites": ["production backup key escrow", "separate restore host", "known-good image digest"],
+      "safe_fake_evidence": ["internal/backup/manager_test.go", "internal/storage/sqlite/migration_coverage_test.go", "docs/backup-restore.md", "docs/migrations.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation", "docs/backup-restore.md", "docs/migrations.md"],
+      "not_claimed_by_ci": "CI proves mock backup checksums, staging, apply, and migration coverage, not production encrypted restore on a second host."
+    },
+    {
+      "id": "external-oci-vulnerability-signature-scan",
+      "title": "Approved OCI vulnerability, signature, license, SBOM, and provenance scan",
+      "operator_prerequisites": ["approved OCI scanner", "resolved production images", "signature/provenance policy"],
+      "safe_fake_evidence": ["scripts/vulnerability-scan.sh", "scripts/sbom.sh", "docs/acceptance.md"],
+      "operator_procedure": ["docs/acceptance.md#operator-only-validation"],
+      "not_claimed_by_ci": "CI records source/package SBOM and local vulnerability evidence; Docker Scout or an approved OCI scanner remains operator-owned."
+    }
+  ]
+}

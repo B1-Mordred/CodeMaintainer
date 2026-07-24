@@ -41,6 +41,8 @@ The resolved core publishes only `127.0.0.1:8080`; credential/model/index/Hermes
 
 These are deliberately not claimed by the fake gate:
 
+`config/external-validation-coverage.json` is the machine-readable map from each operator-only prerequisite to the safe fake evidence and finite operator procedure that must exist before release.
+
 1. Configure a dedicated rootless worker daemon and the named dependency-egress/inference-only networks, apply the production runner policy, then repeat the offline fixture and inspect every resulting worker's UID, mounts, capabilities, seccomp, resource limits, and network membership.
 2. Import licensed implementation and QC GGUF files whose manifests use different model families. Verify hashes, benchmark physical-core versus SMT and NUMA profiles, exercise sequential load/unload, and record RAM, disk, prompt, and decode measurements. No release process downloads these large weights automatically.
 3. Install a GitHub App in a disposable authorized repository with the documented minimal permissions. Test token expiry, webhook replay, polling fallback, upstream movement, branch protection/CI/review reporting, idempotent draft publication, merge, rejection, and memory disposition. Never point the test at an unapproved real repository.

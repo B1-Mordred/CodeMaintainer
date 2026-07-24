@@ -2,7 +2,7 @@
   "schema_version": 1,
   "contract": "LOCAL_CODE_MAINTAINER_INCREMENT_2_GOAL.md",
   "base_contract": "project.md",
-  "updated_at": "2026-07-24T07:20:00Z",
+  "updated_at": "2026-07-24T07:35:00Z",
   "allowed_statuses": ["missing", "in_progress", "implemented", "operator_only"],
   "requirements": [
     {"id":"I2-05.1","title":"Configuration registry","milestone":1,"status":"implemented","implementation":["internal/config/registry.go","internal/config/builtin_registry.go"],"tests":["internal/config/registry_test.go"],"ui":["#configuration"],"docs":["docs/configuration.md","execplan/increment-2.md"]},
@@ -75,6 +75,6 @@
     {"id":"I2-DOD-24","title":"Accessibility and keyboard workflows pass all required pages","milestone":7,"status":"in_progress","implementation":["web/src/OperatorConsole.tsx","web/src/ConfigurationPage.tsx"],"tests":["web/src/App.test.tsx","web/src/ConfigurationPage.test.tsx","web/src/CapabilityPage.test.tsx","web/src/ForgePage.test.tsx","web/src/IntelligencePage.test.tsx","web/src/WindowsWorkersPage.test.tsx"],"ui":["Axe coverage for representative required pages plus tested accessible dashboard/configuration route links; full keyboard/browser E2E remains open"],"docs":["docs/dashboard.md","execplan/increment-2.md"]},
     {"id":"I2-DOD-25","title":"Backup/restore and upgrade/rollback preserve all history and provenance","milestone":7,"status":"in_progress","implementation":["internal/backup/manager.go","config/migration-coverage.json"],"tests":["internal/backup/manager_test.go","internal/storage/sqlite/migration_coverage_test.go"],"ui":[],"docs":["docs/backup-restore.md","docs/migrations.md","docs/acceptance.md"]},
     {"id":"I2-DOD-26","title":"Documented Compose stack and acceptance remain runnable","milestone":7,"status":"missing","implementation":[],"tests":[],"ui":[],"docs":[]},
-    {"id":"I2-DOD-27","title":"External-only items have safe fakes and finite operator procedures","milestone":7,"status":"missing","implementation":[],"tests":[],"ui":[],"docs":[]}
+    {"id":"I2-DOD-27","title":"External-only items have safe fakes and finite operator procedures","milestone":7,"status":"in_progress","implementation":["config/external-validation-coverage.json","cmd/fake-model-server","internal/providers","internal/windowsworker/simulator","internal/gitbridge","internal/backup"],"tests":["internal/config/external_validation_coverage_test.go","internal/gitbridge/githubapp_test.go","internal/runnerd/policy_test.go","internal/backup/manager_test.go"],"ui":[],"docs":["docs/acceptance.md","docs/backup-restore.md","docs/model-providers.md","docs/github-app.md"]}
   ]
 }
