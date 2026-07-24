@@ -1263,6 +1263,7 @@ paths:
                   risk_waivers: { type: array, items: { $ref: "#/components/schemas/RiskWaiver" } }
                   agent_contract_validations: { type: array, items: { $ref: "#/components/schemas/AgentContractValidation" } }
                   test_designer_reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
+                  test_designer_dispositions: { type: array, items: { $ref: "#/components/schemas/TestDesignerDisposition" } }
                   golden_rehearsal_reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
                   golden_update_approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
                   documentation_manifests: { type: array, items: { $ref: "#/components/schemas/DocumentationManifest" } }
@@ -1581,9 +1582,45 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [reports]
+                required: [reports, dispositions]
                 properties:
                   reports: { type: array, items: { $ref: "#/components/schemas/TestDesignerReport" } }
+                  dispositions: { type: array, items: { $ref: "#/components/schemas/TestDesignerDisposition" } }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+  /test-designer-reports/{reportID}/proposals/{proposalID}/actions/dispose:
+    parameters:
+      - { name: reportID, in: path, required: true, schema: { type: string } }
+      - { name: proposalID, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Append a reviewer disposition for one Test Designer proposal
+      operationId: disposeTestDesignerProposal
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [disposition, reason]
+              properties:
+                disposition: { type: string, enum: [accepted, rejected, not_applicable] }
+                reason: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        "201":
+          description: Append-only Test Designer disposition and remaining pending count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [disposition, pending_dispositions]
+                properties:
+                  disposition: { $ref: "#/components/schemas/TestDesignerDisposition" }
+                  pending_dispositions: { type: integer, minimum: 0 }
+                  job: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/golden-rehearsals:
     parameters:
@@ -3473,7 +3510,7 @@ components:
         replay: { type: boolean }
     JobState:
       type: string
-      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, golden_rehearsal_review, loading_documentation_model, documentation_review, policy_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
+      enum: [queued, syncing, preparing_dependencies, creating_worktree, locking_acceptance_criteria, awaiting_task_approval, loading_implementation_model, reproducing, implementing, verifying_targeted, verifying_full, loading_test_designer_model, test_design_review, awaiting_test_design_disposition, golden_rehearsal_review, loading_documentation_model, documentation_review, policy_review, loading_qc_model, qc_review, awaiting_repair, repairing, final_verification, awaiting_operator, publishing_branch, draft_pr_created, completed, failed, cancelled]
     AgentContractKind:
       type: string
       enum: [task_packet, implementation_result, qc_report, test_proposal, documentation_manifest, risk_assessment, completion_summary]
@@ -3546,6 +3583,20 @@ components:
         proposals: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/TestDesignerProposal" } }
         dispositions_required: { type: boolean }
         status: { type: string, enum: [proposed, skipped] }
+        created_at: { type: string, format: date-time }
+    TestDesignerDisposition:
+      type: object
+      additionalProperties: false
+      required: [id, report_id, job_id, proposal_id, disposition, reason, actor_id, actor_role, created_at]
+      properties:
+        id: { type: string }
+        report_id: { type: string }
+        job_id: { type: string }
+        proposal_id: { type: string }
+        disposition: { type: string, enum: [accepted, rejected, not_applicable] }
+        reason: { type: string }
+        actor_id: { type: string }
+        actor_role: { type: string, enum: [reviewer, administrator] }
         created_at: { type: string, format: date-time }
     DocumentationRequirement:
       type: object

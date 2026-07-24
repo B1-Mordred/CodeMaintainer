@@ -1584,6 +1584,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/test-designer-reports/{reportID}/proposals/{proposalID}/actions/dispose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reportID: string;
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a reviewer disposition for one Test Designer proposal */
+        post: operations["disposeTestDesignerProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/golden-rehearsals": {
         parameters: {
             query?: never;
@@ -3460,7 +3480,7 @@ export interface components {
             replay: boolean;
         };
         /** @enum {string} */
-        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "policy_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
+        JobState: "queued" | "syncing" | "preparing_dependencies" | "creating_worktree" | "locking_acceptance_criteria" | "awaiting_task_approval" | "loading_implementation_model" | "reproducing" | "implementing" | "verifying_targeted" | "verifying_full" | "loading_test_designer_model" | "test_design_review" | "awaiting_test_design_disposition" | "golden_rehearsal_review" | "loading_documentation_model" | "documentation_review" | "policy_review" | "loading_qc_model" | "qc_review" | "awaiting_repair" | "repairing" | "final_verification" | "awaiting_operator" | "publishing_branch" | "draft_pr_created" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
         AgentContractKind: "task_packet" | "implementation_result" | "qc_report" | "test_proposal" | "documentation_manifest" | "risk_assessment" | "completion_summary";
         AgentContractRetryPolicy: {
@@ -3525,6 +3545,20 @@ export interface components {
             dispositions_required: boolean;
             /** @enum {string} */
             status: "proposed" | "skipped";
+            /** Format: date-time */
+            created_at: string;
+        };
+        TestDesignerDisposition: {
+            id: string;
+            report_id: string;
+            job_id: string;
+            proposal_id: string;
+            /** @enum {string} */
+            disposition: "accepted" | "rejected" | "not_applicable";
+            reason: string;
+            actor_id: string;
+            /** @enum {string} */
+            actor_role: "reviewer" | "administrator";
             /** Format: date-time */
             created_at: string;
         };
@@ -6981,6 +7015,7 @@ export interface operations {
                         risk_waivers?: components["schemas"]["RiskWaiver"][];
                         agent_contract_validations?: components["schemas"]["AgentContractValidation"][];
                         test_designer_reports?: components["schemas"]["TestDesignerReport"][];
+                        test_designer_dispositions?: components["schemas"]["TestDesignerDisposition"][];
                         golden_rehearsal_reports?: components["schemas"]["GoldenRehearsalReport"][];
                         golden_update_approvals?: components["schemas"]["GoldenUpdateApproval"][];
                         documentation_manifests?: components["schemas"]["DocumentationManifest"][];
@@ -7411,9 +7446,51 @@ export interface operations {
                 content: {
                     "application/json": {
                         reports: components["schemas"]["TestDesignerReport"][];
+                        dispositions: components["schemas"]["TestDesignerDisposition"][];
                     };
                 };
             };
+            404: components["responses"]["ErrorResponse"];
+        };
+    };
+    disposeTestDesignerProposal: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                reportID: string;
+                proposalID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    disposition: "accepted" | "rejected" | "not_applicable";
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Append-only Test Designer disposition and remaining pending count */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        disposition: components["schemas"]["TestDesignerDisposition"];
+                        pending_dispositions: number;
+                        job?: components["schemas"]["Job"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
             404: components["responses"]["ErrorResponse"];
         };
     };

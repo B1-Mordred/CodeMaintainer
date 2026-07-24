@@ -259,6 +259,38 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 		if err != nil {
 			t.Fatalf("post-approval step %d from %s: %v", steps, job.State, err)
 		}
+		if job.State == jobs.StateAwaitingTestDesignDisposition {
+			break
+		}
+	}
+	if job.State != jobs.StateAwaitingTestDesignDisposition {
+		t.Fatalf("job did not pause for required Test Designer dispositions: %#v", job)
+	}
+	testReports, err := store.ListTestDesignerReports(ctx, job.ID, 10)
+	if err != nil || len(testReports) != 1 || testReports[0].Status != "proposed" || testReports[0].Proposals[0].Disposition != "pending" {
+		t.Fatalf("test designer reports before disposition = %#v, %v", testReports, err)
+	}
+	disposition, err := store.SaveTestDesignerDisposition(ctx, testdesigner.Disposition{
+		ReportID: testReports[0].ID, ProposalID: "TD-FIXTURE-001", Disposition: "accepted",
+		Reason:  "accepted and implemented the required negative coverage proposal",
+		ActorID: "reviewer", ActorRole: "reviewer",
+	})
+	if err != nil || disposition.JobID != job.ID {
+		t.Fatalf("test designer disposition = %#v, %v", disposition, err)
+	}
+	job, err = store.TransitionJob(ctx, job.ID, jobs.TransitionRequest{
+		To: jobs.StateGoldenRehearsalReview, ActorID: "reviewer",
+		Reason:          "all required Test Designer proposals have explicit dispositions",
+		ExpectedVersion: job.Version, Details: json.RawMessage(`{"source":"test"}`),
+	})
+	if err != nil {
+		t.Fatalf("resume after Test Designer disposition: %v", err)
+	}
+	for steps := 0; steps < 30; steps++ {
+		job, err = engine.Step(ctx, job.ID)
+		if err != nil {
+			t.Fatalf("post-disposition step %d from %s: %v", steps, job.State, err)
+		}
 		if job.State == jobs.StateAwaitingOperator {
 			break
 		}
@@ -266,9 +298,9 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if job.State != jobs.StateAwaitingOperator || job.ReviewCycle != 1 || job.BaseSHA == "" || job.ResultSHA == "" {
 		t.Fatalf("job did not reach reviewed approval gate: %#v", job)
 	}
-	testReports, err := store.ListTestDesignerReports(ctx, job.ID, 10)
-	if err != nil || len(testReports) != 1 || testReports[0].Status != "proposed" || testReports[0].Proposals[0].Disposition != "pending" {
-		t.Fatalf("test designer reports = %#v, %v", testReports, err)
+	testReports, err = store.ListTestDesignerReports(ctx, job.ID, 10)
+	if err != nil || len(testReports) != 1 || testReports[0].Status != "proposed" || testReports[0].Proposals[0].Disposition != "accepted" {
+		t.Fatalf("test designer reports after disposition = %#v, %v", testReports, err)
 	}
 	goldenReports, err := store.ListGoldenReports(ctx, job.ID, 10)
 	if err != nil || len(goldenReports) != 1 || goldenReports[0].Status != "no_rehearsals" {

@@ -28,6 +28,18 @@ type Proposal struct {
 	DispositionReason string   `json:"disposition_reason,omitempty"`
 }
 
+type Disposition struct {
+	ID          string    `json:"id"`
+	ReportID    string    `json:"report_id"`
+	JobID       string    `json:"job_id"`
+	ProposalID  string    `json:"proposal_id"`
+	Disposition string    `json:"disposition"`
+	Reason      string    `json:"reason"`
+	ActorID     string    `json:"actor_id"`
+	ActorRole   string    `json:"actor_role"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type Report struct {
 	ID                   string     `json:"id"`
 	JobID                string     `json:"job_id"`
@@ -45,6 +57,8 @@ type Report struct {
 type Store interface {
 	SaveTestDesignerReport(context.Context, Report) (Report, error)
 	ListTestDesignerReports(context.Context, string, int) ([]Report, error)
+	SaveTestDesignerDisposition(context.Context, Disposition) (Disposition, error)
+	ListTestDesignerDispositions(context.Context, string, string, int) ([]Disposition, error)
 }
 
 func NewSkipped(jobID, contractSHA256, riskLevel, resultSHA string) (Report, error) {
@@ -114,4 +128,61 @@ func (r Report) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (d Disposition) Validate() error {
+	if (d.ID != "" && !safeID.MatchString(d.ID)) || !safeID.MatchString(d.ReportID) ||
+		!safeID.MatchString(d.JobID) || !safeID.MatchString(d.ProposalID) ||
+		(d.Disposition != "accepted" && d.Disposition != "rejected" && d.Disposition != "not_applicable") ||
+		strings.TrimSpace(d.Reason) == "" || len(d.Reason) > 4000 ||
+		strings.TrimSpace(d.ActorID) == "" ||
+		(d.ActorRole != "reviewer" && d.ActorRole != "administrator") {
+		return errors.New("test designer disposition violates authorization or provenance bounds")
+	}
+	return nil
+}
+
+func ApplyDispositions(reports []Report, dispositions []Disposition) []Report {
+	latest := latestDispositions(dispositions)
+	result := make([]Report, len(reports))
+	for reportIndex, report := range reports {
+		copyReport := report
+		copyReport.Proposals = append([]Proposal(nil), report.Proposals...)
+		for proposalIndex, proposal := range copyReport.Proposals {
+			if disposition, ok := latest[report.ID+"/"+proposal.ID]; ok {
+				proposal.Disposition = disposition.Disposition
+				proposal.DispositionReason = disposition.Reason
+				copyReport.Proposals[proposalIndex] = proposal
+			}
+		}
+		result[reportIndex] = copyReport
+	}
+	return result
+}
+
+func PendingDispositionCount(reports []Report, dispositions []Disposition) int {
+	count := 0
+	for _, report := range ApplyDispositions(reports, dispositions) {
+		if !report.DispositionsRequired {
+			continue
+		}
+		for _, proposal := range report.Proposals {
+			if proposal.Disposition == "pending" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func latestDispositions(dispositions []Disposition) map[string]Disposition {
+	latest := map[string]Disposition{}
+	for _, disposition := range dispositions {
+		key := disposition.ReportID + "/" + disposition.ProposalID
+		if current, ok := latest[key]; !ok || disposition.CreatedAt.After(current.CreatedAt) ||
+			(disposition.CreatedAt.Equal(current.CreatedAt) && disposition.ID > current.ID) {
+			latest[key] = disposition
+		}
+	}
+	return latest
 }

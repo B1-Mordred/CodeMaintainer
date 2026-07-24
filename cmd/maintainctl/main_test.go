@@ -214,18 +214,36 @@ func TestAgentContractsCLIListsSchemasAndJobValidationEvidence(t *testing.T) {
 }
 
 func TestTestDesignerCLIListsJobReports(t *testing.T) {
+	seen := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/jobs/job-one/test-designer" {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["disposition"] != "accepted" || body["reason"] != "implemented required boundary regression" {
+				t.Fatalf("unexpected disposition body %#v", body)
+			}
+		}
+		if (r.Method == http.MethodGet && r.URL.Path != "/api/v1/jobs/job-one/test-designer") ||
+			(r.Method == http.MethodPost && r.URL.Path != "/api/v1/test-designer-reports/report-one/proposals/TD-1/actions/dispose") {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"reports":[]}`))
+		_, _ = w.Write([]byte(`{"reports":[],"dispositions":[]}`))
 	}))
 	defer server.Close()
 	t.Setenv("MAINTAINER_URL", server.URL)
 	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
 	if err := run([]string{"test-designer", "job-one"}); err != nil {
 		t.Fatal(err)
+	}
+	if err := run([]string{"test-designer", "dispose", "report-one", "TD-1", "--disposition", "accepted", "--reason", "implemented required boundary regression"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("unexpected requests %#v", seen)
 	}
 }
 

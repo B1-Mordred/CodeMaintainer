@@ -55,12 +55,13 @@ After full candidate verification, medium- and high-risk jobs route through `loa
 
 The Test Designer receives a fresh controller-built packet containing the approved contract, authoritative context, baseline/differential/test-impact evidence, and candidate diff. It does not receive the implementation agent's narrative. The report must match the registered `test_proposal` schema and is validated against the exact job, approved contract hash, risk level, and result commit before storage.
 
-Reports are append-only and include proposed missing tests, boundary cases, regression risks, suitable golden/rehearsal checks, evidence IDs, and dispositions. New reports default unresolved proposals to `pending`; later slices will add the full disposition action workflow and enforcement gates.
+Reports are append-only and include proposed missing tests, boundary cases, regression risks, suitable golden/rehearsal checks, evidence IDs, and dispositions. Required unresolved proposals pause the job in `awaiting_test_design_disposition` before golden, documentation, policy, or QC stages. Reviewer dispositions are a separate append-only ledger; the original report is never mutated, and the effective report view overlays the latest accepted/rejected/not-applicable decision plus the recorded reason.
 
 Operators can inspect reports through the Jobs page or CLI:
 
 ```sh
 maintainctl test-designer <job-id>
+maintainctl test-designer dispose <report-id> <proposal-id> --disposition accepted|rejected|not_applicable --reason <text>
 ```
 
 ## Golden and rehearsal gates
@@ -120,4 +121,4 @@ This foundation exposes advanced Rego authoring only behind the expert UI and co
 
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, Test Designer disposition actions/enforcement, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.
+This slice does not complete Milestone 5. Still pending are full validation-error retry orchestration, editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.

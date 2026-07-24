@@ -1572,13 +1572,39 @@ func TestTestDesignerReportsAreVisibleOnJobDetailAndEndpoint(t *testing.T) {
 	if response.StatusCode != http.StatusOK || len(listed.Reports) != 1 || listed.Reports[0].Proposals[0].Disposition != "pending" {
 		t.Fatalf("test designer endpoint returned %d %#v", response.StatusCode, listed)
 	}
+	response, err = http.Post(server.URL+"/api/v1/test-designer-reports/"+listed.Reports[0].ID+"/proposals/TD-API-1/actions/dispose", "application/json", strings.NewReader(`{"disposition":"accepted","reason":"implemented required auth boundary regression"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dispositionResult struct {
+		Disposition         testdesigner.Disposition `json:"disposition"`
+		PendingDispositions int                      `json:"pending_dispositions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&dispositionResult); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || dispositionResult.Disposition.ProposalID != "TD-API-1" || dispositionResult.PendingDispositions != 0 {
+		t.Fatalf("test designer disposition returned %d %#v", response.StatusCode, dispositionResult)
+	}
+	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID + "/test-designer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || listed.Reports[0].Proposals[0].Disposition != "accepted" {
+		t.Fatalf("effective test designer report omitted disposition: %d %#v", response.StatusCode, listed)
+	}
 	response, err = http.Get(server.URL + "/api/v1/jobs/" + job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("test_designer_reports")) {
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("test_designer_reports")) || !bytes.Contains(body, []byte("test_designer_dispositions")) {
 		t.Fatalf("job detail omitted test designer reports: %d %s", response.StatusCode, body)
 	}
 }

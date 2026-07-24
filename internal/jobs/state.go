@@ -7,34 +7,35 @@ import "fmt"
 type State string
 
 const (
-	StateQueued                     State = "queued"
-	StateSyncing                    State = "syncing"
-	StatePreparingDependencies      State = "preparing_dependencies"
-	StateCreatingWorktree           State = "creating_worktree"
-	StateLockingAcceptanceCriteria  State = "locking_acceptance_criteria"
-	StateAwaitingTaskApproval       State = "awaiting_task_approval"
-	StateLoadingImplementationModel State = "loading_implementation_model"
-	StateReproducing                State = "reproducing"
-	StateImplementing               State = "implementing"
-	StateVerifyingTargeted          State = "verifying_targeted"
-	StateVerifyingFull              State = "verifying_full"
-	StateLoadingTestDesignerModel   State = "loading_test_designer_model"
-	StateTestDesignReview           State = "test_design_review"
-	StateGoldenRehearsalReview      State = "golden_rehearsal_review"
-	StateLoadingDocumentationModel  State = "loading_documentation_model"
-	StateDocumentationReview        State = "documentation_review"
-	StatePolicyReview               State = "policy_review"
-	StateLoadingQCModel             State = "loading_qc_model"
-	StateQCReview                   State = "qc_review"
-	StateAwaitingRepair             State = "awaiting_repair"
-	StateRepairing                  State = "repairing"
-	StateFinalVerification          State = "final_verification"
-	StateAwaitingOperator           State = "awaiting_operator"
-	StatePublishingBranch           State = "publishing_branch"
-	StateDraftPRCreated             State = "draft_pr_created"
-	StateCompleted                  State = "completed"
-	StateFailed                     State = "failed"
-	StateCancelled                  State = "cancelled"
+	StateQueued                        State = "queued"
+	StateSyncing                       State = "syncing"
+	StatePreparingDependencies         State = "preparing_dependencies"
+	StateCreatingWorktree              State = "creating_worktree"
+	StateLockingAcceptanceCriteria     State = "locking_acceptance_criteria"
+	StateAwaitingTaskApproval          State = "awaiting_task_approval"
+	StateLoadingImplementationModel    State = "loading_implementation_model"
+	StateReproducing                   State = "reproducing"
+	StateImplementing                  State = "implementing"
+	StateVerifyingTargeted             State = "verifying_targeted"
+	StateVerifyingFull                 State = "verifying_full"
+	StateLoadingTestDesignerModel      State = "loading_test_designer_model"
+	StateTestDesignReview              State = "test_design_review"
+	StateAwaitingTestDesignDisposition State = "awaiting_test_design_disposition"
+	StateGoldenRehearsalReview         State = "golden_rehearsal_review"
+	StateLoadingDocumentationModel     State = "loading_documentation_model"
+	StateDocumentationReview           State = "documentation_review"
+	StatePolicyReview                  State = "policy_review"
+	StateLoadingQCModel                State = "loading_qc_model"
+	StateQCReview                      State = "qc_review"
+	StateAwaitingRepair                State = "awaiting_repair"
+	StateRepairing                     State = "repairing"
+	StateFinalVerification             State = "final_verification"
+	StateAwaitingOperator              State = "awaiting_operator"
+	StatePublishingBranch              State = "publishing_branch"
+	StateDraftPRCreated                State = "draft_pr_created"
+	StateCompleted                     State = "completed"
+	StateFailed                        State = "failed"
+	StateCancelled                     State = "cancelled"
 )
 
 var allStates = []State{
@@ -51,6 +52,7 @@ var allStates = []State{
 	StateVerifyingFull,
 	StateLoadingTestDesignerModel,
 	StateTestDesignReview,
+	StateAwaitingTestDesignDisposition,
 	StateGoldenRehearsalReview,
 	StateLoadingDocumentationModel,
 	StateDocumentationReview,
@@ -69,33 +71,34 @@ var allStates = []State{
 }
 
 var transitions = map[State]map[State]struct{}{
-	StateQueued:                     set(StateSyncing, StateCancelled, StateFailed),
-	StateSyncing:                    set(StateCreatingWorktree, StateCancelled, StateFailed),
-	StateCreatingWorktree:           set(StatePreparingDependencies, StateCancelled, StateFailed),
-	StatePreparingDependencies:      set(StateLockingAcceptanceCriteria, StateCancelled, StateFailed),
-	StateLockingAcceptanceCriteria:  set(StateAwaitingTaskApproval, StateCancelled, StateFailed),
-	StateAwaitingTaskApproval:       set(StateLoadingImplementationModel, StateCancelled, StateFailed),
-	StateLoadingImplementationModel: set(StateReproducing, StateCancelled, StateFailed),
-	StateReproducing:                set(StateImplementing, StateCancelled, StateFailed),
-	StateImplementing:               set(StateVerifyingTargeted, StateCancelled, StateFailed),
-	StateVerifyingTargeted:          set(StateVerifyingFull, StateAwaitingRepair, StateCancelled, StateFailed),
-	StateVerifyingFull:              set(StateLoadingTestDesignerModel, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
-	StateLoadingTestDesignerModel:   set(StateTestDesignReview, StateCancelled, StateFailed),
-	StateTestDesignReview:           set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
-	StateGoldenRehearsalReview:      set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
-	StateLoadingDocumentationModel:  set(StateDocumentationReview, StateCancelled, StateFailed),
-	StateDocumentationReview:        set(StatePolicyReview, StateLoadingQCModel, StateCancelled, StateFailed),
-	StatePolicyReview:               set(StateLoadingQCModel, StateCancelled, StateFailed),
-	StateLoadingQCModel:             set(StateQCReview, StateCancelled, StateFailed),
-	StateQCReview:                   set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
-	StateAwaitingRepair:             set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
-	StateRepairing:                  set(StateFinalVerification, StateCancelled, StateFailed),
-	StateFinalVerification:          set(StateLoadingDocumentationModel, StatePolicyReview, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
-	StateAwaitingOperator:           set(StatePublishingBranch, StateCompleted, StateCancelled, StateFailed),
-	StatePublishingBranch:           set(StateDraftPRCreated, StateAwaitingOperator, StateFailed),
-	StateDraftPRCreated:             set(StateCompleted, StateFailed),
-	StateFailed:                     set(StateQueued),
-	StateCancelled:                  set(StateQueued),
+	StateQueued:                        set(StateSyncing, StateCancelled, StateFailed),
+	StateSyncing:                       set(StateCreatingWorktree, StateCancelled, StateFailed),
+	StateCreatingWorktree:              set(StatePreparingDependencies, StateCancelled, StateFailed),
+	StatePreparingDependencies:         set(StateLockingAcceptanceCriteria, StateCancelled, StateFailed),
+	StateLockingAcceptanceCriteria:     set(StateAwaitingTaskApproval, StateCancelled, StateFailed),
+	StateAwaitingTaskApproval:          set(StateLoadingImplementationModel, StateCancelled, StateFailed),
+	StateLoadingImplementationModel:    set(StateReproducing, StateCancelled, StateFailed),
+	StateReproducing:                   set(StateImplementing, StateCancelled, StateFailed),
+	StateImplementing:                  set(StateVerifyingTargeted, StateCancelled, StateFailed),
+	StateVerifyingTargeted:             set(StateVerifyingFull, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateVerifyingFull:                 set(StateLoadingTestDesignerModel, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateLoadingTestDesignerModel:      set(StateTestDesignReview, StateCancelled, StateFailed),
+	StateTestDesignReview:              set(StateAwaitingTestDesignDisposition, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateAwaitingTestDesignDisposition: set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateGoldenRehearsalReview:         set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateLoadingDocumentationModel:     set(StateDocumentationReview, StateCancelled, StateFailed),
+	StateDocumentationReview:           set(StatePolicyReview, StateLoadingQCModel, StateCancelled, StateFailed),
+	StatePolicyReview:                  set(StateLoadingQCModel, StateCancelled, StateFailed),
+	StateLoadingQCModel:                set(StateQCReview, StateCancelled, StateFailed),
+	StateQCReview:                      set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
+	StateAwaitingRepair:                set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
+	StateRepairing:                     set(StateFinalVerification, StateCancelled, StateFailed),
+	StateFinalVerification:             set(StateLoadingDocumentationModel, StatePolicyReview, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
+	StateAwaitingOperator:              set(StatePublishingBranch, StateCompleted, StateCancelled, StateFailed),
+	StatePublishingBranch:              set(StateDraftPRCreated, StateAwaitingOperator, StateFailed),
+	StateDraftPRCreated:                set(StateCompleted, StateFailed),
+	StateFailed:                        set(StateQueued),
+	StateCancelled:                     set(StateQueued),
 }
 
 func set(states ...State) map[State]struct{} {
@@ -127,7 +130,7 @@ func (s State) Terminal() bool {
 }
 
 func (s State) Resumable() bool {
-	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval
+	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval && s != StateAwaitingTestDesignDisposition
 }
 
 func CanTransition(from, to State) bool {

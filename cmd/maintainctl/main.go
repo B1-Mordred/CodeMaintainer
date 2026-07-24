@@ -133,6 +133,26 @@ func run(arguments []string) error {
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/agent-contracts", nil)
 	case "test-designer":
+		if len(arguments) < 2 {
+			return errors.New("usage: maintainctl test-designer <job-id>|dispose ...")
+		}
+		if arguments[1] == "dispose" {
+			if len(arguments) < 4 {
+				return errors.New("usage: maintainctl test-designer dispose <report-id> <proposal-id> --disposition accepted|rejected|not_applicable --reason text")
+			}
+			flags := flag.NewFlagSet("test-designer dispose", flag.ContinueOnError)
+			disposition := flags.String("disposition", "", "accepted, rejected, or not_applicable")
+			reason := flags.String("reason", "", "audited disposition reason")
+			if err := flags.Parse(arguments[4:]); err != nil {
+				return err
+			}
+			if *disposition == "" || *reason == "" {
+				return errors.New("usage: maintainctl test-designer dispose <report-id> <proposal-id> --disposition accepted|rejected|not_applicable --reason text")
+			}
+			return api.printJSON(http.MethodPost, "/api/v1/test-designer-reports/"+url.PathEscape(arguments[2])+"/proposals/"+url.PathEscape(arguments[3])+"/actions/dispose", map[string]any{
+				"disposition": *disposition, "reason": *reason,
+			})
+		}
 		if len(arguments) != 2 || arguments[1] == "" {
 			return errors.New("usage: maintainctl test-designer <job-id>")
 		}
@@ -1367,6 +1387,7 @@ Commands:
   risk waive <job-id> --assessment <id> --to <low|medium> --reason <text> --expires-at <RFC3339>
   agent-contracts [job-id]
   test-designer <job-id>
+  test-designer dispose <report-id> <proposal-id> --disposition accepted|rejected|not_applicable --reason text
   documentation <job-id>
   golden reports <job-id>
   golden approve|reject <report-id> <comparison-id> --reason text

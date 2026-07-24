@@ -272,6 +272,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/task-contract/actions/approve", s.approveTaskContract)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/agent-contract-validations", s.listJobAgentContractValidations)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/test-designer", s.listJobTestDesignerReports)
+	mux.HandleFunc("POST /api/v1/test-designer-reports/{reportID}/proposals/{proposalID}/actions/dispose", s.disposeTestDesignerProposal)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/documentation", s.listJobDocumentationManifests)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/policy-decisions", s.listJobPolicyDecisions)
@@ -714,6 +715,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if reports, err := s.store.ListTestDesignerReports(r.Context(), job.ID, 100); err == nil {
 		response["test_designer_reports"] = reports
+		dispositions, dispositionErr := s.store.ListTestDesignerDispositions(r.Context(), job.ID, "", 100)
+		if dispositionErr != nil {
+			s.internalError(w, r, dispositionErr)
+			return
+		}
+		response["test_designer_dispositions"] = dispositions
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

@@ -686,7 +686,15 @@ func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, e
 	if err != nil {
 		return Outcome{}, err
 	}
-	outcome := detailOutcome(map[string]any{"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID, "proposals": len(report.Proposals)})
+	pending := testdesigner.PendingDispositionCount([]testdesigner.Report{report}, nil)
+	outcome := detailOutcome(map[string]any{
+		"test_designer": "proposed", "risk_level": assessment.Level, "report_id": report.ID,
+		"proposals": len(report.Proposals), "pending_dispositions": pending,
+	})
+	if pending > 0 {
+		outcome.NextState = jobs.StateAwaitingTestDesignDisposition
+		return outcome, nil
+	}
 	outcome.NextState = jobs.StateGoldenRehearsalReview
 	return outcome, nil
 }

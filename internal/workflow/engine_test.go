@@ -206,6 +206,10 @@ func TestOutcomeCanRouteFullVerificationThroughTestDesigner(t *testing.T) {
 	if err != nil || next != jobs.StateLoadingTestDesignerModel {
 		t.Fatalf("test-designer route = %s, %v", next, err)
 	}
+	next, err = nextState(jobs.StateTestDesignReview, Outcome{NextState: jobs.StateAwaitingTestDesignDisposition})
+	if err != nil || next != jobs.StateAwaitingTestDesignDisposition {
+		t.Fatalf("test-designer disposition route = %s, %v", next, err)
+	}
 	if _, err := nextState(jobs.StateQueued, Outcome{NextState: jobs.StateLoadingTestDesignerModel}); err == nil {
 		t.Fatal("invalid explicit route bypassed transition policy")
 	}
