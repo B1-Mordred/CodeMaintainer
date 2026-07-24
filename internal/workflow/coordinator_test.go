@@ -447,6 +447,10 @@ func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *test
 	if err != nil || len(jobArtifacts) < 2 {
 		t.Fatalf("job artifacts = %#v, %v", jobArtifacts, err)
 	}
+	graph, err := store.ListJobEvidenceGraph(ctx, job.ID)
+	if err != nil || graph.JobID != job.ID || len(graph.Nodes) < 2 || len(graph.Edges) < 1 {
+		t.Fatalf("workflow evidence graph = %#v, %v", graph, err)
+	}
 	records, err := store.ListMemory(ctx, memory.ProjectScope{Owner: "fixture", Repository: "arithmetic"}, memory.StatusQuarantine, 10)
 	if err != nil || len(records) != 1 {
 		t.Fatalf("verified memory records = %#v, %v", records, err)

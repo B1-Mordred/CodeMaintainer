@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T11:15:00Z",
+  "steps": [
+    {
+      "step": 1,
+      "id": "ui-onboard-fixture-repository",
+      "status": "in_progress",
+      "title": "Onboard a fixture repository from the browser",
+      "fixtures": ["test/fixtures/repositories/php83/composer.json", "test/fixtures/repositories/php83/vite.config.ts"],
+      "implementation": ["internal/capabilities/service.go", "web/src/CapabilityPage.tsx"],
+      "tests": ["web/src/CapabilityPage.test.tsx", "internal/capabilities/heterogeneous_fixtures_test.go"],
+      "ui": ["web/src/CapabilityPage.tsx#repo-doctor"],
+      "docs": ["docs/capability-packs.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "web/src/CapabilityPage.test.tsx", "contains": ["Run Repo Doctor", "completed without repository changes", "repo-doctor/actions/scan"]},
+        {"path": "internal/capabilities/heterogeneous_fixtures_test.go", "contains": ["php83", "package_manager:npm"]}
+      ],
+      "remaining_work": ["Drive project registration plus Repo Doctor scan from one browser workflow against a real fixture checkout instead of starting from the seeded project list."]
+    },
+    {
+      "step": 2,
+      "id": "accept-packs-review-effective-config",
+      "status": "in_progress",
+      "title": "Accept detected packs and review effective configuration",
+      "fixtures": ["test/fixtures/repositories/r-statistical/renv.lock"],
+      "implementation": ["internal/capabilities/service.go", "web/src/CapabilityPage.tsx", "internal/config"],
+      "tests": ["internal/api/server_test.go", "web/src/CapabilityPage.test.tsx", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/CapabilityPage.tsx#capability-packs", "web/src/ConfigurationPage.tsx#effective-configuration"],
+      "docs": ["docs/capability-packs.md", "docs/configuration.md"],
+      "proof": [
+        {"path": "internal/api/server_test.go", "contains": ["accept detected R pack", "ReviewRequest"]},
+        {"path": "web/src/CapabilityPage.test.tsx", "contains": ["Preview configuration", "Apply configuration", "configuration revision 2"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["TestPackInstallUsesVersionRevisionAndAuditedReason", "TestPackConfigurationUsesTypedSharedAPI"]}
+      ],
+      "remaining_work": ["Add a browser test that accepts a Repo Doctor proposal from the scan result and immediately inspects the resulting effective configuration."]
+    },
+    {
+      "step": 3,
+      "id": "clarify-approve-task-contract",
+      "status": "covered",
+      "title": "Clarify a task and approve the task contract",
+      "fixtures": [],
+      "implementation": ["internal/workflow/coordinator.go", "internal/taskcontract"],
+      "tests": ["internal/workflow/coordinator_test.go", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#jobs"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["StateAwaitingTaskApproval", "ApproveTaskContract", "approve exact bounded fixture contract"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["task-contract/actions/approve", "scope reviewed"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 4,
+      "id": "compute-risk-baseline-impact-context-targeted",
+      "status": "covered",
+      "title": "Compute risk, baseline, code impact, context, and targeted tests",
+      "fixtures": [],
+      "implementation": ["internal/workflow/coordinator.go", "internal/intelligence/service.go", "internal/risk/types.go"],
+      "tests": ["internal/workflow/coordinator_test.go", "internal/intelligence/service_integration_test.go"],
+      "ui": ["web/src/IntelligencePage.tsx"],
+      "docs": ["docs/intelligence.md", "docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["ListRiskAssessments", "ListContextManifests", "ListTestImpacts", "workflow differential purposes"]},
+        {"path": "internal/intelligence/service_integration_test.go", "contains": ["CaptureBaseline", "RecordTestImpact", "CompileContext"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 5,
+      "id": "deterministic-fake-implementation",
+      "status": "covered",
+      "title": "Run implementation with a deterministic fake model",
+      "fixtures": ["test/fixtures/agents/implementation-task.json"],
+      "implementation": ["internal/workflow/deterministic.go", "internal/workflow/coordinator.go"],
+      "tests": ["internal/workflow/coordinator_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#jobs"],
+      "docs": ["docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/workflow/deterministic.go", "contains": ["DeterministicBackend", "return a + b"]},
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["fixtureExecution", "job_e2e", "ResultSHA"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 6,
+      "id": "independent-review-stages",
+      "status": "covered",
+      "title": "Run Test Designer, verification, Documentation Agent, documentation policy review, and code QC",
+      "fixtures": [],
+      "implementation": ["internal/workflow/coordinator.go", "internal/testdesigner", "internal/docagent", "internal/policy", "internal/findings"],
+      "tests": ["internal/workflow/coordinator_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#documentation", "web/src/OperatorConsole.tsx#quality"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["ListTestDesignerReports", "ListGoldenReports", "ListDocumentationManifests", "ListFindings"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["StateDocumentationReview", "StatePolicyReview", "StateQCReview"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 7,
+      "id": "block-unresolved-finding",
+      "status": "covered",
+      "title": "Block on a deliberately unresolved finding",
+      "fixtures": [],
+      "implementation": ["internal/workflow/deterministic.go", "internal/workflow/coordinator.go", "internal/findings"],
+      "tests": ["internal/workflow/coordinator_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#quality"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/deterministic.go", "contains": ["blocking_findings", "QC-FIXTURE-001"]},
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["StateAwaitingOperator", "StatusClosed"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 8,
+      "id": "repair-or-waive-policy",
+      "status": "covered",
+      "title": "Repair or explicitly waive according to policy",
+      "fixtures": [],
+      "implementation": ["internal/workflow/coordinator.go", "internal/risk", "internal/findings"],
+      "tests": ["internal/workflow/coordinator_test.go", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#quality", "web/src/OperatorConsole.tsx#policy-risk"],
+      "docs": ["docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator.go", "contains": ["StateAwaitingRepair", "StateRepairing", "repaired_findings"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["risk/waivers", "temporary fixture waiver"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 9,
+      "id": "local-bare-git-publication",
+      "status": "covered",
+      "title": "Create a local bare-Git publish artifact",
+      "fixtures": [],
+      "implementation": ["internal/gitbridge/manager.go", "internal/workflow/coordinator.go"],
+      "tests": ["internal/workflow/coordinator_test.go", "internal/gitbridge/manager_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#forges"],
+      "docs": ["docs/forges.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["StatePublishingBranch", "refs/heads/maintainer/job_e2e", "published SHA"]},
+        {"path": "internal/gitbridge/manager_test.go", "contains": ["clone\", \"--bare", "Publish"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 10,
+      "id": "complete-evidence-chain",
+      "status": "covered",
+      "title": "Inspect the complete evidence chain",
+      "fixtures": [],
+      "implementation": ["internal/evidence/types.go", "internal/storage/sqlite/evidence.go", "internal/api/server.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/workflow/coordinator_test.go", "internal/storage/sqlite/store_test.go", "internal/api/server_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#jobs-evidence"],
+      "docs": ["docs/evidence.md"],
+      "proof": [
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["ListJobEvidenceGraph", "workflow evidence graph"]},
+        {"path": "web/src/App.test.tsx", "contains": ["Evidence traceability graph", "artifact retained for job evidence"]},
+        {"path": "cmd/maintainctl/main_test.go", "contains": ["evidence\", \"job-one", "evidence-graph"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "step": 11,
+      "id": "ui-config-api-cli-audit-rollback",
+      "status": "in_progress",
+      "title": "Change a setting in the UI, verify API/CLI consistency and audit, then roll it back",
+      "fixtures": [],
+      "implementation": ["internal/config", "internal/api/config_registry.go", "cmd/maintainctl/main.go", "web/src/ConfigurationPage.tsx"],
+      "tests": ["web/src/ConfigurationPage.test.tsx", "internal/api/server_test.go", "internal/config/service_integration_test.go", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/ConfigurationPage.tsx#configuration"],
+      "docs": ["docs/configuration.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "web/src/ConfigurationPage.test.tsx", "contains": ["Create draft", "Apply reviewed draft", "If-Match"]},
+        {"path": "internal/api/server_test.go", "contains": ["rollback provenance is incomplete", "restore the initial review-cycle policy"]},
+        {"path": "internal/config/service_integration_test.go", "contains": ["TestRegistryServiceRollbackRestoresWholeHistoricalScope", "stale rollback"]}
+      ],
+      "remaining_work": ["Run the UI setting edit, API/CLI consistency check, audit inspection, and rollback as one browser-to-controller workflow case instead of separate focused tests."]
+    },
+    {
+      "step": 12,
+      "id": "ui-fake-remote-provider-route-egress-job",
+      "status": "in_progress",
+      "title": "Configure a fake remote endpoint from the UI, probe, route, approve egress, complete a job, and retain safe usage/cost evidence",
+      "fixtures": [],
+      "implementation": ["internal/providers", "internal/api/providers.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#models-agents"],
+      "docs": ["docs/model-providers.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "web/src/App.test.tsx", "contains": ["Simulate provider route", "fake-remote-json", "local-quality-default"]},
+        {"path": "internal/api/server_test.go", "contains": ["TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview", "fake-remote-json"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteDeniesCostAndCapabilityDriftWithRetainedManifests", "ManifestSHA256"]}
+      ],
+      "remaining_work": ["Add editable provider/endpoint/model/route browser controls, explicit egress approval, and a local-fake job that actually routes through the provider gateway without exposing credentials."]
+    },
+    {
+      "step": 13,
+      "id": "remote-inference-fails-closed",
+      "status": "in_progress",
+      "title": "Prove remote inference is default-off and forbidden data, unsafe endpoints, redirects, model drift, or lower-trust fallback fail closed",
+      "fixtures": [],
+      "implementation": ["internal/providers", "cmd/model-tool/main.go", "config/security-adversarial-coverage.json"],
+      "tests": ["internal/providers/service_test.go", "internal/storage/sqlite/providers_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#models-agents"],
+      "docs": ["docs/model-providers.md", "docs/security.md"],
+      "proof": [
+        {"path": "internal/providers/service_test.go", "contains": ["RemoteEnabledByDefault", "forbidden data class", "capability drift"]},
+        {"path": "internal/storage/sqlite/providers_test.go", "contains": ["TestProviderEndpointRejectsUnsafeRemoteURL", "169.254.169.254"]},
+        {"path": "cmd/model-tool/main.go", "contains": ["unsafe model download redirect"]}
+      ],
+      "remaining_work": ["Add a lower-trust fallback regression and bind model-drift denial to retained probe history once provider execution records observed model IDs at call time."]
+    },
+    {
+      "step": 14,
+      "id": "backup-migrate-restart-restore-resume",
+      "status": "in_progress",
+      "title": "Back up, migrate/restart, restore, and resume without losing provenance",
+      "fixtures": [],
+      "implementation": ["internal/backup/manager.go", "internal/storage/sqlite/store.go", "internal/workflow/engine.go", "config/migration-coverage.json"],
+      "tests": ["internal/backup/manager_test.go", "internal/storage/sqlite/store_test.go", "internal/workflow/engine_test.go", "internal/storage/sqlite/migration_coverage_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/backup-restore.md", "docs/migrations.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/backup/manager_test.go", "contains": ["TestBackupCreatesChecksumBoundBundleAndValidatesDryRun", "ApplyPending"]},
+        {"path": "internal/workflow/engine_test.go", "contains": ["TestRestartAdvancesEveryAutomaticallyResumablePhase", "Resumable"]},
+        {"path": "internal/storage/sqlite/migration_coverage_test.go", "contains": ["RestartResumeEvidence", "BackupRestoreEvidence"]}
+      ],
+      "remaining_work": ["Run one local-fake workflow through backup creation, migrated/reopened controller state, staged restore, restart, and resumed publication/evidence verification."]
+    }
+  ]
+}
