@@ -8,6 +8,8 @@ Local passwords use Argon2id. Server sessions and CSRF values are random and sto
 
 Review `config/examples/runner-policy.production.example.json`, use a dedicated rootless daemon, protect all secret files with mode `0600`, keep the UI on loopback or authenticated TLS, and treat audit/history retention as security evidence.
 
+`config/redaction-coverage.json` is the checked redaction map for write-only secrets across configuration, provider egress, observability/support bundles, project memory, authentication, forge credentials, Windows-worker credentials, and policy decisions. CI verifies every listed surface has implementation, test, UI, documentation, and proof markers before `I2-DOD-07` can advance.
+
 ## Threat model
 
 Protected assets are source and unpublished patches, GitHub App material, local identities and sessions, model files, project-scoped memory, the controller database/audit ledger, and host execution authority. The browser and controller form the trusted operator boundary; the Git bridge, runnerd, model supervisor, optional index, and optional Hermes bridge are separately authenticated service boundaries. Worktrees, repository and issue text, dependencies, worker output, model output, the browser network, and every external provider are untrusted.

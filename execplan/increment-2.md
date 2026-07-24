@@ -61,6 +61,7 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - [ ] (2026-07-24 07:35Z) Milestone 7 external-validation coverage checkpoint: `config/external-validation-coverage.json` now maps the eight operator-only acceptance areas to prerequisites, safe fake evidence, finite operator procedures, and explicit CI non-claims. `internal/config/external_validation_coverage_test.go` fails if an external-only item lacks fake evidence or a documented procedure. Focused validation is pending; the row remains partial until the full final acceptance report reconciles every operator-only boundary.
 - [ ] (2026-07-24 07:55Z) Milestone 7 configuration parity coverage checkpoint: `config/configuration-parity.json` now maps routine typed-registry operations and legacy system-document compatibility operations to REST/OpenAPI routes, `maintainctl config` commands, the browser workbench, docs, and tests. `internal/config/configuration_parity_test.go` checks that each required operation exists in the matrix, that every REST path appears in OpenAPI, that CLI command strings remain present, and that UI/test/doc evidence paths exist. Focused validation is pending; full browser/keyboard E2E and final parity acceptance remain open.
 - [ ] (2026-07-24 08:05Z) Paused at the operator-requested sync point before starting the cross-surface secret-redaction coverage slice. Commit `f6d25b6` was already on `origin/dev` and GitHub Actions run `30076306125` passed; the next resumption boundary is `I2-DOD-07` write-only secret redaction coverage plus remaining Milestone 7 acceptance.
+- [ ] (2026-07-24 08:25Z) Milestone 7 redaction coverage checkpoint: `config/redaction-coverage.json` now maps ten secret-bearing output surfaces across configuration, provider egress, observability events, support bundles, memory, auth/session state, forge credentials, Windows-worker credentials, and policy inputs. `internal/config/redaction_coverage_test.go` checks required surface coverage, referenced implementation/UI/test/doc paths, and proof snippets for existing leak-prevention regressions. Focused config validation passes; broader redaction-adjacent packages and final E2E/security acceptance remain open.
 - [x] Milestone 1 — replace the single-document configuration surface with the complete typed registry, seven-scope effective-value resolver, immutable job snapshots, drafts/review/apply/rollback/import/export/dry-run/prerequisite APIs, CLI parity, and dedicated accessible workbench.
 - [x] Milestone 2 — add incremental code intelligence, deterministic Context Compiler, baseline/differential verification, test-impact analysis, isolated content-addressed caches, and their status/query/rebuild browser surfaces.
 - [x] Milestone 3 — add evidence-backed Repo Doctor onboarding, signed/checksummed capability-pack lifecycle, PHP/R/security packs, and catalog/assignment/upgrade/rollback UI.
@@ -139,6 +140,8 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
   Evidence: `configuration-coverage.json` mapped every setting to surfaces, but it did not enumerate the registry operations themselves or compare them to OpenAPI and `maintainctl`. The new parity matrix covers descriptors, values, effective resolution, prerequisites, export/import, the full draft lifecycle, registry history/rollback, and legacy compatibility export/validate/apply/rollback.
 - Observation: the cleanest pause point was before starting the redaction inventory.
   Evidence: the tracked worktree matched `origin/dev` at `f6d25b6`, GitHub Actions run `30076306125` was green, and the next `I2-DOD-07` slice crosses configuration, provider egress, observability/support bundles, memory, auth, and Windows-worker credential handling.
+- Observation: redaction behavior existed in multiple isolated packages, but no checked artifact proved the surfaces moved together.
+  Evidence: configuration, provider egress, observability, memory, auth, forge, Windows-worker, and policy tests already asserted local leak-prevention behavior; `I2-DOD-07` was still `missing` because no matrix connected those proofs to the DOD boundary.
 
 ## Decision Log
 
@@ -259,6 +262,9 @@ The locally testable outcome uses a protocol-accurate fake provider gateway, fak
 - Decision: pause before implementing the cross-surface secret-redaction matrix.
   Rationale: redaction is a broad safety invariant and should land as a complete tested slice, not as partial uncommitted work after a green configuration-parity checkpoint.
   Date/Author: 2026-07-24 / Codex
+- Decision: make redaction coverage a checked inventory with proof snippets instead of a prose-only security claim.
+  Rationale: a broad "secret-safe" statement is too easy to drift. Requiring every secret-bearing output surface to reference implementation, UI, tests, docs, forbidden examples, and exact regression markers keeps the DOD tied to executable evidence.
+  Date/Author: 2026-07-24 / Codex
 
 ## Outcomes & Retrospective
 
@@ -277,6 +283,8 @@ Milestone 5 is partially implemented and paused at an auditable sync point. Task
 Milestone 7 has started but remains open. The browser information architecture now exposes the required 17 named areas with tested top-level navigation, dedicated Documentation and Security/SBOM operational pages, retained setup/health/administration operations, filtered configuration routes from every non-configuration area, reciprocal configuration-field consumer backlinks, and dashboard operator documentation. The migration/restore evidence gate now inventories all 40 embedded forward migrations and verifies that each has durable-record, restart/resume, backup/restore, documentation, and rollback evidence, while backup restore tests cover preserved pre-restore databases and WAL/SHM cleanup. External-only validation now has a checked inventory tying each unavailable real prerequisite to safe fake evidence, finite operator procedures, and explicit CI non-claims. Configuration parity now has a checked operation matrix for REST/OpenAPI, CLI, browser, docs, and tests across typed registry and legacy compatibility operations. Full keyboard/browser E2E, broader migration-from-retained-version acceptance, security/property/fuzz/isolation tests, performance/soak evidence, and final acceptance reporting remain before Milestone 7 can close.
 
 Current pause: implementation work is intentionally stopped after the green configuration-parity checkpoint. No partial redaction slice has been started; `I2-DOD-07` is the next safe implementation boundary when work resumes.
+
+The redaction slice is now active and partially validated. The new matrix covers all currently identified secret-bearing output paths and the config package gate passes; final closure still needs the broader redaction-adjacent package validation and full Increment 2 acceptance.
 
 ## Context and Orientation
 
@@ -461,3 +469,5 @@ Revision note (2026-07-24 07:35Z): added checked external-validation coverage fo
 Revision note (2026-07-24 07:55Z): added checked configuration operation parity coverage. `config/configuration-parity.json` maps typed registry and legacy compatibility operations to OpenAPI routes, `maintainctl config` commands, browser surfaces, docs, and tests; `internal/config/configuration_parity_test.go` verifies required operations, OpenAPI path presence, CLI command presence, and evidence files. Focused validation is pending; full E2E and final acceptance remain open.
 
 Revision note (2026-07-24 08:05Z): paused at the operator-requested sync point without starting the next redaction slice. `f6d25b6` was already pushed to `origin/dev` and CI run `30076306125` passed; this note records `I2-DOD-07` as the next resumption boundary and keeps Increment 2 active and incomplete.
+
+Revision note (2026-07-24 08:25Z): added the checked write-only secret redaction inventory for `I2-DOD-07`. `config/redaction-coverage.json` covers configuration secrets, import/export, provider egress manifests, observability events, support bundles, project memory, auth/session credentials, forge credentials, Windows-worker credentials, and policy decision inputs; the new config test verifies required coverage and proof snippets. Increment 2 remains active pending broader validation and final acceptance.

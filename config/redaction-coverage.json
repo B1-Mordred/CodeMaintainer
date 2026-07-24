@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T08:25:00Z",
+  "surfaces": [
+    {
+      "id": "configuration-secret-state",
+      "title": "Configuration secret descriptors and effective values",
+      "policy": "Secret descriptors expose configured/redacted state only; raw secret bytes are never returned by effective configuration, revisions, exports, snapshots, or audit records.",
+      "implementation": ["internal/config/registry.go", "internal/config/export_import.go", "internal/storage/sqlite/config_registry.go"],
+      "tests": ["internal/config/registry_test.go", "internal/storage/sqlite/config_registry_test.go"],
+      "ui": ["web/src/ConfigurationPage.tsx#configuration"],
+      "docs": ["docs/configuration.md", "docs/security.md"],
+      "forbidden_examples": ["super-secret", "provider.api_key raw value"],
+      "proof": [
+        {"path": "internal/config/registry_test.go", "contains": ["TestSecretValuesAreNeverReturnedOrExportable", "provider.api_key", "len(effective.Value) != 0"]},
+        {"path": "internal/storage/sqlite/config_registry_test.go", "contains": ["TestConfigScopeResetRevisionHistoryAndSecretRedaction", "api_key", "secret revision leaked"]}
+      ]
+    },
+    {
+      "id": "configuration-import-export-secrets",
+      "title": "Declarative import/export and forward-compatible unknown secret values",
+      "policy": "Export and forward-compatible import preserve unknown write-only secret state as configured/secret/redacted evidence without applying or serializing raw values.",
+      "implementation": ["internal/config/export_import.go", "internal/storage/sqlite/config_drafts.go"],
+      "tests": ["internal/config/export_import_integration_test.go"],
+      "ui": ["web/src/ConfigurationPage.tsx#configuration-import-export"],
+      "docs": ["docs/configuration.md"],
+      "forbidden_examples": ["future.write_only raw value", "unknown imported secret bytes"],
+      "proof": [
+        {"path": "internal/config/export_import_integration_test.go", "contains": ["future.write_only", "Redacted: true", "len(draft.UnknownEntries[1].Value) != 0"]}
+      ]
+    },
+    {
+      "id": "provider-egress-manifests",
+      "title": "Provider route simulation and egress manifests",
+      "policy": "Provider routing rejects forbidden secret data classes before external selection and records only redaction categories, estimates, profile IDs, and allow/deny decisions in egress manifests.",
+      "implementation": ["internal/providers/service.go", "internal/providers/types.go", "internal/storage/sqlite/providers.go"],
+      "tests": ["internal/providers/service_test.go", "internal/storage/sqlite/providers_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#models-agents"],
+      "docs": ["docs/model-providers.md", "docs/security.md"],
+      "forbidden_examples": ["secrets data class", "raw provider credential", "remote provider payload"],
+      "proof": [
+        {"path": "internal/providers/service.go", "contains": ["EnsureNoSecrets(request.DataClasses)", "credential_patterns", "hidden_reasoning"]},
+        {"path": "internal/providers/service_test.go", "contains": ["TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile", "DataClasses: []string{\"secrets\"}", "forbidden data class"]}
+      ]
+    },
+    {
+      "id": "observability-events",
+      "title": "Observability event ingestion",
+      "policy": "Telemetry events are JSON-only, size-bounded, redacted before storage/API response, local by default, and forbidden from retaining prompts, request bodies, source content, credentials, or hidden reasoning.",
+      "implementation": ["internal/observability/types.go", "internal/storage/sqlite/observability.go", "internal/api/observability.go"],
+      "tests": ["internal/observability/types_test.go", "internal/storage/sqlite/observability_test.go", "internal/api/observability_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#observability"],
+      "docs": ["docs/observability.md", "docs/security.md"],
+      "forbidden_examples": ["Bearer secret", "sensitive prompt", "package main", "hidden reasoning"],
+      "proof": [
+        {"path": "internal/observability/types_test.go", "contains": ["TestEventRedactsSecretsPromptsBodiesAndReasoningBeforeStorage", "Bearer secret", "sensitive prompt", "package main", "nope"]},
+        {"path": "internal/api/observability_test.go", "contains": ["TestObservabilityAPIRedactsEventsAndCreatesSupportBundle", "authorization_header", "RedactionCount"]}
+      ]
+    },
+    {
+      "id": "support-bundle-manifests",
+      "title": "Support bundle manifests",
+      "policy": "Support bundles retain bounded review-only manifests with hashes and redaction counts; raw secrets and unredacted telemetry are not included in bundle metadata.",
+      "implementation": ["internal/observability/types.go", "internal/storage/sqlite/observability.go", "internal/api/observability.go"],
+      "tests": ["internal/observability/types_test.go", "internal/storage/sqlite/observability_test.go", "internal/api/observability_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#observability"],
+      "docs": ["docs/observability.md", "docs/acceptance.md"],
+      "forbidden_examples": ["secret token", "Bearer no", "unreviewed diagnostic archive"],
+      "proof": [
+        {"path": "internal/observability/types_test.go", "contains": ["TestSupportBundleManifestIsBoundedRedactedAndReviewOnly", "\"token\":\"secret\"", "external_otlp_enabled"]},
+        {"path": "internal/storage/sqlite/observability_test.go", "contains": ["TestObservabilityEventsAndSupportBundlesPersistAppendOnlyRedacted", "do-not-store", "support bundle is not redacted"]}
+      ]
+    },
+    {
+      "id": "project-memory",
+      "title": "Project memory records, retrieval, export, and restore",
+      "policy": "Project memory is namespace-filtered before ranking, secret-scanned before quarantine/canonical use, and rejects credential-bearing content, traversal paths, and token-bearing source URIs.",
+      "implementation": ["internal/memory/store.go", "internal/storage/sqlite/memory.go", "internal/api/memory.go"],
+      "tests": ["internal/storage/sqlite/memory_test.go", "internal/memory/store_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#memory-evidence"],
+      "docs": ["docs/memory.md", "docs/security.md"],
+      "forbidden_examples": ["password=do-not-store", "../secret", "https://token@example.invalid/private"],
+      "proof": [
+        {"path": "internal/storage/sqlite/memory_test.go", "contains": ["TestMemoryCandidateRejectsSecretsTraversalAndInvalidCommits", "password=do-not-store", "https://token@example.invalid/private"]}
+      ]
+    },
+    {
+      "id": "auth-session-credentials",
+      "title": "Authentication passwords, session tokens, and CSRF material",
+      "policy": "Passwords are stored only as hashes, session and CSRF secrets are stored as hashes, raw session tokens remain transport-only cookies/CLI session material, and principal JSON omits token hashes.",
+      "implementation": ["internal/auth/service.go", "internal/auth/types.go", "internal/storage/sqlite/auth.go", "internal/api/auth.go"],
+      "tests": ["internal/auth/service_test.go", "internal/storage/sqlite/auth_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#setup-health"],
+      "docs": ["docs/security.md", "docs/acceptance.md"],
+      "forbidden_examples": ["raw password", "session token hash in principal JSON", "csrf hash in API output"],
+      "proof": [
+        {"path": "internal/auth/types.go", "contains": ["SessionID            string    `json:\"-\"`", "CSRFHash             []byte    `json:\"-\"`"]},
+        {"path": "internal/storage/sqlite/auth_test.go", "contains": ["TokenHash", "CSRFHash", "SessionByTokenHash"]}
+      ]
+    },
+    {
+      "id": "forge-credentials",
+      "title": "Forge app tokens, webhook secrets, and remotes",
+      "policy": "GitHub/GitLab credentials remain inside the Git bridge or protected secret files; controller-visible forge state uses opaque credential references/status, and remotes/diagnostics never embed raw tokens.",
+      "implementation": ["internal/gitbridge/githubapp.go", "internal/gitbridge/gitlabapi.go", "internal/api/forges.go", "internal/storage/sqlite/forges.go"],
+      "tests": ["internal/gitbridge/githubapp_test.go", "internal/gitbridge/gitlabapi_test.go", "internal/gitbridge/webhook_test.go", "internal/api/server_test.go"],
+      "ui": ["web/src/ForgePage.tsx#forges"],
+      "docs": ["docs/github-app.md", "docs/forges.md", "docs/security.md"],
+      "forbidden_examples": ["fixture-gitlab-token-value in remote URL", "GitHub private key in controller output", "webhook secret in diagnostics"],
+      "proof": [
+        {"path": "internal/gitbridge/gitlabapi_test.go", "contains": ["TestGitLabForgeAdmissionAndRemoteNeverExposeToken", "fixture-gitlab-token-value", "unsafe remote"]},
+        {"path": "docs/github-app.md", "contains": ["private key, and webhook secret only in protected deployment secret files/environment consumed by the Git bridge", "controller and workers never receive them"]}
+      ]
+    },
+    {
+      "id": "windows-worker-credentials",
+      "title": "Windows worker credential references",
+      "policy": "Remote Windows worker authentication uses opaque fixed-directory credential references; path traversal, symlinks, oversized files, raw tokens, and simulator fallback for remote failures are rejected.",
+      "implementation": ["internal/windowsworker/routing/routing.go", "internal/windowsworker/types.go", "internal/api/windows_workers.go", "internal/storage/sqlite/windows_workers.go"],
+      "tests": ["internal/windowsworker/routing/routing_test.go", "internal/windowsworker/service_test.go", "internal/storage/sqlite/windows_workers_test.go"],
+      "ui": ["web/src/WindowsWorkersPage.tsx#runners-windows"],
+      "docs": ["docs/windows-workers.md", "docs/security.md"],
+      "forbidden_examples": ["../outside", "linked.token", "oversized credential", "raw worker token in profile JSON"],
+      "proof": [
+        {"path": "internal/windowsworker/routing/routing_test.go", "contains": ["TestDirectoryTokensRejectsTraversalSymlinksAndOversize", "../outside", "symlink credential accepted", "oversized credential accepted"]},
+        {"path": "docs/windows-workers.md", "contains": ["opaque credential reference", "never a path or token"]}
+      ]
+    },
+    {
+      "id": "policy-decision-inputs",
+      "title": "Policy simulation and decision inputs",
+      "policy": "Policy simulations and recorded decisions retain redacted input JSON and input hashes; credential-like fields are removed before policy evidence is listed or audited.",
+      "implementation": ["internal/policy", "internal/storage/sqlite/policy.go", "internal/api/policy.go"],
+      "tests": ["internal/storage/sqlite/policy_test.go", "internal/policy/service_test.go"],
+      "ui": ["web/src/OperatorConsole.tsx#policy-risk"],
+      "docs": ["docs/quality-workflow.md", "docs/security.md"],
+      "forbidden_examples": ["github_token secret", "raw policy input credential"],
+      "proof": [
+        {"path": "internal/storage/sqlite/policy_test.go", "contains": ["github_token", "secret", "RedactedInput"]}
+      ]
+    }
+  ]
+}

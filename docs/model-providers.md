@@ -80,6 +80,12 @@ for what would cross the model boundary:
 Denied simulations are retained too. This makes policy and routing failures
 auditable without contacting an external provider.
 
+Secret-bearing data classes fail closed before a route is selected. The checked
+redaction inventory in `config/redaction-coverage.json` links the provider
+egress manifest policy to the configuration, observability, support bundle,
+memory, authentication, forge, Windows-worker, and policy-decision redaction
+tests.
+
 ## Operator surfaces
 
 REST endpoints:

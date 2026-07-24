@@ -30,6 +30,8 @@ The matching recovery and automation commands are under `maintainctl config`: `d
 
 The operation-level parity inventory is [`config/configuration-parity.json`](../config/configuration-parity.json). CI checks that every routine configuration operation has a live OpenAPI route, a `maintainctl config` command, a browser workbench surface, documentation, and regression evidence. The matrix includes both the typed registry operations and the legacy Increment 1 system-document compatibility commands so recovery workflows remain reachable while the registry is the normal operator path.
 
+The cross-surface redaction inventory is [`config/redaction-coverage.json`](../config/redaction-coverage.json). It maps configuration secrets to the same write-only policy used by provider egress manifests, observability, support bundles, memory, authentication, forge credentials, Windows-worker credentials, and policy decisions.
+
 ## Export and import
 
 Exports are deterministic, schema-versioned, registry-hash-bound, scope/version-provenanced, and protected by a document SHA-256 hash. Secret descriptors export configured/redacted state only; raw secret material is never returned. Bootstrap-only or non-exportable values are not portable.

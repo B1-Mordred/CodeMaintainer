@@ -22,6 +22,8 @@ On the controller host, create an operator-owned token file named after that ref
 
 The deployment may change the fixed root with `MAINTAINER_WINDOWS_WORKER_SECRET_ROOT` and mount it read-only. Each token must contain at least 32 random bytes. The resolver accepts only a safe basename plus `.token`, rejects traversal, symlinks, non-regular files, short tokens, and files over 4 KiB, and never returns token material through the API, CLI, UI, logs, audit, or profile storage. The remote protocol client is instantiated only after profile validation and uses the profile timeout.
 
+Windows-worker credential handling is included in `config/redaction-coverage.json`, which is checked in CI with the broader configuration, provider, observability, support-bundle, memory, authentication, forge, and policy redaction surfaces.
+
 Deploy the protocol handler inside an operator-managed disposable Windows VM service. Register the same profile ID, fixed operation set, VM-template identity, and pinned toolchain inventory on that service. Its concrete executor must reset to a known VM snapshot between jobs and implement only the registered operation handlers. The CodeMaintainer controller-side real adapter is complete and testable with a loopback protocol server; the licensed Windows image and environment-specific executor remain operator-owned external infrastructure.
 
 ## Operator gates
