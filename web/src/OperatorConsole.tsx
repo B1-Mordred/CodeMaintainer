@@ -57,6 +57,7 @@ type DocumentationPolicyProfile = components["schemas"]["DocumentationPolicyProf
 type DocumentationPolicySimulationResult = components["schemas"]["DocumentationPolicySimulationResult"];
 
 type PageID = "setup-health" | "repositories" | "capability-packs" | "jobs" | "quality" | "documentation" | "code-intelligence" | "forges" | "runners-windows" | "models-agents" | "scheduling-resources" | "policy-risk" | "security-sbom" | "evaluation" | "memory-evidence" | "observability" | "configuration";
+type RouteState = { page: PageID; params: URLSearchParams };
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "setup-health", label: "Setup and health", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -77,6 +78,39 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "observability", label: "Observability", icon: <Activity aria-hidden="true" />, group: "manage" },
   { id: "configuration", label: "Configuration", icon: <SlidersHorizontal aria-hidden="true" />, group: "manage" },
 ];
+
+const configurationFilters: Record<PageID, { search: string; reason: string }> = {
+  "setup-health": { search: "deployment notifications", reason: "bootstrap, local inbox, health, and operator lifecycle settings" },
+  repositories: { search: "protected_paths intelligence", reason: "repository trust boundaries, indexing, and protected path policy" },
+  "capability-packs": { search: "capability_pack verification protected_paths", reason: "pack-scoped verification, protection, and assignment controls" },
+  jobs: { search: "workflow verification", reason: "job wall-time, review-cycle, logging, and final-verification controls" },
+  quality: { search: "qc verification", reason: "QC findings, waiver, and final verification policy" },
+  documentation: { search: "documentation workflow qc", reason: "documentation agent, review, and QC-triggering controls" },
+  "code-intelligence": { search: "intelligence verification", reason: "indexing, cache, context, and differential verification controls" },
+  forges: { search: "protected_paths workflow", reason: "forge sync safety, protected paths, and workflow review limits" },
+  "runners-windows": { search: "workflow verification", reason: "bounded runner wall-time, captured logs, and fresh-cache controls" },
+  "models-agents": { search: "intelligence workflow", reason: "context budgets, workflow routing, and model-phase controls" },
+  "scheduling-resources": { search: "notifications workflow", reason: "scheduled job budgets and local operator inbox controls" },
+  "policy-risk": { search: "qc protected_paths", reason: "risk, protected-path, waiver, and blocking-finding controls" },
+  "security-sbom": { search: "verification protected_paths qc", reason: "security gates, protected paths, findings, and final verification controls" },
+  evaluation: { search: "intelligence verification workflow", reason: "isolated evaluation context, cache, and workflow limits" },
+  "memory-evidence": { search: "intelligence workflow", reason: "project-scoped memory, evidence, context, and workflow controls" },
+  observability: { search: "workflow notifications deployment", reason: "log retention, lifecycle notifications, and deployment diagnostics" },
+  configuration: { search: "", reason: "registry-wide search and draft lifecycle" },
+};
+
+function parseRouteHash(): RouteState {
+  const raw = window.location.hash.slice(1);
+  const [pagePart, query = ""] = raw.split("?", 2);
+  const page = navigation.some((item) => item.id === pagePart) ? pagePart as PageID : "setup-health";
+  return { page, params: new URLSearchParams(query) };
+}
+
+function configurationHref(from: PageID): string {
+  const filter = configurationFilters[from];
+  const params = new URLSearchParams({ search: filter.search, from });
+  return `#configuration?${params.toString()}`;
+}
 
 function label(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
@@ -110,11 +144,11 @@ export function OperatorConsole({
   error: string | null;
   reloadOverview: () => Promise<void>;
 }) {
-  const initialPage = window.location.hash.slice(1) as PageID;
-  const [page, setPage] = useState<PageID>(navigation.some((item) => item.id === initialPage) ? initialPage : "setup-health");
+  const [page, setPage] = useState<PageID>(() => parseRouteHash().page);
   const [expert, setExpert] = useState(false);
   const initialHeadingFocus = useRef(true);
   const current = navigation.find((item) => item.id === page)!;
+  const filterTarget = configurationFilters[page];
 
   useEffect(() => {
     document.title = `${current.label} | CodeMaintainer`;
@@ -127,8 +161,7 @@ export function OperatorConsole({
 
   useEffect(() => {
     const navigateHistory = () => {
-      const candidate = window.location.hash.slice(1) as PageID;
-      if (navigation.some((item) => item.id === candidate)) setPage(candidate);
+      setPage(parseRouteHash().page);
     };
     window.addEventListener("popstate", navigateHistory);
     window.addEventListener("hashchange", navigateHistory);
@@ -162,8 +195,12 @@ export function OperatorConsole({
     <div className="console-content">
       <header className="page-heading">
         <div><p className="eyebrow">Control plane / {current.group}</p><h1 id="page-heading" tabIndex={-1}>{current.label}</h1></div>
-        <span className="mode-badge"><SlidersHorizontal aria-hidden="true" /> {expert ? "Expert" : "Safe"} mode</span>
+        <div className="page-heading-actions">
+          {page !== "configuration" && <a className="config-route-link" href={configurationHref(page)} aria-label={`Open filtered configuration for ${current.label}`}><SlidersHorizontal aria-hidden="true" />Configure this area</a>}
+          <span className="mode-badge"><SlidersHorizontal aria-hidden="true" /> {expert ? "Expert" : "Safe"} mode</span>
+        </div>
       </header>
+      {page !== "configuration" && <p className="config-route-hint">Configuration coverage: {filterTarget.reason}. <a href={configurationHref(page)}>Open filtered registry view.</a></p>}
       {initialError && <p className="error" role="alert">{initialError}</p>}
       {page === "setup-health" && <SetupHealthPage status={initialStatus} jobs={initialJobs} loading={initialLoading} reload={reloadOverview} navigate={navigate} />}
       {page === "repositories" && <ProjectsPage expert={expert} />}

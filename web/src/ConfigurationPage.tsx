@@ -22,6 +22,7 @@ type ConfigDependency = components["schemas"]["ConfigDependency"];
 
 type PendingChange = { mode: "set"; value: unknown } | { mode: "reset" };
 type RelationIssue = { code: "dependency" | "incompatibility"; message: string };
+type ConfigConsumer = { page: string; label: string; detail: string };
 
 const scopeKinds: Array<{ value: Exclude<ScopeKind, "built_in">; label: string; hint: string }> = [
   { value: "system", label: "System", hint: "Applies appliance-wide" },
@@ -31,6 +32,100 @@ const scopeKinds: Array<{ value: Exclude<ScopeKind, "built_in">; label: string; 
   { value: "job_template", label: "Job template", hint: "Reusable job template" },
   { value: "job_override", label: "Job override", hint: "One accepted job only" },
 ];
+
+const pageLabels: Record<string, string> = {
+  "setup-health": "Setup and health",
+  repositories: "Repositories",
+  "capability-packs": "Capability packs",
+  jobs: "Jobs",
+  quality: "Quality",
+  documentation: "Documentation",
+  "code-intelligence": "Code intelligence",
+  forges: "Forges",
+  "runners-windows": "Runners and Windows",
+  "models-agents": "Models and agents",
+  "scheduling-resources": "Scheduling and resources",
+  "policy-risk": "Policy and risk",
+  "security-sbom": "Security and SBOM",
+  evaluation: "Evaluation",
+  "memory-evidence": "Memory and evidence",
+  observability: "Observability",
+};
+
+const consumerDefaults: Record<string, ConfigConsumer[]> = {
+  deployment: [
+    { page: "setup-health", label: "Setup and health", detail: "Bootstrap, controller health, backup, restore, and update status." },
+    { page: "observability", label: "Observability", detail: "Deployment profile and data-root diagnostics appear in support bundles." },
+  ],
+  workflow: [
+    { page: "jobs", label: "Jobs", detail: "Accepted jobs consume review-cycle, wall-time, and log-retention limits." },
+    { page: "scheduling-resources", label: "Scheduling and resources", detail: "Recurring work inherits workflow budgets when creating jobs." },
+  ],
+  qc: [
+    { page: "quality", label: "Quality", detail: "Findings, waivers, and publication blockers consume QC policy." },
+    { page: "policy-risk", label: "Policy and risk", detail: "Risk routing and waiver policy use the same deterministic settings." },
+  ],
+  protected_paths: [
+    { page: "policy-risk", label: "Policy and risk", detail: "Protected-path matches affect risk and required approval routing." },
+    { page: "repositories", label: "Repositories", detail: "Repository diagnostics display protected-path scope effects." },
+  ],
+  notifications: [
+    { page: "scheduling-resources", label: "Scheduling and resources", detail: "The local inbox receives schedule and workflow attention events." },
+    { page: "setup-health", label: "Setup and health", detail: "Operator lifecycle checks include durable notification readiness." },
+  ],
+  intelligence: [
+    { page: "code-intelligence", label: "Code intelligence", detail: "Indexing, cache retention, quota, and context budgets are consumed here." },
+    { page: "memory-evidence", label: "Memory and evidence", detail: "Evidence and memory views rely on project-scoped context controls." },
+  ],
+  verification: [
+    { page: "quality", label: "Quality", detail: "Final verification gates and fresh-cache requirements are enforced here." },
+    { page: "security-sbom", label: "Security and SBOM", detail: "Release evidence and SBOM gates depend on final verification policy." },
+  ],
+};
+
+const consumerOverrides: Record<string, ConfigConsumer[]> = {
+  "workflow.max_review_cycles": [
+    { page: "jobs", label: "Jobs", detail: "Controls implementation/QC repair loop limits for each accepted job." },
+    { page: "quality", label: "Quality", detail: "Determines how many finding repair cycles can run before escalation." },
+  ],
+  "workflow.max_wall_seconds": [
+    { page: "jobs", label: "Jobs", detail: "Bounds one maintenance job's accepted wall-time budget." },
+    { page: "runners-windows", label: "Runners and Windows", detail: "Limits remote and simulated worker lease duration." },
+    { page: "scheduling-resources", label: "Scheduling and resources", detail: "Constrains recurring-work execution windows." },
+  ],
+  "workflow.max_log_bytes": [
+    { page: "jobs", label: "Jobs", detail: "Controls retained job log evidence size." },
+    { page: "observability", label: "Observability", detail: "Determines bounded diagnostic payload size before support export." },
+  ],
+  "intelligence.context_input_tokens": [
+    { page: "code-intelligence", label: "Code intelligence", detail: "Caps selectable repository context for agent stages." },
+    { page: "models-agents", label: "Models and agents", detail: "Feeds model route and context-window suitability checks." },
+    { page: "evaluation", label: "Evaluation", detail: "Provides reproducible historical profile comparison limits." },
+  ],
+  "intelligence.context_output_reserve_tokens": [
+    { page: "code-intelligence", label: "Code intelligence", detail: "Reserves output capacity outside selectable source context." },
+    { page: "models-agents", label: "Models and agents", detail: "Prevents model routes from overcommitting context windows." },
+  ],
+  "verification.clean_final_cache_required": [
+    { page: "quality", label: "Quality", detail: "Requires publishable final verification to run against fresh caches." },
+    { page: "evaluation", label: "Evaluation", detail: "Keeps historical comparison cache effects explicit and isolated." },
+    { page: "security-sbom", label: "Security and SBOM", detail: "Prevents stale verification artifacts from backing release evidence." },
+  ],
+};
+
+function configRouteState(): { search: string; from: string } {
+  const raw = window.location.hash.slice(1);
+  const [page, query = ""] = raw.split("?", 2);
+  if (page !== "configuration") return { search: "", from: "" };
+  const params = new URLSearchParams(query);
+  return { search: params.get("search") ?? "", from: params.get("from") ?? "" };
+}
+
+function consumersFor(descriptor: Descriptor): ConfigConsumer[] {
+  return consumerOverrides[descriptor.key] ?? consumerDefaults[descriptor.namespace] ?? [
+    { page: "configuration", label: "Configuration", detail: "Registry-owned setting with no specific consumer mapping yet." },
+  ];
+}
 
 function scopeLabel(scope?: ScopeRef): string {
   if (!scope) return "Built-in default";
@@ -113,6 +208,7 @@ function SettingField({ descriptor, state, effective, pending, relationIssues, d
   onReset: () => void;
   onDefault: () => void;
 }) {
+  const consumers = consumersFor(descriptor);
   const stored = state.values.find((item) => item.key === descriptor.key);
   const baseValue = stored?.configured ? stored.value : effective?.value ?? descriptor.default;
   const value = pending?.mode === "set" ? pending.value : pending?.mode === "reset" ? inheritedValue(effective, state.scope, descriptor.default) : baseValue;
@@ -146,6 +242,10 @@ function SettingField({ descriptor, state, effective, pending, relationIssues, d
       <ApplyBadge mode={descriptor.apply} />
     </header>
     <p className="setting-help" id={helpID}>{descriptor.ui.help}</p>
+    <div className="setting-consumers" aria-label={`${descriptor.key} consumer links`}>
+      <span>Consumed by</span>
+      <ul>{consumers.map((consumer) => <li key={`${descriptor.key}-${consumer.page}`}><a href={`#${consumer.page}`}>{consumer.label}</a><small>{consumer.detail}</small></li>)}</ul>
+    </div>
     {relationIssues.length > 0 && <div className="relation-warning" id={relationID} role="status"><CircleAlert aria-hidden="true" /><ul>{relationIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul></div>}
     <div className="setting-control">
       {descriptor.ui.widget !== "checkbox" && !(descriptor.ui.widget === "string_list" && Array.isArray((descriptor.json_schema as { items?: { enum?: unknown[] } }).items?.enum)) && <label htmlFor={fieldID}>Configured value</label>}
@@ -164,6 +264,7 @@ function SettingField({ descriptor, state, effective, pending, relationIssues, d
 }
 
 export function ConfigurationPage({ expert }: { expert: boolean }) {
+  const initialRoute = configRouteState();
   const [scopeKind, setScopeKind] = useState<Exclude<ScopeKind, "built_in">>("system");
   const [scopeID, setScopeID] = useState("");
   const [descriptors, setDescriptors] = useState<Descriptor[]>([]);
@@ -175,7 +276,8 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [prerequisites, setPrerequisites] = useState<Array<{ key: string; prerequisite: string; status: "passed" | "failed" | "unavailable"; message: string }>>([]);
   const [pending, setPending] = useState<Record<string, PendingChange>>({});
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialRoute.search);
+  const [routeFrom, setRouteFrom] = useState(initialRoute.from);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -185,6 +287,20 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
   const [importMode, setImportMode] = useState<"strict" | "forward_compatible">("strict");
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    const updateRouteFilter = () => {
+      const next = configRouteState();
+      if (next.search) setSearch(next.search);
+      setRouteFrom(next.from);
+    };
+    window.addEventListener("hashchange", updateRouteFilter);
+    window.addEventListener("popstate", updateRouteFilter);
+    return () => {
+      window.removeEventListener("hashchange", updateRouteFilter);
+      window.removeEventListener("popstate", updateRouteFilter);
+    };
+  }, []);
 
   const scope = useMemo<ScopeRef>(() => scopeKind === "system" ? { kind: "system" } : { kind: scopeKind, id: scopeID.trim() }, [scopeID, scopeKind]);
   const scopeReady = scope.kind === "system" || Boolean(scope.id);
@@ -219,7 +335,8 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
   const visibleDescriptors = useMemo(() => descriptors.filter((descriptor) => {
     if (!expert && descriptor.ui.advanced) return false;
     const haystack = `${descriptor.key} ${descriptor.namespace} ${descriptor.ui.label} ${descriptor.ui.help} ${descriptor.ui.group}`.toLowerCase();
-    return haystack.includes(search.trim().toLowerCase());
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return tokens.length === 0 || tokens.some((token) => haystack.includes(token));
   }), [descriptors, expert, search]);
   const groupedDescriptors = useMemo(() => {
     const groups = new Map<string, Descriptor[]>();
@@ -368,8 +485,10 @@ export function ConfigurationPage({ expert }: { expert: boolean }) {
   };
 
   const changedKeys = Object.keys(pending).sort();
+  const routeFromLabel = routeFrom ? pageLabels[routeFrom] : "";
   return <>
     <p className="page-intro">Edit trusted typed settings by scope, inspect their provenance, and move every change through a version-bound draft before it can become effective.</p>
+    {routeFromLabel && <p className="config-route-hint" role="status">Filtered from {routeFromLabel}. <a href={`#${routeFrom}`}>Return to {routeFromLabel}</a>.</p>}
     <section className="configuration-toolbar" aria-label="Configuration scope and search">
       <label>Scope<select value={scopeKind} onChange={(event) => setScopeKind(event.target.value as typeof scopeKind)}>{scopeKinds.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><span>{scopeKinds.find((item) => item.value === scopeKind)?.hint}</span></label>
       <label>Scope identifier<input value={scopeID} disabled={scopeKind === "system"} required={scopeKind !== "system"} placeholder="Exact registered identifier" onChange={(event) => setScopeID(event.target.value)} /></label>

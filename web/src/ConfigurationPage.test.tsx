@@ -75,7 +75,7 @@ describe("ConfigurationPage", () => {
     }));
   });
 
-  afterEach(() => { cleanup(); requests.length = 0; vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); requests.length = 0; vi.unstubAllGlobals(); window.history.pushState(null, "", "/"); });
 
   it("creates, reviews, and applies a typed ETag-bound draft accessibly", async () => {
     const { container } = render(<ConfigurationPage expert={false} />);
@@ -120,5 +120,15 @@ describe("ConfigurationPage", () => {
     await waitFor(() => expect(screen.queryByText("Human waivers require audited rationale policy to remain enabled.")).not.toBeInTheDocument());
     fireEvent.click(within(rationaleCard!).getByRole("button", { name: "Inherited" }));
     expect(rationale).toBeChecked();
+  });
+
+  it("honors filtered dashboard deep links and exposes field consumer backlinks", async () => {
+    window.history.pushState(null, "", "/#configuration?search=qc&from=quality");
+    render(<ConfigurationPage expert={false} />);
+    expect(await screen.findByDisplayValue("qc")).toBeInTheDocument();
+    expect(await screen.findByText(/Filtered from Quality/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Return to Quality" })).toHaveAttribute("href", "#quality");
+    expect(await screen.findByText("qc.human_waiver_enabled")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Policy and risk" }).length).toBeGreaterThan(0);
   });
 });

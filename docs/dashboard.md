@@ -22,13 +22,17 @@ The operator console exposes the Increment 2 control plane as 17 named operation
 16. **Observability** — local collector status, redaction policy, event timeline, support bundle manifests, hashes, and external OTLP default-off status.
 17. **Configuration** — descriptor search, effective values, drafts, review/apply, imports/exports, dependency validation, revision history, and rollback.
 
+## Configuration route links
+
+Every non-configuration dashboard area exposes an `Open filtered configuration for ...` link in the page heading and an explanatory inline link below the heading. The link targets `#configuration?search=...&from=...`, where `search` is a controller-registry filter for the settings that area consumes and `from` enables a return link after the operator lands on the Configuration workbench.
+
+The Configuration area consumes those route parameters, applies a tokenized registry search, announces the source page, and renders `Consumed by` backlinks on every setting card. The consumer mapping is intentionally UI-only navigation metadata; schemas, effective values, validation, dry runs, drafts, and applies still come only from the controller APIs.
+
 ## Current validation boundary
 
-The App-level accessibility test asserts that all 17 named navigation targets are present and exercises the Documentation, Security and SBOM, Evaluation, Observability, Models and agents, Jobs/evidence, setup, and bootstrap surfaces with deterministic fixture data.
+The App-level accessibility test asserts that all 17 named navigation targets are present, every non-configuration area exposes a filtered configuration route, and the Configuration workbench renders reciprocal field consumer backlinks. It also exercises the Documentation, Security and SBOM, Evaluation, Observability, Models and agents, Jobs/evidence, setup, and bootstrap surfaces with deterministic fixture data.
 
 The remaining Milestone 7 dashboard work is broader:
 
-- direct filtered configuration links from every domain page to the fields it consumes;
-- reciprocal links from each configuration field back to consuming feature/status views;
 - browser E2E and keyboard traversal across every required page;
 - final evidence that no page is a placeholder and every routine feature has UI/API/CLI parity.

@@ -1,5 +1,5 @@
 import axe from "axe-core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -80,6 +80,40 @@ const evidenceGraph = {
 const projects = {
   items: [{ id: "owner-repo", provider: "local", repository: "owner/repo", default_branch: "main", local_remote_name: "fixture.git", enabled: true, created_at: "2026-07-20T09:00:00Z", updated_at: "2026-07-20T09:00:00Z" }],
 };
+const configDescriptor = {
+  key: "workflow.max_wall_seconds",
+  namespace: "workflow",
+  schema_version: 1,
+  value_kind: "integer",
+  json_schema: { type: "integer", minimum: 60, maximum: 604800 },
+  ui: { label: "Maximum job wall time", help: "Maximum elapsed time reserved for one maintenance job.", group: "WORKFLOW", order: 20, widget: "number", documentation_link: "docs/configuration.md#workflow-max-wall-seconds", advanced: false },
+  permitted_scopes: ["system", "capability_pack", "project", "environment", "job_template", "job_override"],
+  default: 3600,
+  recommended: 3600,
+  secret: false,
+  required_permission: "administer",
+  apply: "new_jobs",
+  exportable: true,
+  importable: true,
+  migration: "identity-v1",
+  audit_redaction: "value",
+  bootstrap_controlled: false,
+};
+const verificationDescriptor = {
+  ...configDescriptor,
+  key: "verification.clean_final_cache_required",
+  namespace: "verification",
+  value_kind: "boolean",
+  json_schema: { type: "boolean" },
+  ui: { ...configDescriptor.ui, label: "Require clean final verification caches", help: "Require the final publishable suite to run in a fresh worker cache environment.", group: "VERIFICATION", widget: "checkbox", documentation_link: "docs/configuration.md#verification-clean-final-cache-required" },
+  default: true,
+  recommended: true,
+};
+const configState = { scope: { kind: "system" }, version: 1, revision_id: "configreg_fixture", values: [{ key: configDescriptor.key, scope: { kind: "system" }, value: 3600, configured: true, secret: false, version: 1, revision_id: "configreg_fixture", updated_at: "2026-07-24T06:45:00Z" }], updated_at: "2026-07-24T06:45:00Z" };
+const configEffective = { schema_version: 1, scopes: [{ kind: "system" }], values: {
+  [configDescriptor.key]: { key: configDescriptor.key, value: 3600, configured: true, source_scope: { kind: "system" }, source_revision: "configreg_fixture", contributions: [], apply: "new_jobs", secret: false },
+  [verificationDescriptor.key]: { key: verificationDescriptor.key, value: true, configured: true, source_scope: { kind: "built_in" }, source_revision: "registry-v1", contributions: [], apply: "new_jobs", secret: false },
+} };
 const documentationPolicyProfile = {
   profile: {
     id: "documentation-policy-default",
@@ -226,6 +260,12 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/system/status") return jsonResponse(status);
   if (path === "/api/v1/jobs") return jsonResponse(jobs);
   if (path === "/api/v1/projects") return jsonResponse(projects);
+  if (path === "/api/v1/config/descriptors") return jsonResponse({ schema_version: 1, items: [configDescriptor, verificationDescriptor] });
+  if (path === "/api/v1/config/values") return jsonResponse(configState);
+  if (path === "/api/v1/config/effective") return jsonResponse(configEffective);
+  if (path === "/api/v1/config/drafts") return jsonResponse({ items: [] });
+  if (path === "/api/v1/config/registry-revisions") return jsonResponse({ items: [] });
+  if (path === "/api/v1/config/prerequisites") return jsonResponse({ items: [] });
   if (path === "/api/v1/capability-packs") return jsonResponse({ items: [securityManifest] });
   if (path === "/api/v1/documentation/policy/profile") return jsonResponse(documentationPolicyProfile);
   if (path === "/api/v1/documentation/policy/simulations") return jsonResponse(documentationSimulation);
@@ -251,7 +291,11 @@ describe("App", () => {
     vi.stubGlobal("fetch", vi.fn(responseByPath));
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    window.history.pushState(null, "", "/");
+  });
 
   it("renders system state and jobs without critical accessibility violations", async () => {
     const { container } = render(<App />);
@@ -335,6 +379,27 @@ describe("App", () => {
     for (const label of labels) {
       expect((await screen.findAllByRole("button", { name: label })).length).toBeGreaterThan(0);
     }
+  });
+
+  it("links every dashboard area to a filtered configuration view with reciprocal field consumers", async () => {
+    render(<App />);
+    const labels = [
+      "Setup and health", "Repositories", "Capability packs", "Jobs", "Quality", "Documentation",
+      "Code intelligence", "Forges", "Runners and Windows", "Models and agents", "Scheduling and resources",
+      "Policy and risk", "Security and SBOM", "Evaluation", "Memory and evidence", "Observability",
+    ];
+    for (const label of labels) {
+      fireEvent.click((await screen.findAllByRole("button", { name: label }))[0]);
+      expect((await screen.findAllByRole("link", { name: `Open filtered configuration for ${label}` })).length).toBeGreaterThan(0);
+    }
+    fireEvent.click((await screen.findAllByRole("button", { name: "Jobs" }))[0]);
+    fireEvent.click(await screen.findByRole("link", { name: "Open filtered configuration for Jobs" }));
+    expect(await screen.findByRole("heading", { name: "Configuration" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("workflow verification")).toBeInTheDocument();
+    expect(await screen.findByText(/Filtered from Jobs/)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Return to Jobs" })).toBeInTheDocument();
+    expect(await screen.findByText("workflow.max_wall_seconds")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Scheduling and resources" })).toBeInTheDocument();
   });
 
   it("shows documentation operations as a dedicated page", async () => {
