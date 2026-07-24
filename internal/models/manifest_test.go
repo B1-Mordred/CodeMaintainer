@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -101,4 +102,23 @@ func TestManifestRejectsPathsCredentialsAndUnsafeBounds(t *testing.T) {
 			t.Errorf("unsafe manifest accepted: %#v", manifest)
 		}
 	}
+}
+
+func FuzzModelManifestPolicy(f *testing.F) {
+	base := testManifest([]byte("model"))
+	payload, _ := json.Marshal(base)
+	f.Add(string(payload))
+	f.Add(`{"schema_version":1,"id":"implementation","role":"implementation","model_family":"qwen","filename":"../model.gguf"}`)
+	f.Add(`{"schema_version":1,"id":"implementation","role":"browser-selected","model_family":"qwen","filename":"model.gguf"}`)
+	f.Fuzz(func(t *testing.T, payload string) {
+		manifest, err := decodeManifest([]byte(payload))
+		if err == nil {
+			if err := manifest.Validate(); err != nil {
+				t.Fatalf("decoded manifest later failed validation: %v", err)
+			}
+			if manifest.Filename != filepath.Base(manifest.Filename) || strings.Contains(manifest.SourceURI, "@") {
+				t.Fatalf("unsafe manifest decoded successfully: %#v", manifest)
+			}
+		}
+	})
 }

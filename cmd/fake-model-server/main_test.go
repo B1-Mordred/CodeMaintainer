@@ -51,3 +51,15 @@ func TestFakeModelDeterministicallyRejectsFirstQCAndPassesSecond(t *testing.T) {
 		}
 	}
 }
+
+func FuzzExtractPacketRequiresDelimitersAndJSON(f *testing.F) {
+	f.Add("UNTRUSTED_TASK_PACKET_JSON\n{\"schema_version\":1,\"mode\":\"implementation\"}\nEND_UNTRUSTED_TASK_PACKET_JSON")
+	f.Add("{\"schema_version\":1}")
+	f.Add("UNTRUSTED_TASK_PACKET_JSON\nnot-json\nEND_UNTRUSTED_TASK_PACKET_JSON")
+	f.Fuzz(func(t *testing.T, content string) {
+		packet, err := extractPacket(content)
+		if err == nil && !json.Valid(packet) {
+			t.Fatalf("extracted invalid task packet JSON: %q", packet)
+		}
+	})
+}

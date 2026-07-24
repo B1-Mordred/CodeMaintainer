@@ -3,6 +3,7 @@ package config_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	appconfig "github.com/B1-Mordred/CodeMaintainer/internal/config"
@@ -113,4 +114,38 @@ func TestDeclarativeImportRejectsTampering(t *testing.T) {
 	if err := appconfig.VerifyDeclarativeConfig(document); err == nil {
 		t.Fatal("tampered declarative configuration passed verification")
 	}
+}
+
+func FuzzDeclarativeConfigVerification(f *testing.F) {
+	valid := appconfig.DeclarativeConfig{
+		SchemaVersion: appconfig.RegistrySchemaVersion,
+		RegistryHash:  strings.Repeat("a", 64),
+		Scope:         appconfig.ScopeRef{Kind: appconfig.ScopeProject, ID: "owner-repo"},
+		ScopeVersion:  7,
+		RevisionID:    "revision-one",
+		Values: []appconfig.ImportValue{{
+			Key: "workflow.max_review_cycles", Value: json.RawMessage(`3`), Configured: true,
+		}},
+	}
+	valid.DocumentHash, _ = appconfig.ComputeDeclarativeConfigHash(valid)
+	validPayload, _ := json.Marshal(valid)
+	f.Add(string(validPayload))
+	f.Add(`{"schema_version":1,"values":[{"key":"unknown","value":{"x":true},"configured":true}]}`)
+	f.Add(`{"schema_version":1,"document_hash":"tampered","values":[]}`)
+	f.Fuzz(func(t *testing.T, payload string) {
+		var document appconfig.DeclarativeConfig
+		if err := json.Unmarshal([]byte(payload), &document); err != nil {
+			return
+		}
+		err := appconfig.VerifyDeclarativeConfig(document)
+		if err == nil {
+			hash, hashErr := appconfig.ComputeDeclarativeConfigHash(document)
+			if hashErr != nil {
+				t.Fatalf("accepted document no longer hashes: %v", hashErr)
+			}
+			if hash != document.DocumentHash {
+				t.Fatalf("accepted declarative import has mismatched hash: got %s want %s", document.DocumentHash, hash)
+			}
+		}
+	})
 }

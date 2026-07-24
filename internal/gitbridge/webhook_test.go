@@ -128,6 +128,36 @@ func TestWebhookMultiplexerKeepsProviderValidatorsSeparate(t *testing.T) {
 	}
 }
 
+func FuzzWebhookValidatorsRejectMalformedPayloads(f *testing.F) {
+	githubSecret := []byte("0123456789abcdef0123456789abcdef")
+	gitlabSecret := []byte("gitlab-webhook-secret-0123456789ab")
+	github, _ := NewWebhookValidator(githubSecret)
+	gitlab, _ := NewGitLabWebhookValidator(gitlabSecret)
+	validators := WebhookValidators{GitHub: github, GitLab: gitlab}
+	validPayload := []byte(`{"action":"closed","number":23,"repository":{"full_name":"owner/repo"},"pull_request":{"state":"closed","merged":false,"merge_commit_sha":null,"head":{"ref":"maintainer/job_23","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main"}}}`)
+	f.Add("github", "delivery-23", "pull_request", string(validPayload))
+	f.Add("gitlab", "gitlab-delivery-41", "Merge Request Hook", `{"object_kind":"merge_request","project":{"path_with_namespace":"owner/repo"},"object_attributes":{"iid":41,"action":"close","state":"closed","source_branch":"maintainer/job_41","target_branch":"main","merge_commit_sha":"","last_commit":{"id":"0123456789abcdef0123456789abcdef01234567"}}}`)
+	f.Add("github", "../delivery", "pull_request", `{"action":"closed"}`)
+	f.Fuzz(func(t *testing.T, provider, delivery, event, payload string) {
+		signature := webhookSignature(githubSecret, []byte(payload))
+		token := ""
+		if provider == "gitlab" {
+			signature = ""
+			token = string(gitlabSecret)
+		}
+		result, err := validators.Validate(context.Background(), WebhookValidationRequest{
+			Provider: provider, DeliveryID: delivery, Event: event, Signature256: signature, Token: token,
+			Payload: base64.StdEncoding.EncodeToString([]byte(payload)),
+		})
+		if err == nil {
+			if result.Provider != provider || result.PayloadSHA256 == "" || result.Repository == "" || result.Number <= 0 ||
+				(result.Outcome != "merged" && result.Outcome != "rejected") {
+				t.Fatalf("accepted malformed webhook as %#v", result)
+			}
+		}
+	})
+}
+
 func webhookSignature(secret, payload []byte) string {
 	mac := hmac.New(sha256.New, secret)
 	_, _ = mac.Write(payload)

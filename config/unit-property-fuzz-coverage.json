@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-24T10:05:00Z",
+  "surfaces": [
+    {
+      "id": "unit-schema-precedence-migrations",
+      "status": "covered",
+      "title": "Schema validation, configuration precedence, and migrations",
+      "implementation": ["internal/config", "internal/storage/sqlite/store.go", "config/migration-coverage.json"],
+      "tests": ["internal/config/registry_test.go", "internal/config/service_integration_test.go", "internal/storage/sqlite/store_test.go", "internal/storage/sqlite/migration_coverage_test.go"],
+      "docs": ["docs/configuration.md", "docs/migrations.md"],
+      "proof": [
+        {"path": "internal/config/registry_test.go", "contains": ["TestRegistryRejectsUnknownInvalidAndAmbiguousValues", "TestRegistryResolvesAllSevenScopesDeterministically"]},
+        {"path": "internal/storage/sqlite/migration_coverage_test.go", "contains": ["TestMigrationCoverageInventoryMatchesEmbeddedForwardMigrations", "durable_records"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "unit-cache-index-context-budget",
+      "status": "covered",
+      "title": "Cache keys, index updates, context selection, and budgets",
+      "implementation": ["internal/intelligence/service.go", "internal/storage/sqlite/intelligence.go", "internal/workflow/coordinator.go"],
+      "tests": ["internal/intelligence/service_integration_test.go", "internal/workflow/coordinator_test.go", "web/src/IntelligencePage.test.tsx"],
+      "docs": ["docs/intelligence.md", "config/intelligence-coverage.json"],
+      "proof": [
+        {"path": "internal/intelligence/service_integration_test.go", "contains": ["NewCacheKey", "CompareContextManifests", "RegisterCacheEntry"]},
+        {"path": "internal/workflow/coordinator_test.go", "contains": ["context", "Cache"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "unit-risk-policy-differential-impact-evidence",
+      "status": "covered",
+      "title": "Risk signals, policy inputs, differential classification, test impact, and evidence edges",
+      "implementation": ["internal/risk/types.go", "internal/policy", "internal/intelligence/service.go", "internal/evidence/types.go"],
+      "tests": ["internal/storage/sqlite/task_contracts_test.go", "internal/policy/service_test.go", "internal/intelligence/service_integration_test.go", "internal/evidence/types_test.go"],
+      "docs": ["docs/quality-workflow.md", "docs/evidence.md", "config/verification-safety-coverage.json"],
+      "proof": [
+        {"path": "internal/storage/sqlite/task_contracts_test.go", "contains": ["TestRiskWaiverRequiresReauthenticationExpiryAndLowerLevel", "change authentication and database migration"]},
+        {"path": "internal/intelligence/service_integration_test.go", "contains": ["CorrectDifferential", "OverrideTestImpact"]},
+        {"path": "internal/evidence/types_test.go", "contains": ["TestArtifactEvidenceBuildsTypedNodeAndEdge"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "unit-pack-redaction-worker-forge",
+      "status": "covered",
+      "title": "Pack resolution, redaction, worker protocol, and forge normalization",
+      "implementation": ["internal/capabilities", "config/redaction-coverage.json", "internal/runnerd", "internal/windowsworker", "internal/gitbridge"],
+      "tests": ["internal/capabilities/service_integration_test.go", "internal/config/redaction_coverage_test.go", "internal/runnerd/docker_test.go", "internal/windowsworker/protocol_test.go", "internal/gitbridge/webhook_test.go"],
+      "docs": ["docs/capability-packs.md", "docs/security.md", "docs/forges.md", "docs/windows-workers.md"],
+      "proof": [
+        {"path": "internal/capabilities/service_integration_test.go", "contains": ["TestCatalogIsChecksummedAndAuthorityNeutral", "TestRepoDoctorRequiresReviewAndExactInstalledPack"]},
+        {"path": "internal/config/redaction_coverage_test.go", "contains": ["TestRedactionCoverageMatrixCoversSecretBearingOutputs"]},
+        {"path": "internal/gitbridge/webhook_test.go", "contains": ["TestWebhookMultiplexerKeepsProviderValidatorsSeparate"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "unit-provider-route-capability-cost-egress-fallback",
+      "status": "covered",
+      "title": "Model-provider normalization, route eligibility, capability negotiation, cost ceilings, egress classification, and fallback non-escalation",
+      "implementation": ["internal/providers/service.go", "internal/providers/types.go", "internal/providers/adapters.go", "internal/storage/sqlite/providers.go"],
+      "tests": ["internal/providers/service_test.go", "internal/storage/sqlite/providers_test.go", "internal/api/server_test.go", "web/src/App.test.tsx"],
+      "docs": ["docs/model-providers.md", "config/security-adversarial-coverage.json"],
+      "proof": [
+        {"path": "internal/providers/service_test.go", "contains": ["TestEveryRequiredFamilyHasFakeAdapterAndRetainedProbe", "TestRemoteRouteFailsClosedForForbiddenDataAndDisabledProfile"]},
+        {"path": "internal/storage/sqlite/providers_test.go", "contains": ["provider egress manifest update unexpectedly succeeded"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "fuzz-imports-manifests-webhooks-archives",
+      "status": "covered",
+      "title": "Fuzz targets for imports, manifests, webhook payloads, and restore archives",
+      "implementation": ["internal/config/export_import.go", "internal/models/manifest.go", "internal/gitbridge/webhook.go", "internal/backup/manager.go"],
+      "tests": ["internal/config/export_import_integration_test.go:FuzzDeclarativeConfigVerification", "internal/models/manifest_test.go:FuzzModelManifestPolicy", "internal/gitbridge/webhook_test.go:FuzzWebhookValidatorsRejectMalformedPayloads", "internal/backup/manager_test.go:FuzzBackupRestorePendingPathSafety"],
+      "docs": ["docs/security.md", "docs/acceptance.md"],
+      "proof": [
+        {"path": "internal/config/export_import_integration_test.go", "contains": ["FuzzDeclarativeConfigVerification", "accepted declarative import has mismatched hash"]},
+        {"path": "internal/models/manifest_test.go", "contains": ["FuzzModelManifestPolicy", "unsafe manifest decoded successfully"]},
+        {"path": "internal/gitbridge/webhook_test.go", "contains": ["FuzzWebhookValidatorsRejectMalformedPayloads", "accepted malformed webhook"]},
+        {"path": "internal/backup/manager_test.go", "contains": ["FuzzBackupRestorePendingPathSafety", "unsafe restore path"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "fuzz-paths-toolcalls-markdown",
+      "status": "covered",
+      "title": "Fuzz targets for paths, model-tool packet extraction, tool-call envelopes, and untrusted Markdown",
+      "implementation": ["internal/agents/contracts.go", "cmd/fake-model-server/main.go", "internal/windowsworker/routing/routing.go", "internal/repositories/worktree.go"],
+      "tests": ["internal/agents/registry_test.go:FuzzTaskPacketUntrustedMarkdownAndPaths", "cmd/fake-model-server/main_test.go:FuzzExtractPacketRequiresDelimitersAndJSON", "internal/windowsworker/routing/routing_test.go", "internal/repositories/worktree_test.go"],
+      "docs": ["docs/security.md", "docs/quality-workflow.md"],
+      "proof": [
+        {"path": "internal/agents/registry_test.go", "contains": ["FuzzTaskPacketUntrustedMarkdownAndPaths", "unsafe markdown/path packet decoded"]},
+        {"path": "cmd/fake-model-server/main_test.go", "contains": ["FuzzExtractPacketRequiresDelimitersAndJSON", "extracted invalid task packet JSON"]},
+        {"path": "internal/windowsworker/routing/routing_test.go", "contains": ["TestDirectoryTokensRejectsTraversalSymlinksAndOversize"]}
+      ],
+      "remaining_work": []
+    },
+    {
+      "id": "remaining-streamed-provider-events",
+      "status": "remaining",
+      "title": "Streamed provider event fuzzing remains pending until streamed gateway parsing exists",
+      "implementation": ["internal/agents/runner.go", "cmd/fake-model-server/main.go", "internal/providers/adapters.go"],
+      "tests": ["cmd/fake-model-server/main_test.go", "internal/providers/service_test.go"],
+      "docs": ["docs/model-providers.md", "execplan/increment-2.md"],
+      "proof": [
+        {"path": "internal/agents/runner.go", "contains": ["\"stream\": false"]},
+        {"path": "cmd/fake-model-server/main.go", "contains": ["request.Stream", "invalid bounded fake-model request"]},
+        {"path": "docs/model-providers.md", "contains": ["provider-native streaming", "usage reconciliation"]}
+      ],
+      "remaining_work": ["Add provider-family streamed event parsers and fuzz malformed chunks, interleaved tool-call deltas, cancellation, truncation, and partial usage events when worker traffic moves through the provider gateway."]
+    }
+  ]
+}

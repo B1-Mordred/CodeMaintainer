@@ -60,3 +60,28 @@ func TestValidationRecordBindsPayloadAndSchema(t *testing.T) {
 		t.Fatalf("invalid validation record did not retain bounded error text")
 	}
 }
+
+func FuzzTaskPacketUntrustedMarkdownAndPaths(f *testing.F) {
+	f.Add("docs/runbook.md", "# Title\n\nRun `go test ./...`.")
+	f.Add("../outside.md", "# malicious\n\n<script>alert(1)</script>")
+	f.Add("docs/unsafe\u0000.md", "[link](file:///etc/passwd)")
+	f.Fuzz(func(t *testing.T, path, markdown string) {
+		packet := TaskPacket{
+			SchemaVersion: 1, Mode: "documentation", JobID: "job_doc", ProjectID: "owner-repo",
+			OriginalTask: "update documentation from untrusted markdown", BaseSHA: strings.Repeat("a", 40),
+			ResultSHA: strings.Repeat("b", 40), ContractSHA256: strings.Repeat("c", 64), RiskLevel: "medium",
+			AcceptanceCriteria: []Criterion{{ID: "AC-1", Statement: markdown, VerificationMethod: "documentation_review"}},
+			RelevantFiles:      []FileContext{{Path: path, Content: markdown}},
+		}
+		payload, err := json.Marshal(packet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := DecodeTaskPacket(payload, "documentation")
+		if err == nil {
+			if !safeRelativePath(decoded.RelevantFiles[0].Path) || len(decoded.RelevantFiles[0].Content) > maxTextBytes {
+				t.Fatalf("unsafe markdown/path packet decoded: %#v", decoded.RelevantFiles[0])
+			}
+		}
+	})
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,4 +135,31 @@ func fixtureBundle(path string) Bundle {
 	manifestSum := sha256.Sum256(manifestBytes)
 	bundle.ManifestSHA256 = hex.EncodeToString(manifestSum[:])
 	return bundle
+}
+
+func FuzzBackupRestorePendingPathSafety(f *testing.F) {
+	f.Add("database/controller.db")
+	f.Add("../outside")
+	f.Add("/absolute")
+	f.Add("nested/../database/controller.db")
+	f.Add("safe/subdir/file.txt")
+	f.Fuzz(func(t *testing.T, path string) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "backups"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		payload, err := json.Marshal(fixtureBundle(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "backups", "restore-pending.json"), payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		applied, err := ApplyPending(root)
+		clean := filepath.Clean(filepath.FromSlash(path))
+		unsafe := clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(filepath.Separator))
+		if unsafe && (err == nil || applied) {
+			t.Fatalf("unsafe restore path %q was accepted: applied=%v err=%v", path, applied, err)
+		}
+	})
 }
