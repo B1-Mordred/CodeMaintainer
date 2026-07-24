@@ -1125,6 +1125,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/model-providers/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show provider gateway families, profiles, routes, and recent egress manifests */
+        get: operations["getModelProviderStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/routes/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate a provider-neutral route and retain an egress manifest preview */
+        post: operations["simulateModelProviderRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-providers/egress-manifests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained provider egress manifests */
+        get: operations["listModelProviderEgressManifests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skill-proposals": {
         parameters: {
             query?: never;
@@ -3587,6 +3638,165 @@ export interface components {
             profiles: components["schemas"]["SchedulerResourceProfile"][];
             modes: ("quality_latency" | "throughput_batching")[];
             decisions: components["schemas"]["SchedulerDecision"][];
+        };
+        ProviderCapabilitySet: {
+            responses_api: boolean;
+            chat_completions: boolean;
+            streaming: boolean;
+            cancellation: boolean;
+            structured_outputs: boolean;
+            tool_calls: boolean;
+            parallel_tool_calls: boolean;
+            stable_tool_call_ids: boolean;
+            system_messages: boolean;
+            developer_messages: boolean;
+            usage_accounting: boolean;
+            reasoning_controls: boolean;
+            prompt_caching: boolean;
+            batch: boolean;
+            asynchronous: boolean;
+            model_listing: boolean;
+            immutable_model_ids: boolean;
+        };
+        ProviderProfile: {
+            id: string;
+            /** @enum {integer} */
+            schema_version: 1;
+            /** @enum {string} */
+            interface_family: "local_llamacpp" | "openai_responses" | "openai_chat_completions" | "openai_compatible" | "azure_openai" | "anthropic_messages" | "gemini_generate_content" | "vertex_gemini" | "bedrock_converse" | "bedrock_responses_compatible";
+            display_name: string;
+            /** @enum {string} */
+            trust_tier: "local" | "approved_private" | "approved_enterprise" | "public_remote";
+            remote: boolean;
+            enabled: boolean;
+            approved_data_classes: string[];
+            credential_ref?: string;
+            credential_configured: boolean;
+            operator_assertions: string[];
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProviderEndpointProfile: {
+            id: string;
+            provider_id: string;
+            base_url: string;
+            region?: string;
+            /** @enum {string} */
+            network_zone: "local" | "lan_private" | "enterprise_private" | "public_internet";
+            allow_private_address: boolean;
+            /** @enum {string} */
+            tls_mode: "verify" | "custom_ca" | "mtls" | "local_http";
+            /** @enum {string} */
+            redirect_policy: "reject";
+            /** @enum {string} */
+            dns_policy: "public_only" | "private_allowed" | "loopback_only";
+            timeout_millis: number;
+            health_check_path: string;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProviderModelProfile: {
+            id: string;
+            provider_id: string;
+            endpoint_id: string;
+            model_id: string;
+            display_name: string;
+            role_eligibility: string[];
+            capabilities: components["schemas"]["ProviderCapabilitySet"];
+            context_limit: number;
+            output_limit: number;
+            input_price_per_mtok: number;
+            output_price_per_mtok: number;
+            /** @enum {string} */
+            quality_status: "accepted_local_default" | "ci_fake_only" | "experimental" | "accepted";
+            capability_override: boolean;
+            override_reason?: string;
+            /** Format: date-time */
+            override_expires_at?: string;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProviderRouteProfile: {
+            id: string;
+            role: string;
+            /** @enum {string} */
+            preference: "local_first" | "remote_when_policy_allows" | "measured_hybrid";
+            ordered_model_ids: string[];
+            allowed_data_classes: string[];
+            max_tokens_per_request: number;
+            max_cost_usd: number;
+            retry_budget: number;
+            /** @enum {string} */
+            fallback_policy: "none" | "same_trust_or_stricter" | "explicit_same_or_higher_trust_only";
+            /** @enum {string} */
+            batch_policy: "disabled" | "project_isolated";
+            enabled: boolean;
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProviderEgressManifest: {
+            id: string;
+            job_id?: string;
+            project_id: string;
+            route_id: string;
+            provider_id: string;
+            endpoint_id: string;
+            model_profile_id: string;
+            purpose: string;
+            data_classes: string[];
+            artifact_ids: string[];
+            redactions: string[];
+            estimated_bytes: number;
+            estimated_tokens: number;
+            retention: string;
+            /** @enum {string} */
+            policy_decision: "allowed" | "denied";
+            decision_reason: string;
+            manifest_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ProviderRouteRequest: {
+            job_id?: string;
+            project_id: string;
+            role: string;
+            purpose: string;
+            data_classes: string[];
+            artifact_ids?: string[];
+            estimated_bytes: number;
+            estimated_tokens: number;
+            requires_structured_output?: boolean;
+        };
+        ProviderRouteDecision: {
+            /** @enum {string} */
+            status: "allowed" | "denied";
+            reason: string;
+            route?: components["schemas"]["ProviderRouteProfile"];
+            provider?: components["schemas"]["ProviderProfile"];
+            endpoint?: components["schemas"]["ProviderEndpointProfile"];
+            model?: components["schemas"]["ProviderModelProfile"];
+            egress_manifest: components["schemas"]["ProviderEgressManifest"];
+        };
+        ProviderGatewayStatus: {
+            families: string[];
+            providers: components["schemas"]["ProviderProfile"][];
+            endpoints: components["schemas"]["ProviderEndpointProfile"][];
+            models: components["schemas"]["ProviderModelProfile"][];
+            routes: components["schemas"]["ProviderRouteProfile"][];
+            recent_egress_manifests: components["schemas"]["ProviderEgressManifest"][];
+            remote_enabled_by_default: boolean;
         };
         SkillProposalInput: {
             name: string;
@@ -6879,6 +7089,92 @@ export interface operations {
                 content: {
                     "application/json": {
                         decisions: components["schemas"]["SchedulerDecision"][];
+                    };
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    getModelProviderStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider gateway status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderGatewayStatus"];
+                };
+            };
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    simulateModelProviderRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderRouteRequest"];
+            };
+        };
+        responses: {
+            /** @description Denied provider route with retained fail-closed manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        decision: components["schemas"]["ProviderRouteDecision"];
+                    };
+                };
+            };
+            /** @description Allowed provider route with retained egress manifest */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        decision: components["schemas"]["ProviderRouteDecision"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listModelProviderEgressManifests: {
+        parameters: {
+            query?: {
+                project_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider egress manifests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifests: components["schemas"]["ProviderEgressManifest"][];
                     };
                 };
             };

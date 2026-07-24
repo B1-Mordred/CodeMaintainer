@@ -22,6 +22,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
 	"github.com/B1-Mordred/CodeMaintainer/internal/risk"
 	"github.com/B1-Mordred/CodeMaintainer/internal/scheduler"
 	"github.com/B1-Mordred/CodeMaintainer/internal/taskcontract"
@@ -218,6 +219,7 @@ type Store interface {
 	golden.Store
 	documentation.Store
 	policy.Store
+	providers.Store
 	risk.Store
 	scheduler.Store
 	windowsworker.Store

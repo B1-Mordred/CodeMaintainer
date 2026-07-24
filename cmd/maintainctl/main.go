@@ -110,6 +110,8 @@ func run(arguments []string) error {
 		return api.restore(arguments[1:])
 	case "model":
 		return api.model(arguments[1:])
+	case "model-provider":
+		return api.modelProvider(arguments[1:])
 	case "config":
 		return api.config(arguments[1:])
 	case "intelligence":
@@ -206,6 +208,53 @@ func (c client) scheduler(arguments []string) error {
 		return c.printJSON(http.MethodPost, "/api/v1/scheduler/simulations", input)
 	default:
 		return fmt.Errorf("scheduler action %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) modelProvider(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl model-provider <status|simulate|egress> ...")
+	}
+	switch arguments[0] {
+	case "status":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl model-provider status")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/model-providers/status", nil)
+	case "simulate":
+		flags := flag.NewFlagSet("model-provider simulate", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "provider route simulation JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl model-provider simulate --input <json-file|->")
+		}
+		raw, err := readJSONDocument(*inputFile)
+		if err != nil {
+			return err
+		}
+		var input any
+		if err := json.Unmarshal(raw, &input); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/model-providers/routes/simulations", input)
+	case "egress":
+		flags := flag.NewFlagSet("model-provider egress", flag.ContinueOnError)
+		projectID := flags.String("project", "", "optional project id")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl model-provider egress [--project <project-id>]")
+		}
+		path := "/api/v1/model-providers/egress-manifests"
+		if *projectID != "" {
+			path += "?project_id=" + url.QueryEscape(*projectID)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	default:
+		return fmt.Errorf("model-provider action %q is not implemented", arguments[0])
 	}
 }
 
@@ -1485,6 +1534,9 @@ Commands:
   documentation <job-id>
   documentation policy
   documentation simulate --input <json-file|->
+  model-provider status
+  model-provider simulate --input <json-file|->
+  model-provider egress [--project <project-id>]
   scheduler status
   scheduler decisions
   scheduler simulate --input <json-file|->

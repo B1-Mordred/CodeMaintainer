@@ -1051,6 +1051,66 @@ paths:
                 properties:
                   decisions: { type: array, items: { $ref: "#/components/schemas/SchedulerDecision" } }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/status:
+    get:
+      summary: Show provider gateway families, profiles, routes, and recent egress manifests
+      operationId: getModelProviderStatus
+      responses:
+        "200":
+          description: Provider gateway status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderGatewayStatus" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/routes/simulations:
+    post:
+      summary: Simulate a provider-neutral route and retain an egress manifest preview
+      operationId: simulateModelProviderRoute
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProviderRouteRequest" } } }
+      responses:
+        "200":
+          description: Denied provider route with retained fail-closed manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [decision]
+                properties:
+                  decision: { $ref: "#/components/schemas/ProviderRouteDecision" }
+        "201":
+          description: Allowed provider route with retained egress manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [decision]
+                properties:
+                  decision: { $ref: "#/components/schemas/ProviderRouteDecision" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /model-providers/egress-manifests:
+    get:
+      summary: List retained provider egress manifests
+      operationId: listModelProviderEgressManifests
+      parameters:
+        - { name: project_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Provider egress manifests
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [manifests]
+                properties:
+                  manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /skill-proposals:
     get:
       summary: List inert Hermes skill proposals and administrator decisions
@@ -3665,6 +3725,169 @@ components:
         decisions:
           type: array
           items: { $ref: "#/components/schemas/SchedulerDecision" }
+    ProviderCapabilitySet:
+      type: object
+      additionalProperties: false
+      required: [responses_api, chat_completions, streaming, cancellation, structured_outputs, tool_calls, parallel_tool_calls, stable_tool_call_ids, system_messages, developer_messages, usage_accounting, reasoning_controls, prompt_caching, batch, asynchronous, model_listing, immutable_model_ids]
+      properties:
+        responses_api: { type: boolean }
+        chat_completions: { type: boolean }
+        streaming: { type: boolean }
+        cancellation: { type: boolean }
+        structured_outputs: { type: boolean }
+        tool_calls: { type: boolean }
+        parallel_tool_calls: { type: boolean }
+        stable_tool_call_ids: { type: boolean }
+        system_messages: { type: boolean }
+        developer_messages: { type: boolean }
+        usage_accounting: { type: boolean }
+        reasoning_controls: { type: boolean }
+        prompt_caching: { type: boolean }
+        batch: { type: boolean }
+        asynchronous: { type: boolean }
+        model_listing: { type: boolean }
+        immutable_model_ids: { type: boolean }
+    ProviderProfile:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, interface_family, display_name, trust_tier, remote, enabled, approved_data_classes, credential_configured, operator_assertions, version, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" }
+        schema_version: { type: integer, enum: [1] }
+        interface_family: { type: string, enum: [local_llamacpp, openai_responses, openai_chat_completions, openai_compatible, azure_openai, anthropic_messages, gemini_generate_content, vertex_gemini, bedrock_converse, bedrock_responses_compatible] }
+        display_name: { type: string, minLength: 1, maxLength: 160 }
+        trust_tier: { type: string, enum: [local, approved_private, approved_enterprise, public_remote] }
+        remote: { type: boolean }
+        enabled: { type: boolean }
+        approved_data_classes: { type: array, minItems: 1, maxItems: 16, items: { type: string } }
+        credential_ref: { type: string }
+        credential_configured: { type: boolean }
+        operator_assertions: { type: array, maxItems: 32, items: { type: string, maxLength: 500 } }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProviderEndpointProfile:
+      type: object
+      additionalProperties: false
+      required: [id, provider_id, base_url, network_zone, allow_private_address, tls_mode, redirect_policy, dns_policy, timeout_millis, health_check_path, version, created_at, updated_at]
+      properties:
+        id: { type: string }
+        provider_id: { type: string }
+        base_url: { type: string }
+        region: { type: string }
+        network_zone: { type: string, enum: [local, lan_private, enterprise_private, public_internet] }
+        allow_private_address: { type: boolean }
+        tls_mode: { type: string, enum: [verify, custom_ca, mtls, local_http] }
+        redirect_policy: { type: string, enum: [reject] }
+        dns_policy: { type: string, enum: [public_only, private_allowed, loopback_only] }
+        timeout_millis: { type: integer, minimum: 1000, maximum: 1800000 }
+        health_check_path: { type: string }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProviderModelProfile:
+      type: object
+      additionalProperties: false
+      required: [id, provider_id, endpoint_id, model_id, display_name, role_eligibility, capabilities, context_limit, output_limit, input_price_per_mtok, output_price_per_mtok, quality_status, capability_override, version, created_at, updated_at]
+      properties:
+        id: { type: string }
+        provider_id: { type: string }
+        endpoint_id: { type: string }
+        model_id: { type: string }
+        display_name: { type: string }
+        role_eligibility: { type: array, minItems: 1, maxItems: 16, items: { type: string } }
+        capabilities: { $ref: "#/components/schemas/ProviderCapabilitySet" }
+        context_limit: { type: integer, minimum: 1024 }
+        output_limit: { type: integer, minimum: 1 }
+        input_price_per_mtok: { type: number, minimum: 0 }
+        output_price_per_mtok: { type: number, minimum: 0 }
+        quality_status: { type: string, enum: [accepted_local_default, ci_fake_only, experimental, accepted] }
+        capability_override: { type: boolean }
+        override_reason: { type: string }
+        override_expires_at: { type: string, format: date-time }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProviderRouteProfile:
+      type: object
+      additionalProperties: false
+      required: [id, role, preference, ordered_model_ids, allowed_data_classes, max_tokens_per_request, max_cost_usd, retry_budget, fallback_policy, batch_policy, enabled, version, created_at, updated_at]
+      properties:
+        id: { type: string }
+        role: { type: string }
+        preference: { type: string, enum: [local_first, remote_when_policy_allows, measured_hybrid] }
+        ordered_model_ids: { type: array, minItems: 1, maxItems: 32, items: { type: string } }
+        allowed_data_classes: { type: array, minItems: 1, items: { type: string } }
+        max_tokens_per_request: { type: integer, minimum: 1 }
+        max_cost_usd: { type: number, minimum: 0 }
+        retry_budget: { type: integer, minimum: 0, maximum: 10 }
+        fallback_policy: { type: string, enum: [none, same_trust_or_stricter, explicit_same_or_higher_trust_only] }
+        batch_policy: { type: string, enum: [disabled, project_isolated] }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProviderEgressManifest:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, route_id, provider_id, endpoint_id, model_profile_id, purpose, data_classes, artifact_ids, redactions, estimated_bytes, estimated_tokens, retention, policy_decision, decision_reason, manifest_sha256, created_at]
+      properties:
+        id: { type: string }
+        job_id: { type: string }
+        project_id: { type: string }
+        route_id: { type: string }
+        provider_id: { type: string }
+        endpoint_id: { type: string }
+        model_profile_id: { type: string }
+        purpose: { type: string }
+        data_classes: { type: array, minItems: 1, maxItems: 16, items: { type: string } }
+        artifact_ids: { type: array, items: { type: string } }
+        redactions: { type: array, items: { type: string } }
+        estimated_bytes: { type: integer, minimum: 0 }
+        estimated_tokens: { type: integer, minimum: 0 }
+        retention: { type: string }
+        policy_decision: { type: string, enum: [allowed, denied] }
+        decision_reason: { type: string }
+        manifest_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        created_at: { type: string, format: date-time }
+    ProviderRouteRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, role, purpose, data_classes, estimated_bytes, estimated_tokens]
+      properties:
+        job_id: { type: string }
+        project_id: { type: string }
+        role: { type: string }
+        purpose: { type: string, minLength: 1, maxLength: 500 }
+        data_classes: { type: array, minItems: 1, items: { type: string } }
+        artifact_ids: { type: array, items: { type: string } }
+        estimated_bytes: { type: integer, minimum: 0 }
+        estimated_tokens: { type: integer, minimum: 0 }
+        requires_structured_output: { type: boolean }
+    ProviderRouteDecision:
+      type: object
+      additionalProperties: false
+      required: [status, reason, egress_manifest]
+      properties:
+        status: { type: string, enum: [allowed, denied] }
+        reason: { type: string }
+        route: { $ref: "#/components/schemas/ProviderRouteProfile" }
+        provider: { $ref: "#/components/schemas/ProviderProfile" }
+        endpoint: { $ref: "#/components/schemas/ProviderEndpointProfile" }
+        model: { $ref: "#/components/schemas/ProviderModelProfile" }
+        egress_manifest: { $ref: "#/components/schemas/ProviderEgressManifest" }
+    ProviderGatewayStatus:
+      type: object
+      additionalProperties: false
+      required: [families, providers, endpoints, models, routes, recent_egress_manifests, remote_enabled_by_default]
+      properties:
+        families: { type: array, items: { type: string } }
+        providers: { type: array, items: { $ref: "#/components/schemas/ProviderProfile" } }
+        endpoints: { type: array, items: { $ref: "#/components/schemas/ProviderEndpointProfile" } }
+        models: { type: array, items: { $ref: "#/components/schemas/ProviderModelProfile" } }
+        routes: { type: array, items: { $ref: "#/components/schemas/ProviderRouteProfile" } }
+        recent_egress_manifests: { type: array, items: { $ref: "#/components/schemas/ProviderEgressManifest" } }
+        remote_enabled_by_default: { type: boolean }
     SkillProposalInput:
       type: object
       additionalProperties: false

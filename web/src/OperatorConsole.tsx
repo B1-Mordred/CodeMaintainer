@@ -32,6 +32,9 @@ type BackupRecord = components["schemas"]["BackupRecord"];
 type Artifact = components["schemas"]["Artifact"];
 type ModelProfile = components["schemas"]["ModelProfile"];
 type ModelStatus = components["schemas"]["ModelStatus"];
+type ProviderGatewayStatus = components["schemas"]["ProviderGatewayStatus"];
+type ProviderRouteDecision = components["schemas"]["ProviderRouteDecision"];
+type ProviderRouteRequest = components["schemas"]["ProviderRouteRequest"];
 type PolicyBundle = components["schemas"]["PolicyBundle"];
 type PolicyActivation = components["schemas"]["PolicyActivation"];
 type PolicySimulation = components["schemas"]["PolicySimulation"];
@@ -601,8 +604,19 @@ default decision := {
 function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: boolean }) {
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [providerStatus, setProviderStatus] = useState<ProviderGatewayStatus | null>(null);
+  const [providerDecision, setProviderDecision] = useState<ProviderRouteDecision | null>(null);
+  const [routeInput, setRouteInput] = useState(`{
+  "project_id": "owner-repo",
+  "role": "implementation",
+  "purpose": "operator egress preview for a structured implementation packet",
+  "data_classes": ["task_metadata", "candidate_diff"],
+  "estimated_bytes": 4096,
+  "estimated_tokens": 1024,
+  "requires_structured_output": true
+}`);
   const [message, setMessage] = useState("");
-  const load = useCallback(async () => { const response = await api.GET("/models"); setProfiles(response.data?.items ?? []); setModelStatus(response.data?.status ?? null); }, []);
+  const load = useCallback(async () => { const [modelResponse, providerResponse] = await Promise.all([api.GET("/models"), api.GET("/model-providers/status")]); setProfiles(modelResponse.data?.items ?? []); setModelStatus(modelResponse.data?.status ?? null); setProviderStatus(providerResponse.data ?? null); }, []);
   useEffect(() => { void load(); }, [load]);
   const modelAction = async (profile: ModelProfile, action: "benchmark" | "load") => {
     const params = { path: { profileID: profile.id }, header: { "X-CSRF-Token": getCSRFToken() } };
@@ -611,11 +625,40 @@ function ModelsPage({ status, expert }: { status: SystemStatus | null; expert: b
     await load();
   };
   const unload = async () => { const response = await api.POST("/models/actions/unload", { params: { header: { "X-CSRF-Token": getCSRFToken() } } }); setMessage(response.data ? "The resident model was unloaded." : "Model unload failed."); await load(); };
+  const simulateRoute = async () => {
+    let input: ProviderRouteRequest;
+    try {
+      const parsed = JSON.parse(routeInput);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
+      input = parsed as ProviderRouteRequest;
+    } catch {
+      setMessage("Provider route simulation input must be a JSON object.");
+      return;
+    }
+    const response = await api.POST("/model-providers/routes/simulations", { body: input });
+    setProviderDecision(response.data?.decision ?? null);
+    setMessage(response.data ? `${label(response.data.decision.status)}: ${response.data.decision.reason}` : "Provider route simulation failed.");
+    if (response.data) await load();
+  };
+  const remoteProfiles = providerStatus?.providers.filter((provider) => provider.remote) ?? [];
+  const enabledRemoteProfiles = remoteProfiles.filter((provider) => provider.enabled);
   return <>
-    <PageIntro>Models are imported only through checksum-bound manifests. The supervisor keeps at most one allow-listed llama-server child loaded.</PageIntro>
-    <div className="metrics-grid"><Metric icon={<Cpu aria-hidden="true" />} name="Load state" value={modelStatus?.state ?? status?.components.model ?? "Unknown"} detail={modelStatus?.profile_id || "No weights required for CI"} /><Metric icon={<MemoryStick aria-hidden="true" />} name="Resident memory" value={`${((modelStatus?.memory_bytes ?? 0) / 1073741824).toFixed(2)} GiB`} detail="One model maximum" /><Metric icon={<Gauge aria-hidden="true" />} name="Inference timing" value={`${modelStatus?.prompt_tokens_second ?? 0} / ${modelStatus?.decode_tokens_second ?? 0} tok/s`} detail="Prompt / decode" /><Metric icon={<HardDrive aria-hidden="true" />} name="Profiles" value={String(profiles.length)} detail="Checksum-bound allow list" /></div>
+    <PageIntro>Models are imported only through checksum-bound manifests. Remote providers are optional and route through the controller-owned gateway with retained egress previews.</PageIntro>
+    <div className="metrics-grid"><Metric icon={<Cpu aria-hidden="true" />} name="Load state" value={modelStatus?.state ?? status?.components.model ?? "Unknown"} detail={modelStatus?.profile_id || "No weights required for CI"} /><Metric icon={<MemoryStick aria-hidden="true" />} name="Resident memory" value={`${((modelStatus?.memory_bytes ?? 0) / 1073741824).toFixed(2)} GiB`} detail="One model maximum" /><Metric icon={<Gauge aria-hidden="true" />} name="Inference timing" value={`${modelStatus?.prompt_tokens_second ?? 0} / ${modelStatus?.decode_tokens_second ?? 0} tok/s`} detail="Prompt / decode" /><Metric icon={<HardDrive aria-hidden="true" />} name="Gateway routes" value={String(providerStatus?.routes.length ?? 0)} detail={`${enabledRemoteProfiles.length} remote enabled / ${remoteProfiles.length} remote profiles`} /></div>
     {message && <p className="inline-message" role="status">{message}</p>}
     <Section title="Installed manifests" eyebrow="Allow list">{profiles.length === 0 ? <Empty title="No model manifest installed" detail="Import a checksum-bound manifest or retain the deterministic CI profile." /> : <div className="card-grid">{profiles.map((profile) => <article className="resource-card" key={profile.id}><div className="resource-title"><BrainCircuit aria-hidden="true" /><div><h3>{profile.id}</h3><p>{profile.model_family}</p></div><Badge value={modelStatus?.profile_id === profile.id ? "loaded" : "unloaded"} /></div><dl><div><dt>Role</dt><dd>{label(profile.role)}</dd></div><div><dt>Quantization</dt><dd>{profile.quantization}</dd></div><div><dt>Context</dt><dd>{profile.context.toLocaleString()}</dd></div><div><dt>Hash</dt><dd><code>{profile.sha256?.slice(0, 16) || "Deterministic fake"}</code></dd></div><div><dt>Disk</dt><dd>{profile.bytes ? `${(profile.bytes / 1073741824).toFixed(2)} GiB` : "No weight file"}</dd></div></dl>{expert && <details><summary>Manifest runtime policy</summary><pre>{JSON.stringify({ filename: profile.filename, source_uri: profile.source_uri, license: profile.license, threads: profile.threads, batch: profile.batch, ubatch: profile.ubatch, numa: profile.numa, minimum_ram_bytes: profile.min_ram_bytes, sampling: profile.sampling }, null, 2)}</pre></details>}<div className="card-actions"><button className="secondary-button" type="button" onClick={() => void modelAction(profile, "benchmark")}>Benchmark</button><button type="button" onClick={() => void modelAction(profile, "load")}>Load</button></div></article>)}</div>}</Section>
+    <Section title="Provider gateway" eyebrow="Local, LAN, and remote boundaries" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      {!providerStatus ? <Empty title="Provider gateway status unavailable" detail="The controller will seed safe local defaults when storage is ready." /> : <div className="card-grid">
+        {providerStatus.providers.map((provider) => <article className="resource-card" key={provider.id}><div className="resource-title"><BrainCircuit aria-hidden="true" /><div><h3>{provider.display_name}</h3><p>{provider.interface_family}</p></div><Badge value={provider.enabled ? "enabled" : "disabled"} /></div><dl><div><dt>Trust tier</dt><dd>{label(provider.trust_tier)}</dd></div><div><dt>Boundary</dt><dd>{provider.remote ? "Remote provider" : "Local-only"}</dd></div><div><dt>Credentials</dt><dd>{provider.credential_configured ? "Configured write-only" : "Not configured"}</dd></div><div><dt>Data classes</dt><dd>{provider.approved_data_classes.join(", ")}</dd></div></dl>{expert && <details><summary>Operator assertions</summary><pre>{JSON.stringify(provider.operator_assertions, null, 2)}</pre></details>}</article>)}
+      </div>}
+    </Section>
+    <Section title="Route and egress preview" eyebrow="Controller-owned simulation">
+      <div className="two-column">
+        <div><label>Route request JSON<textarea rows={13} value={routeInput} onChange={(event) => setRouteInput(event.target.value)} /></label><button type="button" onClick={() => void simulateRoute()}>Simulate provider route</button></div>
+        <div>{providerDecision ? <article className="resource-card"><div className="resource-title"><ShieldCheck aria-hidden="true" /><div><h3>{providerDecision.egress_manifest.model_profile_id}</h3><p>{providerDecision.reason}</p></div><Badge value={providerDecision.status} /></div><dl><div><dt>Route</dt><dd>{providerDecision.egress_manifest.route_id}</dd></div><div><dt>Provider</dt><dd>{providerDecision.egress_manifest.provider_id}</dd></div><div><dt>Decision hash</dt><dd><code>{providerDecision.egress_manifest.manifest_sha256.slice(0, 16)}</code></dd></div><div><dt>Data classes</dt><dd>{providerDecision.egress_manifest.data_classes.join(", ")}</dd></div></dl><details open><summary>Egress manifest</summary><pre>{JSON.stringify(providerDecision.egress_manifest, null, 2)}</pre></details></article> : <Empty title="No provider route simulated" detail="Preview the exact destination, model, data classes, redactions, retention, and policy decision before any remote request." />}</div>
+      </div>
+      <details><summary>Recent egress manifests</summary>{(providerStatus?.recent_egress_manifests.length ?? 0) === 0 ? <p>No provider egress manifests retained.</p> : <div className="audit-list">{providerStatus!.recent_egress_manifests.map((manifest) => <div key={manifest.id}><time>{date(manifest.created_at)}</time><strong>{manifest.policy_decision} · {manifest.model_profile_id}</strong><span>{manifest.project_id} · {manifest.data_classes.join(", ")} · {manifest.decision_reason}</span></div>)}</div>}</details>
+    </Section>
     <Section title="Safe model actions" eyebrow="Supervisor"><div className="action-strip"><button type="button" disabled title="Use the documented checksum-bound maintainctl import workflow">Import via manifest</button><button className="tertiary-button" type="button" disabled={modelStatus?.state !== "loaded"} onClick={() => void unload()}>Unload resident model</button></div>{expert && <p className="expert-note">Threads, batch, NUMA, context, and sampling remain manifest-bound. Arbitrary model paths and llama.cpp arguments are never accepted.</p>}</Section>
   </>;
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
 	"github.com/B1-Mordred/CodeMaintainer/internal/models"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
+	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
 	"github.com/B1-Mordred/CodeMaintainer/internal/scheduler"
 	"github.com/B1-Mordred/CodeMaintainer/internal/storage"
 	storesqlite "github.com/B1-Mordred/CodeMaintainer/internal/storage/sqlite"
@@ -41,6 +42,64 @@ import (
 func testServer(t *testing.T) (*httptest.Server, *storesqlite.Store) {
 	server, store, _ := testServerWithArtifacts(t)
 	return server, store
+}
+
+func TestProviderGatewayAPIExposesDefaultOffProfilesAndEgressPreview(t *testing.T) {
+	server, _ := testServer(t)
+	response, err := http.Get(server.URL + "/api/v1/model-providers/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status providers.Status
+	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || len(status.Families) != 10 || len(status.Providers) == 0 {
+		t.Fatalf("provider status %d %#v", response.StatusCode, status)
+	}
+	for _, profile := range status.Providers {
+		if profile.Remote && profile.Enabled {
+			t.Fatalf("remote profile %s defaulted enabled", profile.ID)
+		}
+	}
+	routePayload := `{"project_id":"owner-repo","role":"implementation","purpose":"api local route","data_classes":["task_metadata","candidate_diff"],"estimated_bytes":2048,"estimated_tokens":1024,"requires_structured_output":true}`
+	route, err := http.Post(server.URL+"/api/v1/model-providers/routes/simulations", "application/json", strings.NewReader(routePayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routed struct {
+		Decision providers.RouteDecision `json:"decision"`
+	}
+	if err := json.NewDecoder(route.Body).Decode(&routed); err != nil {
+		t.Fatal(err)
+	}
+	route.Body.Close()
+	if route.StatusCode != http.StatusCreated || routed.Decision.Status != providers.DecisionAllowed || routed.Decision.Provider.ID != "local-llamacpp" {
+		t.Fatalf("route %d %#v", route.StatusCode, routed)
+	}
+	manifests, err := http.Get(server.URL + "/api/v1/model-providers/egress-manifests?project_id=owner-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retained struct {
+		Manifests []providers.EgressManifest `json:"manifests"`
+	}
+	if err := json.NewDecoder(manifests.Body).Decode(&retained); err != nil {
+		t.Fatal(err)
+	}
+	manifests.Body.Close()
+	if manifests.StatusCode != http.StatusOK || len(retained.Manifests) != 1 || retained.Manifests[0].ManifestSHA256 == "" {
+		t.Fatalf("manifests %d %#v", manifests.StatusCode, retained)
+	}
+	bad, err := http.Post(server.URL+"/api/v1/model-providers/routes/simulations", "application/json", strings.NewReader(`{"project_id":"owner-repo","role":"documentation","purpose":"bad","data_classes":["secrets"],"estimated_bytes":1,"estimated_tokens":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad.Body.Close()
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("forbidden data class returned %d", bad.StatusCode)
+	}
 }
 
 func testServerWithArtifacts(t *testing.T) (*httptest.Server, *storesqlite.Store, *artifactfiles.Store) {
