@@ -53,3 +53,46 @@ func TestNoDocumentationRequiredIsBoundedEvidence(t *testing.T) {
 		t.Fatalf("unexpected no-doc manifest: %#v", manifest)
 	}
 }
+
+func TestBuiltinDocumentationPolicySimulatesRequiredDocsChecksAndRenderTargets(t *testing.T) {
+	profile := BuiltinPolicyProfile()
+	if err := profile.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := SimulatePolicy(PolicySimulationInput{
+		Paths:         []string{"internal/api/openapi.yaml", "cmd/maintainctl/main.go"},
+		ChangeClasses: []string{"public_api", "cli"},
+		RiskLevel:     "medium",
+		Languages:     []string{"go"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.NoDocumentationOK || result.PublicationReady || len(result.MatchedRules) < 3 {
+		t.Fatalf("simulation did not gate docs: %#v", result)
+	}
+	documents := map[string]bool{}
+	for _, requirement := range result.Requirements {
+		documents[requirement.Document] = true
+		if requirement.Status != "pending" || !requirement.Required {
+			t.Fatalf("requirement not pending required evidence: %#v", requirement)
+		}
+	}
+	for _, document := range []string{"docs/api.md", "docs/cli.md", "docs/quality-workflow.md"} {
+		if !documents[document] {
+			t.Fatalf("required document %s missing from %#v", document, result.Requirements)
+		}
+	}
+	if len(result.Checks) == 0 || len(result.RenderTargets) == 0 || len(result.SourceMappings) == 0 {
+		t.Fatalf("simulation omitted checks/render targets/source mappings: %#v", result)
+	}
+}
+
+func TestDocumentationPolicyRejectsUnboundedSimulationInput(t *testing.T) {
+	if _, err := SimulatePolicy(PolicySimulationInput{Paths: []string{"../secret"}}); err == nil {
+		t.Fatal("unsafe simulation path was accepted")
+	}
+	if _, err := SimulatePolicy(PolicySimulationInput{}); err == nil {
+		t.Fatal("empty simulation input was accepted")
+	}
+}

@@ -248,18 +248,53 @@ func TestTestDesignerCLIListsJobReports(t *testing.T) {
 }
 
 func TestDocumentationCLIListsJobManifests(t *testing.T) {
+	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/jobs/job-one/documentation" {
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if got := body["risk_level"]; got != "medium" {
+				t.Errorf("risk level body = %#v", body)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"manifests":[]}`))
+		switch r.URL.Path {
+		case "/api/v1/jobs/job-one/documentation":
+			_, _ = w.Write([]byte(`{"manifests":[]}`))
+		case "/api/v1/documentation/policy/profile":
+			_, _ = w.Write([]byte(`{"profile":{"id":"documentation-policy-default","version":"documentation-policy-v1","summary":"test","rules":[],"tool_profile":{"id":"tool","render_targets":[],"checks":[],"preview_modes":[]}}}`))
+		case "/api/v1/documentation/policy/simulations":
+			_, _ = w.Write([]byte(`{"simulation":{"profile_id":"documentation-policy-default","profile_version":"documentation-policy-v1","matched_rules":[],"requirements":[],"checks":[],"render_targets":[],"reviewer_roles":[],"publication_gates":[],"source_mappings":[],"policy_summary":"none","publication_ready":true,"no_documentation_required":true}}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
 	}))
 	defer server.Close()
 	t.Setenv("MAINTAINER_URL", server.URL)
 	t.Setenv("MAINTAINER_SESSION_FILE", filepath.Join(t.TempDir(), "session.json"))
 	if err := run([]string{"documentation", "job-one"}); err != nil {
 		t.Fatal(err)
+	}
+	if err := run([]string{"documentation", "policy"}); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "doc-policy.json")
+	if err := os.WriteFile(input, []byte(`{"paths":["internal/api/openapi.yaml"],"change_classes":["public_api"],"risk_level":"medium","languages":["go"],"capability_packs":[],"labels":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"documentation", "simulate", "--input", input}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET /api/v1/jobs/job-one/documentation",
+		"GET /api/v1/documentation/policy/profile",
+		"POST /api/v1/documentation/policy/simulations",
+	}
+	if strings.Join(requests, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests = %#v", requests)
 	}
 }
 

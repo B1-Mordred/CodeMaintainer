@@ -1642,6 +1642,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documentation/policy/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect the active documentation policy profile */
+        get: operations["getDocumentationPolicyProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documentation/policy/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate documentation policy impact for bounded change evidence */
+        post: operations["simulateDocumentationPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/policy-decisions": {
         parameters: {
             query?: never;
@@ -3639,6 +3673,63 @@ export interface components {
             policy_summary: string;
             /** Format: date-time */
             created_at: string;
+        };
+        DocumentationToolProfile: {
+            id: string;
+            render_targets: string[];
+            checks: string[];
+            preview_modes: string[];
+        };
+        DocumentationPolicyMatch: {
+            paths: string[];
+            change_classes: string[];
+            risk_levels: components["schemas"]["RiskLevel"][];
+            languages: string[];
+            capability_packs: string[];
+            labels: string[];
+        };
+        DocumentationPolicyRule: {
+            id: string;
+            name: string;
+            description: string;
+            match: components["schemas"]["DocumentationPolicyMatch"];
+            documents: string[];
+            render_targets: string[];
+            checks: string[];
+            reviewer_roles: string[];
+            publication_gate: boolean;
+            source_of_truth: string;
+            publication_target: string;
+        };
+        DocumentationPolicyProfile: {
+            id: string;
+            version: string;
+            summary: string;
+            rules: components["schemas"]["DocumentationPolicyRule"][];
+            tool_profile: components["schemas"]["DocumentationToolProfile"];
+        };
+        DocumentationPolicySimulationInput: {
+            paths: string[];
+            change_classes: string[];
+            /** @enum {string} */
+            risk_level: "" | "low" | "medium" | "high";
+            languages: string[];
+            capability_packs: string[];
+            labels: string[];
+        };
+        DocumentationPolicySimulationResult: {
+            profile_id: string;
+            profile_version: string;
+            matched_rules: components["schemas"]["DocumentationPolicyRule"][];
+            requirements: components["schemas"]["DocumentationRequirement"][];
+            checks: components["schemas"]["DocumentationCheck"][];
+            render_targets: string[];
+            reviewer_roles: string[];
+            publication_gates: string[];
+            source_mappings: components["schemas"]["DocumentationChange"][];
+            policy_summary: string;
+            publication_ready: boolean;
+            no_documentation_required: boolean;
         };
         GoldenRehearsalSource: {
             id: string;
@@ -7595,6 +7686,55 @@ export interface operations {
                 };
             };
             404: components["responses"]["ErrorResponse"];
+        };
+    };
+    getDocumentationPolicyProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Controller-owned documentation policy profile and tool rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["DocumentationPolicyProfile"];
+                    };
+                };
+            };
+        };
+    };
+    simulateDocumentationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentationPolicySimulationInput"];
+            };
+        };
+        responses: {
+            /** @description Required documents, checks, render targets, reviewers, and publication gates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        simulation: components["schemas"]["DocumentationPolicySimulationResult"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
         };
     };
     listJobPolicyDecisions: {

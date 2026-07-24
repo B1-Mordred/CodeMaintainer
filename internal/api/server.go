@@ -275,6 +275,8 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("POST /api/v1/test-designer-reports/{reportID}/proposals/{proposalID}/actions/dispose", s.disposeTestDesignerProposal)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/documentation", s.listJobDocumentationManifests)
+	mux.HandleFunc("GET /api/v1/documentation/policy/profile", s.getDocumentationPolicyProfile)
+	mux.HandleFunc("POST /api/v1/documentation/policy/simulations", s.simulateDocumentationPolicy)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/policy-decisions", s.listJobPolicyDecisions)
 	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/configure-profile", s.configureGoldenComparisonProfile)
 	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve", s.approveGoldenUpdate)

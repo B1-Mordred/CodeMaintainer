@@ -94,12 +94,16 @@ Documentation manifests are append-only. They record policy-selected required do
 
 Blocking documentation evidence is converted into the same retained finding lifecycle as code QC. Required-document gaps, failed render/link/freshness/accessibility checks, and unsupported claims appear in job detail and the Quality page with stable IDs, severity, category, evidence, required resolution, and the existing dispute/accept/waive/escalate actions. Repair-cycle documentation review may introduce only documentation policy categories, not arbitrary new QC blockers.
 
-The current policy foundation is controller-owned and deterministic. It establishes the durable Documentation Agent stage, schema validation, runner profile, exact-commit re-verification, API/CLI/browser visibility, mock-profile behavior, and documentation-policy finding lifecycle. Later slices still need the full declarative policy builder, renderer/tool profile management, screenshot/golden management, rich render previews, and independent documentation QC actions.
+The active documentation policy profile is controller-owned and versioned. Its built-in rules map bounded evidence such as paths, change classes, risk level, languages, capability packs, and labels to required documents, checks, render targets, reviewer roles, source-of-truth mappings, and publication gates. Operators can inspect the profile and simulate change impact before a job reaches the Documentation Agent; simulation accepts only bounded structured evidence and never executes repository-provided tools or commands.
 
-Operators can inspect manifests through the Jobs page or CLI:
+The current policy foundation is controller-owned and deterministic. It establishes the durable Documentation Agent stage, schema validation, runner profile, exact-commit re-verification, API/CLI/browser visibility, mock-profile behavior, documentation-policy finding lifecycle, and documentation impact simulation. Later slices still need persistent editable policy profiles, renderer/tool profile management, screenshot/golden management, rich render previews, and independent documentation QC actions.
+
+Operators can inspect manifests, inspect the active documentation policy, and simulate impact through the Jobs/Policy pages or CLI:
 
 ```sh
 maintainctl documentation <job-id>
+maintainctl documentation policy
+maintainctl documentation simulate --input <json-file|->
 ```
 
 ## OPA policy lifecycle foundation
@@ -130,4 +134,4 @@ This foundation exposes advanced Rego authoring only behind the expert UI and co
 
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are richer rendered visual diff artifacts for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.
+This slice does not complete Milestone 5. Still pending are richer rendered visual diff artifacts for golden reports, persistent editable documentation policy/tool profiles with render previews and independent documentation QC actions, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.

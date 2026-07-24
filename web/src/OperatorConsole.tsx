@@ -34,6 +34,8 @@ type PolicySimulation = components["schemas"]["PolicySimulation"];
 type PolicyTestCase = components["schemas"]["PolicyTestCase"];
 type PolicyTestRun = components["schemas"]["PolicyTestRun"];
 type TestDesignerReport = components["schemas"]["TestDesignerReport"];
+type DocumentationPolicyProfile = components["schemas"]["DocumentationPolicyProfile"];
+type DocumentationPolicySimulationResult = components["schemas"]["DocumentationPolicySimulationResult"];
 
 type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
 
@@ -424,9 +426,19 @@ function PolicyPage({ expert }: { expert: boolean }) {
   const [activations, setActivations] = useState<PolicyActivation[]>([]);
   const [simulations, setSimulations] = useState<PolicySimulation[]>([]);
   const [testRuns, setTestRuns] = useState<PolicyTestRun[]>([]);
+  const [documentationProfile, setDocumentationProfile] = useState<DocumentationPolicyProfile | null>(null);
+  const [documentationSimulation, setDocumentationSimulation] = useState<DocumentationPolicySimulationResult | null>(null);
   const [bundleID, setBundleID] = useState("");
   const [decisionPoint, setDecisionPoint] = useState("qc_requirement");
   const [simulationInput, setSimulationInput] = useState(`{"risk_level":"medium","result_sha":"0123456789abcdef0123456789abcdef01234567","full_verification_passed":true,"documentation_status":"passed","golden_status":"passed"}`);
+  const [documentationInput, setDocumentationInput] = useState(`{
+  "paths": ["internal/api/openapi.yaml", "cmd/maintainctl/main.go"],
+  "change_classes": ["public_api", "cli"],
+  "risk_level": "medium",
+  "languages": ["go"],
+  "capability_packs": [],
+  "labels": []
+}`);
   const [testsJSON, setTestsJSON] = useState(`[
   {
     "id": "QC-ALLOW",
@@ -455,17 +467,19 @@ default decision := {
   const [activationReason, setActivationReason] = useState("");
   const [message, setMessage] = useState("");
   const load = useCallback(async () => {
-    const [bundleResponse, activationResponse, simulationResponse, testResponse] = await Promise.all([
+    const [bundleResponse, activationResponse, simulationResponse, testResponse, documentationPolicyResponse] = await Promise.all([
       api.GET("/policies/bundles", { params: { query: { limit: 100 } } }),
       api.GET("/policies/activations", { params: { query: { limit: 100 } } }),
       api.GET("/policies/simulations", { params: { query: { limit: 50 } } }),
       api.GET("/policies/test-runs", { params: { query: { limit: 100 } } }),
+      api.GET("/documentation/policy/profile"),
     ]);
     const loaded = bundleResponse.data?.bundles ?? [];
     setBundles(loaded);
     setActivations(activationResponse.data?.activations ?? []);
     setSimulations(simulationResponse.data?.simulations ?? []);
     setTestRuns(testResponse.data?.test_runs ?? []);
+    setDocumentationProfile(documentationPolicyResponse.data?.profile ?? null);
     setBundleID((current) => current || loaded.find((bundle) => bundle.status === "active")?.id || loaded[0]?.id || "");
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -493,6 +507,13 @@ default decision := {
     const response = await api.POST("/policies/simulations", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { bundle_id: bundleID || undefined, decision_point: decisionPoint, input } });
     setMessage(response.data ? `Simulation ${response.data.simulation.status}: ${response.data.simulation.decision.explanation}` : "Policy simulation failed.");
     await load();
+  };
+  const simulateDocumentation = async () => {
+    const input = parseObject(documentationInput);
+    if (!input) { setMessage("Documentation simulation input must be a JSON object."); return; }
+    const response = await api.POST("/documentation/policy/simulations", { body: input as any });
+    setDocumentationSimulation(response.data?.simulation ?? null);
+    setMessage(response.data ? response.data.simulation.policy_summary : "Documentation policy simulation failed.");
   };
   const runTests = async () => {
     if (!bundleID) { setMessage("Select a bundle before running tests."); return; }
@@ -542,6 +563,20 @@ default decision := {
       </div>
       <details open={expert}><summary>Selected bundle test coverage</summary><pre>{JSON.stringify(selectedRuns, null, 2)}</pre></details>
       <details><summary>Recent simulations</summary><pre>{JSON.stringify(simulations.slice(0, 10), null, 2)}</pre></details>
+    </Section>
+    <Section title="Documentation policy impact" eyebrow="Required docs and render checks">
+      <div className="two-column">
+        <div>
+          <p>{documentationProfile?.summary ?? "The documentation policy profile will appear after the controller responds."}</p>
+          <dl><div><dt>Profile</dt><dd>{documentationProfile ? `${documentationProfile.version} · ${documentationProfile.rules.length} rules` : "loading"}</dd></div><div><dt>Tool profile</dt><dd>{documentationProfile?.tool_profile.id ?? "loading"}</dd></div></dl>
+          <details open={expert}><summary>Rules, tool checks, and preview modes</summary><pre>{JSON.stringify(documentationProfile, null, 2)}</pre></details>
+        </div>
+        <div>
+          <label>Change evidence JSON<textarea rows={12} value={documentationInput} onChange={(event) => setDocumentationInput(event.target.value)} /></label>
+          <button type="button" onClick={() => void simulateDocumentation()}>Simulate documentation impact</button>
+        </div>
+      </div>
+      {documentationSimulation && <div className="card-grid"><article className="resource-card"><div className="resource-title"><BookOpen aria-hidden="true" /><div><h3>Required documents</h3><p>{documentationSimulation.policy_summary}</p></div><Badge value={documentationSimulation.no_documentation_required ? "not_required" : "required"} /></div><dl><div><dt>Rules</dt><dd>{documentationSimulation.matched_rules.length}</dd></div><div><dt>Requirements</dt><dd>{documentationSimulation.requirements.length}</dd></div><div><dt>Checks</dt><dd>{documentationSimulation.checks.length}</dd></div><div><dt>Publication ready</dt><dd>{documentationSimulation.publication_ready ? "Yes" : "No"}</dd></div></dl><details open><summary>Requirements, checks, reviewers, source mappings, and gates</summary><pre>{JSON.stringify(documentationSimulation, null, 2)}</pre></details></article></div>}
     </Section>
     {expert && <Section title="Advanced Rego authoring" eyebrow="Administrator and reauthentication required">
       <label>Version<input value={regoVersion} onChange={(event) => setRegoVersion(event.target.value)} placeholder="2026.07.24.1" /></label>

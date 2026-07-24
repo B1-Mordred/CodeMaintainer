@@ -1663,6 +1663,40 @@ paths:
                 properties:
                   manifests: { type: array, items: { $ref: "#/components/schemas/DocumentationManifest" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+  /documentation/policy/profile:
+    get:
+      summary: Inspect the active documentation policy profile
+      operationId: getDocumentationPolicyProfile
+      responses:
+        "200":
+          description: Controller-owned documentation policy profile and tool rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/DocumentationPolicyProfile" }
+  /documentation/policy/simulations:
+    post:
+      summary: Simulate documentation policy impact for bounded change evidence
+      operationId: simulateDocumentationPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentationPolicySimulationInput" }
+      responses:
+        "200":
+          description: Required documents, checks, render targets, reviewers, and publication gates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [simulation]
+                properties:
+                  simulation: { $ref: "#/components/schemas/DocumentationPolicySimulationResult" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/policy-decisions:
     parameters:
       - { $ref: "#/components/parameters/JobID" }
@@ -3718,6 +3752,80 @@ components:
         status: { type: string, enum: [passed, changes_applied, no_documentation_required, blocked] }
         policy_summary: { type: string }
         created_at: { type: string, format: date-time }
+    DocumentationToolProfile:
+      type: object
+      additionalProperties: false
+      required: [id, render_targets, checks, preview_modes]
+      properties:
+        id: { type: string }
+        render_targets: { type: array, items: { type: string } }
+        checks: { type: array, items: { type: string } }
+        preview_modes: { type: array, items: { type: string } }
+    DocumentationPolicyMatch:
+      type: object
+      additionalProperties: false
+      required: [paths, change_classes, risk_levels, languages, capability_packs, labels]
+      properties:
+        paths: { type: array, maxItems: 32, items: { type: string } }
+        change_classes: { type: array, maxItems: 32, items: { type: string } }
+        risk_levels: { type: array, maxItems: 3, items: { $ref: "#/components/schemas/RiskLevel" } }
+        languages: { type: array, maxItems: 32, items: { type: string } }
+        capability_packs: { type: array, maxItems: 32, items: { type: string } }
+        labels: { type: array, maxItems: 32, items: { type: string } }
+    DocumentationPolicyRule:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, match, documents, render_targets, checks, reviewer_roles, publication_gate, source_of_truth, publication_target]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        match: { $ref: "#/components/schemas/DocumentationPolicyMatch" }
+        documents: { type: array, items: { type: string } }
+        render_targets: { type: array, items: { type: string } }
+        checks: { type: array, items: { type: string } }
+        reviewer_roles: { type: array, items: { type: string } }
+        publication_gate: { type: boolean }
+        source_of_truth: { type: string }
+        publication_target: { type: string }
+    DocumentationPolicyProfile:
+      type: object
+      additionalProperties: false
+      required: [id, version, summary, rules, tool_profile]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        summary: { type: string }
+        rules: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/DocumentationPolicyRule" } }
+        tool_profile: { $ref: "#/components/schemas/DocumentationToolProfile" }
+    DocumentationPolicySimulationInput:
+      type: object
+      additionalProperties: false
+      required: [paths, change_classes, risk_level, languages, capability_packs, labels]
+      properties:
+        paths: { type: array, maxItems: 128, items: { type: string } }
+        change_classes: { type: array, maxItems: 64, items: { type: string } }
+        risk_level: { type: string, enum: ["", low, medium, high] }
+        languages: { type: array, maxItems: 32, items: { type: string } }
+        capability_packs: { type: array, maxItems: 32, items: { type: string } }
+        labels: { type: array, maxItems: 64, items: { type: string } }
+    DocumentationPolicySimulationResult:
+      type: object
+      additionalProperties: false
+      required: [profile_id, profile_version, matched_rules, requirements, checks, render_targets, reviewer_roles, publication_gates, source_mappings, policy_summary, publication_ready, no_documentation_required]
+      properties:
+        profile_id: { type: string }
+        profile_version: { type: string }
+        matched_rules: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/DocumentationPolicyRule" } }
+        requirements: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/DocumentationRequirement" } }
+        checks: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/DocumentationCheck" } }
+        render_targets: { type: array, maxItems: 64, items: { type: string } }
+        reviewer_roles: { type: array, maxItems: 32, items: { type: string } }
+        publication_gates: { type: array, maxItems: 100, items: { type: string } }
+        source_mappings: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/DocumentationChange" } }
+        policy_summary: { type: string }
+        publication_ready: { type: boolean }
+        no_documentation_required: { type: boolean }
     GoldenRehearsalSource:
       type: object
       additionalProperties: false

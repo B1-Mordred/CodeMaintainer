@@ -1758,6 +1758,41 @@ func TestDocumentationManifestsAreVisibleOnJobDetailAndEndpoint(t *testing.T) {
 	}
 }
 
+func TestDocumentationPolicyProfileAndSimulationAreExposed(t *testing.T) {
+	server, _ := testServer(t)
+	defer server.Close()
+	response, err := http.Get(server.URL + "/api/v1/documentation/policy/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var profileResponse struct {
+		Profile documentation.PolicyProfile `json:"profile"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&profileResponse); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || profileResponse.Profile.ID != "documentation-policy-default" || len(profileResponse.Profile.Rules) == 0 {
+		t.Fatalf("profile response = %d %#v", response.StatusCode, profileResponse)
+	}
+	payload := strings.NewReader(`{"paths":["internal/api/openapi.yaml","web/src/OperatorConsole.tsx"],"change_classes":["public_api","ui"],"risk_level":"medium","languages":["go"],"capability_packs":[],"labels":[]}`)
+	response, err = http.Post(server.URL+"/api/v1/documentation/policy/simulations", "application/json", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var simulationResponse struct {
+		Simulation documentation.PolicySimulationResult `json:"simulation"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&simulationResponse); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || simulationResponse.Simulation.NoDocumentationOK || simulationResponse.Simulation.PublicationReady ||
+		len(simulationResponse.Simulation.Requirements) < 2 {
+		t.Fatalf("simulation response = %d %#v", response.StatusCode, simulationResponse)
+	}
+}
+
 func TestRequestBoundaryRejectsUnknownFieldsAndBadRepository(t *testing.T) {
 	server, _ := testServer(t)
 	for _, payload := range []string{

@@ -158,10 +158,7 @@ func run(arguments []string) error {
 		}
 		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/test-designer", nil)
 	case "documentation":
-		if len(arguments) != 2 || arguments[1] == "" {
-			return errors.New("usage: maintainctl documentation <job-id>")
-		}
-		return api.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[1])+"/documentation", nil)
+		return api.documentation(arguments[1:])
 	case "policy":
 		return api.policy(arguments[1:])
 	case "golden":
@@ -169,6 +166,42 @@ func run(arguments []string) error {
 	default:
 		usage()
 		return fmt.Errorf("command %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) documentation(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl documentation <job-id>|policy|simulate --input <json-file|->")
+	}
+	switch arguments[0] {
+	case "policy":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl documentation policy")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/documentation/policy/profile", nil)
+	case "simulate":
+		flags := flag.NewFlagSet("documentation simulate", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "documentation policy simulation JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl documentation simulate --input <json-file|->")
+		}
+		raw, err := readJSONDocument(*inputFile)
+		if err != nil {
+			return err
+		}
+		var input any
+		if err := json.Unmarshal(raw, &input); err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/documentation/policy/simulations", input)
+	default:
+		if len(arguments) != 1 || arguments[0] == "" {
+			return errors.New("usage: maintainctl documentation <job-id>|policy|simulate --input <json-file|->")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/jobs/"+url.PathEscape(arguments[0])+"/documentation", nil)
 	}
 }
 
@@ -1410,6 +1443,8 @@ Commands:
   test-designer <job-id>
   test-designer dispose <report-id> <proposal-id> --disposition accepted|rejected|not_applicable --reason text
   documentation <job-id>
+  documentation policy
+  documentation simulate --input <json-file|->
   golden reports <job-id>
   golden approve|reject <report-id> <comparison-id> --reason text
   golden configure-profile <report-id> <comparison-id> --reason text --absolute <n> --relative <n> [--mask-dynamic] [--mask-selector selector]
