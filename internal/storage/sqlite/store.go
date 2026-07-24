@@ -139,6 +139,9 @@ var migration038 string
 //go:embed migrations/039_evaluation_lab.sql
 var migration039 string
 
+//go:embed migrations/040_observability_support.sql
+var migration040 string
+
 const timestampFormat = time.RFC3339Nano
 
 type Store struct {
@@ -215,7 +218,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}, {13, migration013}, {14, migration014}, {15, migration015}, {16, migration016}, {17, migration017}, {18, migration018}, {19, migration019}, {20, migration020}, {21, migration021}, {22, migration022}, {23, migration023}, {24, migration024}, {25, migration025}, {26, migration026}, {27, migration027}, {28, migration028}, {29, migration029}, {30, migration030}, {31, migration031}, {32, migration032}, {33, migration033}, {34, migration034}, {35, migration035}, {36, migration036}, {37, migration037}, {38, migration038}, {39, migration039}} {
+	}{{1, migration001}, {2, migration002}, {3, migration003}, {4, migration004}, {5, migration005}, {6, migration006}, {7, migration007}, {8, migration008}, {9, migration009}, {10, migration010}, {11, migration011}, {12, migration012}, {13, migration013}, {14, migration014}, {15, migration015}, {16, migration016}, {17, migration017}, {18, migration018}, {19, migration019}, {20, migration020}, {21, migration021}, {22, migration022}, {23, migration023}, {24, migration024}, {25, migration025}, {26, migration026}, {27, migration027}, {28, migration028}, {29, migration029}, {30, migration030}, {31, migration031}, {32, migration032}, {33, migration033}, {34, migration034}, {35, migration035}, {36, migration036}, {37, migration037}, {38, migration038}, {39, migration039}, {40, migration040}} {
 		var applied int
 		if err := s.db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&applied); err != nil {

@@ -1235,6 +1235,99 @@ paths:
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
+  /observability/status:
+    get:
+      summary: Inspect local redacted observability collector status
+      operationId: getObservabilityStatus
+      responses:
+        "200":
+          description: Observability collector status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ObservabilityStatus" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /observability/events:
+    get:
+      summary: List bounded redacted local observability events
+      operationId: listObservabilityEvents
+      parameters:
+        - { name: component, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: Redacted observability events
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ObservabilityEvent" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Record a bounded redacted local observability event
+      operationId: recordObservabilityEvent
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ObservabilityRecordEventRequest" } } }
+      responses:
+        "201":
+          description: Recorded redacted observability event
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [event]
+                properties:
+                  event: { $ref: "#/components/schemas/ObservabilityEvent" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+  /observability/support-bundles:
+    get:
+      summary: List retained redacted support bundle manifests
+      operationId: listSupportBundles
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: Support bundle manifests
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SupportBundle" } }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+    post:
+      summary: Create a bounded redacted support bundle manifest
+      operationId: createSupportBundle
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateSupportBundleRequest" } } }
+      responses:
+        "201":
+          description: Created support bundle manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [bundle]
+                properties:
+                  bundle: { $ref: "#/components/schemas/SupportBundle" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
   /skill-proposals:
     get:
       summary: List inert Hermes skill proposals and administrator decisions
@@ -4161,6 +4254,85 @@ components:
         reason: { type: string }
         actor_id: { type: string }
         created_at: { type: string, format: date-time }
+    ObservabilityRecordEventRequest:
+      type: object
+      additionalProperties: false
+      required: [component, name]
+      properties:
+        trace_id: { type: string, maxLength: 128 }
+        span_id: { type: string, maxLength: 128 }
+        correlation_id: { type: string, maxLength: 128 }
+        component: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [span, metric, log], default: span }
+        name: { type: string, minLength: 1, maxLength: 256 }
+        severity: { type: string, enum: [info, warn, error], default: info }
+        attributes: { type: object, additionalProperties: true, maxProperties: 256 }
+        duration_millis: { type: integer, minimum: 0 }
+        queue_millis: { type: integer, minimum: 0 }
+        retry_count: { type: integer, minimum: 0 }
+        resource_bytes: { type: integer, minimum: 0 }
+    ObservabilityEvent:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, trace_id, span_id, correlation_id, component, kind, name, severity, attributes, redaction_count, duration_millis, queue_millis, retry_count, resource_bytes, external_exported, external_endpoint, actor_id, created_at]
+      properties:
+        id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        trace_id: { type: string }
+        span_id: { type: string }
+        correlation_id: { type: string }
+        component: { type: string }
+        kind: { type: string, enum: [span, metric, log] }
+        name: { type: string }
+        severity: { type: string, enum: [info, warn, error] }
+        attributes: { type: object, additionalProperties: true }
+        redaction_count: { type: integer, minimum: 0 }
+        duration_millis: { type: integer, minimum: 0 }
+        queue_millis: { type: integer, minimum: 0 }
+        retry_count: { type: integer, minimum: 0 }
+        resource_bytes: { type: integer, minimum: 0 }
+        external_exported: { type: boolean, const: false }
+        external_endpoint: { type: string, maxLength: 0 }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
+    SupportBundle:
+      type: object
+      additionalProperties: false
+      required: [id, schema_version, status, reason, sections, redaction_policy, manifest, manifest_sha256, bundle_sha256, bytes, actor_id, created_at]
+      properties:
+        id: { type: string }
+        schema_version: { type: integer, const: 1 }
+        status: { type: string, enum: [ready] }
+        reason: { type: string }
+        sections: { type: array, items: { type: string } }
+        redaction_policy: { type: string }
+        manifest: { type: object, additionalProperties: true }
+        manifest_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bundle_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        bytes: { type: integer, minimum: 1, maximum: 65536 }
+        actor_id: { type: string }
+        created_at: { type: string, format: date-time }
+    CreateSupportBundleRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 4096 }
+        sections: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
+    ObservabilityStatus:
+      type: object
+      additionalProperties: false
+      required: [schema_version, local_collector, retention_days, sampling_ratio, external_otlp_enabled, external_otlp_allowlist, redaction_policy, recent_events, recent_support_bundles]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        local_collector: { type: string }
+        retention_days: { type: integer, minimum: 1 }
+        sampling_ratio: { type: number, minimum: 0, maximum: 1 }
+        external_otlp_enabled: { type: boolean, const: false }
+        external_otlp_allowlist: { type: array, items: { type: string } }
+        redaction_policy: { type: string }
+        recent_events: { type: array, items: { $ref: "#/components/schemas/ObservabilityEvent" } }
+        recent_support_bundles: { type: array, items: { $ref: "#/components/schemas/SupportBundle" } }
     SkillProposalInput:
       type: object
       additionalProperties: false

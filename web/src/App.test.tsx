@@ -105,6 +105,27 @@ const evaluationRuns = {
     actor_id: "operator-console", created_at: "2026-07-24T05:35:00Z",
   }],
 };
+const observabilityEvent = {
+  id: "obsevent_fixture", schema_version: 1, trace_id: "trace_fixture_123456", span_id: "span_fixture",
+  correlation_id: "trace_fixture_123456", component: "controller", kind: "span", name: "workflow.stage.verify",
+  severity: "info", attributes: { stage: "verify", prompt: "[REDACTED]", authorization_header: "[REDACTED]" },
+  redaction_count: 2, duration_millis: 1250, queue_millis: 45, retry_count: 1, resource_bytes: 4096,
+  external_exported: false, external_endpoint: "", actor_id: "operator-console", created_at: "2026-07-24T05:50:00Z",
+};
+const supportBundle = {
+  id: "supportbundle_fixture", schema_version: 1, status: "ready", reason: "debug slow run",
+  sections: ["configuration_summary", "recent_telemetry", "support_manifest", "system_status"],
+  redaction_policy: "redact secret/token/password/key/auth/cookie/header/prompt/request-body/source-content/hidden-reasoning fields before storage or export",
+  manifest: { external_otlp_enabled: false, local_collector: "controller-sqlite", redactions: 2, excluded: ["secrets", "sensitive prompts", "hidden reasoning"] },
+  manifest_sha256: "9".repeat(64), bundle_sha256: "8".repeat(64), bytes: 512,
+  actor_id: "operator-console", created_at: "2026-07-24T05:51:00Z",
+};
+const observabilityStatus = {
+  schema_version: 1, local_collector: "controller-sqlite", retention_days: 30, sampling_ratio: 1,
+  external_otlp_enabled: false, external_otlp_allowlist: [],
+  redaction_policy: supportBundle.redaction_policy,
+  recent_events: [observabilityEvent], recent_support_bundles: [supportBundle],
+};
 
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), {
   status: 200,
@@ -127,6 +148,9 @@ const responseByPath = (input: RequestInfo | URL) => {
   if (path === "/api/v1/model-providers/capability-probes") return jsonResponse({ probes: [capabilityProbe.probe] });
   if (path === "/api/v1/evaluations/datasets") return request.method === "POST" ? new Response(JSON.stringify({ dataset: evaluationDatasets.items[0] }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse(evaluationDatasets);
   if (path === "/api/v1/evaluations/runs") return request.method === "POST" ? new Response(JSON.stringify({ run: evaluationRuns.items[0] }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse(evaluationRuns);
+  if (path === "/api/v1/observability/status") return jsonResponse(observabilityStatus);
+  if (path === "/api/v1/observability/events") return request.method === "POST" ? new Response(JSON.stringify({ event: observabilityEvent }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse({ items: [observabilityEvent] });
+  if (path === "/api/v1/observability/support-bundles") return request.method === "POST" ? new Response(JSON.stringify({ bundle: supportBundle }), { status: 201, headers: { "Content-Type": "application/json" } }) : jsonResponse({ items: [supportBundle] });
   if (path === "/api/v1/jobs/job_fixture") return jsonResponse({ ...jobs.items[0], transitions: [], phases: [], findings: [] });
   if (path === "/api/v1/jobs/job_fixture/artifacts") return jsonResponse({ items: [{ id: "artifact_fixture", job_id: "job_fixture", project_id: "owner-repo", sha256: "3".repeat(64), bytes: 16, kind: "command_result", media_type: "application/json", producer: "verifier", metadata: {}, created_at: "2026-07-24T05:00:00Z" }] });
   if (path === "/api/v1/jobs/job_fixture/evidence-graph") return jsonResponse(evidenceGraph);
@@ -193,6 +217,21 @@ describe("App", () => {
     expect((await screen.findAllByText(/review-only/i)).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Launch evaluation run" }));
     expect(await screen.findByText(/isolated namespaces/)).toBeInTheDocument();
+    const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
+    expect(result.violations).toEqual([]);
+  });
+
+  it("shows bounded redacted observability diagnostics and support bundles", async () => {
+    const { container } = render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Observability" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Redaction and export policy" })).toBeInTheDocument();
+    expect((await screen.findAllByText("External OTLP")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Disabled")).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/hidden-reasoning/)).toBeInTheDocument();
+    expect(await screen.findByText("workflow.stage.verify")).toBeInTheDocument();
+    expect((await screen.findAllByText(/9999999999999999/)).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Create redacted support bundle" }));
+    expect(await screen.findByText(/operator export review/)).toBeInTheDocument();
     const result = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] } });
     expect(result.violations).toEqual([]);
   });

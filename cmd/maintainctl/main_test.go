@@ -283,6 +283,58 @@ func TestEvaluationCLIRoutesDatasetAndRunOperations(t *testing.T) {
 	}
 }
 
+func TestObservabilityCLIRoutesRedactedDiagnostics(t *testing.T) {
+	seen := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI())
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if r.URL.Path == "/api/v1/observability/events" && body["component"] != "controller" {
+				t.Errorf("unexpected event body %#v", body)
+			}
+			if r.URL.Path == "/api/v1/observability/support-bundles" && body["reason"] != "debug slow run" {
+				t.Errorf("unexpected bundle body %#v", body)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	client := client{baseURL: server.URL, http: &http.Client{Timeout: time.Second}}
+	eventFile := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(eventFile, []byte(`{"component":"controller"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observability([]string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observability([]string{"events", "--component", "controller"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observability([]string{"record", "--input", eventFile}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observability([]string{"support-bundles"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observability([]string{"create-support-bundle", "--reason", "debug slow run", "--sections", "system_status,recent_telemetry"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET /api/v1/observability/status",
+		"GET /api/v1/observability/events?component=controller",
+		"POST /api/v1/observability/events",
+		"GET /api/v1/observability/support-bundles",
+		"POST /api/v1/observability/support-bundles",
+	}
+	if strings.Join(seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected observability CLI requests:\n%s", strings.Join(seen, "\n"))
+	}
+}
+
 func TestTestDesignerCLIListsJobReports(t *testing.T) {
 	seen := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

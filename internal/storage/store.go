@@ -22,6 +22,7 @@ import (
 	"github.com/B1-Mordred/CodeMaintainer/internal/intelligence"
 	"github.com/B1-Mordred/CodeMaintainer/internal/jobs"
 	"github.com/B1-Mordred/CodeMaintainer/internal/memory"
+	"github.com/B1-Mordred/CodeMaintainer/internal/observability"
 	"github.com/B1-Mordred/CodeMaintainer/internal/policy"
 	"github.com/B1-Mordred/CodeMaintainer/internal/projects"
 	"github.com/B1-Mordred/CodeMaintainer/internal/providers"
@@ -228,6 +229,7 @@ type Store interface {
 	scheduler.Store
 	evaluation.Store
 	evidence.Store
+	observability.Store
 	windowsworker.Store
 	Close() error
 }

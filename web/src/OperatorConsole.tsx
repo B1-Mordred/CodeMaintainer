@@ -42,6 +42,9 @@ type EvaluationDataset = components["schemas"]["EvaluationDataset"];
 type EvaluationRun = components["schemas"]["EvaluationRun"];
 type EvaluationCreateDatasetRequest = components["schemas"]["EvaluationCreateDatasetRequest"];
 type EvaluationLaunchRunRequest = components["schemas"]["EvaluationLaunchRunRequest"];
+type ObservabilityEvent = components["schemas"]["ObservabilityEvent"];
+type ObservabilityStatus = components["schemas"]["ObservabilityStatus"];
+type SupportBundle = components["schemas"]["SupportBundle"];
 type PolicyBundle = components["schemas"]["PolicyBundle"];
 type PolicyActivation = components["schemas"]["PolicyActivation"];
 type PolicySimulation = components["schemas"]["PolicySimulation"];
@@ -51,7 +54,7 @@ type TestDesignerReport = components["schemas"]["TestDesignerReport"];
 type DocumentationPolicyProfile = components["schemas"]["DocumentationPolicyProfile"];
 type DocumentationPolicySimulationResult = components["schemas"]["DocumentationPolicySimulationResult"];
 
-type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "evaluation" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
+type PageID = "first-run" | "overview" | "projects" | "onboarding" | "jobs" | "quality" | "policy" | "intelligence" | "models" | "evaluation" | "observability" | "memory" | "forges" | "windows-workers" | "automation" | "configuration" | "administration";
 
 const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "operate" | "integrate" | "manage" }> = [
   { id: "first-run", label: "First run", icon: <ListChecks aria-hidden="true" />, group: "operate" },
@@ -64,6 +67,7 @@ const navigation: Array<{ id: PageID; label: string; icon: ReactNode; group: "op
   { id: "intelligence", label: "Code intelligence", icon: <BrainCircuit aria-hidden="true" />, group: "operate" },
   { id: "models", label: "Models", icon: <BrainCircuit aria-hidden="true" />, group: "integrate" },
   { id: "evaluation", label: "Evaluation", icon: <ClipboardCheck aria-hidden="true" />, group: "integrate" },
+  { id: "observability", label: "Observability", icon: <Activity aria-hidden="true" />, group: "integrate" },
   { id: "memory", label: "Memory", icon: <Database aria-hidden="true" />, group: "integrate" },
   { id: "forges", label: "Git forges", icon: <GitBranch aria-hidden="true" />, group: "integrate" },
   { id: "windows-workers", label: "Windows workers", icon: <MonitorCog aria-hidden="true" />, group: "integrate" },
@@ -169,6 +173,7 @@ export function OperatorConsole({
       {page === "intelligence" && <IntelligencePage />}
       {page === "models" && <ModelsPage status={initialStatus} expert={expert} />}
       {page === "evaluation" && <EvaluationPage expert={expert} />}
+      {page === "observability" && <ObservabilityPage expert={expert} />}
       {page === "memory" && <MemoryPage />}
       {page === "forges" && <ForgePage />}
       {page === "windows-workers" && <WindowsWorkersPage />}
@@ -801,6 +806,72 @@ function EvaluationPage({ expert }: { expert: boolean }) {
       {runs.length === 0 ? <Empty title="No reports yet" detail="Retained reports will show task completion, test success, regressions, diff churn, precision/recall, context, runtime, memory, cache effect, docs compliance, interventions, and uncertainty." /> : <div className="card-grid">{runs.slice(0, 12).map((run) => <article className="resource-card" key={run.id}><div className="resource-title"><Gauge aria-hidden="true" /><div><h3>{run.id}</h3><p>{date(run.created_at)}</p></div><Badge value={run.status} /></div><dl><div><dt>Dataset</dt><dd>{run.dataset_id}</dd></div><div><dt>Budget</dt><dd>{run.budget_seconds}s · {run.concurrency} concurrent</dd></div><div><dt>Promotion</dt><dd>{label(run.promotion_recommendation)}</dd></div><div><dt>Report hash</dt><dd><code>{run.report_sha256.slice(0, 16)}</code></dd></div></dl><details open><summary>Profile metrics</summary><div className="audit-list">{run.results.map((result) => <div key={result.profile_id}><time>{result.profile_id}</time><strong>{Math.round(result.task_completion * 100)}% task · {Math.round(result.test_success * 100)}% tests · {label(result.cache_effect)}</strong><span>{result.promotion_blocked_reason}</span></div>)}</div></details>{expert && <details><summary>Full evaluation run</summary><pre>{JSON.stringify(run, null, 2)}</pre></details>}</article>)}</div>}
     </Section>
     <Section title="Isolation guarantees" eyebrow="Leakage controls"><p className="expert-note">Dataset records retain only a hidden hash for the known patch and a deterministic reproducibility key. Run records must use `eval://memory/...` and `eval://cache/...`; storage rejects project-memory namespace leakage. Reports are append-only and promotion is blocked by construction.</p></Section>
+  </>;
+}
+
+function ObservabilityPage({ expert }: { expert: boolean }) {
+  const [status, setStatus] = useState<ObservabilityStatus | null>(null);
+  const [events, setEvents] = useState<ObservabilityEvent[]>([]);
+  const [bundles, setBundles] = useState<SupportBundle[]>([]);
+  const [reason, setReason] = useState("operator requested redacted diagnostic bundle");
+  const [sections, setSections] = useState("system_status,recent_telemetry,configuration_summary,support_manifest");
+  const [message, setMessage] = useState("");
+  const load = useCallback(async () => {
+    const [statusResponse, eventsResponse, bundleResponse] = await Promise.all([
+      api.GET("/observability/status"),
+      api.GET("/observability/events"),
+      api.GET("/observability/support-bundles"),
+    ]);
+    setStatus(statusResponse.data ?? null);
+    setEvents(eventsResponse.data?.items ?? []);
+    setBundles(bundleResponse.data?.items ?? []);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const createBundle = async () => {
+    const body = { reason, sections: sections.split(",").map((item) => item.trim()).filter(Boolean) };
+    const response = await api.POST("/observability/support-bundles", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body });
+    setMessage(response.data ? `Support bundle ${response.data.bundle.id} retained for operator export review.` : "Support bundle creation failed.");
+    if (response.data) await load();
+  };
+  const recentBundles = bundles.length ? bundles : status?.recent_support_bundles ?? [];
+  const recentEvents = events.length ? events : status?.recent_events ?? [];
+  return <>
+    <PageIntro>Local diagnostics are retained as bounded, redacted controller records. External OTLP export is disabled by default and support bundles expose manifests for operator-reviewed transfer.</PageIntro>
+    <div className="metrics-grid">
+      <Metric icon={<Database aria-hidden="true" />} name="Local collector" value={status?.local_collector ?? "Loading"} detail="Append-only controller storage" />
+      <Metric icon={<FileClock aria-hidden="true" />} name="Retention" value={`${status?.retention_days ?? 0} days`} detail={`Sampling ratio ${status?.sampling_ratio ?? 0}`} />
+      <Metric icon={<Activity aria-hidden="true" />} name="Recent events" value={String(recentEvents.length)} detail="Trace, metric, and log facts" />
+      <Metric icon={<ShieldCheck aria-hidden="true" />} name="External OTLP" value={status?.external_otlp_enabled ? "Enabled" : "Disabled"} detail={(status?.external_otlp_allowlist ?? []).length ? status?.external_otlp_allowlist.join(", ") : "No endpoint configured"} />
+      <Metric icon={<HardDrive aria-hidden="true" />} name="Support bundles" value={String(recentBundles.length)} detail="Manifest-only local export records" />
+      <Metric icon={<ClipboardCheck aria-hidden="true" />} name="Redactions" value={String(recentEvents.reduce((total, event) => total + event.redaction_count, 0))} detail="Sensitive fields removed before storage" />
+    </div>
+    {message && <p className="inline-message" role="status">{message}</p>}
+    <Section title="Redaction and export policy" eyebrow="Safety boundary" action={<button className="secondary-button" type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />Refresh</button>}>
+      <p className="expert-note">{status?.redaction_policy ?? "Loading redaction policy…"}</p>
+      <div className="health-grid">
+        <div><span>External OTLP status</span><Badge value={status?.external_otlp_enabled ? "enabled" : "disabled"} /></div>
+        <div><span>Local collector</span><strong>{status?.local_collector ?? "—"}</strong></div>
+        <div><span>Retention window</span><strong>{status?.retention_days ?? 0} days</strong></div>
+        <div><span>Sampling ratio</span><strong>{status?.sampling_ratio ?? 0}</strong></div>
+      </div>
+    </Section>
+    <Section title="Create support bundle" eyebrow="Operator-reviewed export">
+      <div className="two-column">
+        <div className="resource-card">
+          <label>Reason<input required maxLength={4096} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          <label>Sections<input value={sections} onChange={(event) => setSections(event.target.value)} /></label>
+          <button type="button" onClick={() => void createBundle()} disabled={!reason.trim()}>Create redacted support bundle</button>
+          <p className="expert-note">Bundles retain bounded JSON manifests and hashes. Raw prompts, request bodies, hidden reasoning, unrestricted source content, and secrets are excluded.</p>
+        </div>
+        <div>{recentBundles[0] ? <article className="resource-card"><div className="resource-title"><HardDrive aria-hidden="true" /><div><h3>{recentBundles[0].id}</h3><p>{recentBundles[0].reason}</p></div><Badge value={recentBundles[0].status} /></div><dl><div><dt>Manifest hash</dt><dd><code>{recentBundles[0].manifest_sha256.slice(0, 16)}</code></dd></div><div><dt>Bundle hash</dt><dd><code>{recentBundles[0].bundle_sha256.slice(0, 16)}</code></dd></div><div><dt>Bytes</dt><dd>{recentBundles[0].bytes}</dd></div><div><dt>Created</dt><dd>{date(recentBundles[0].created_at)}</dd></div></dl></article> : <Empty title="No support bundle retained" detail="Create a support bundle to produce a bounded manifest for operator review." />}</div>
+      </div>
+    </Section>
+    <Section title="Recent telemetry timeline" eyebrow="Trace to artifact navigation">
+      {recentEvents.length === 0 ? <Empty title="No observability events retained" detail="Controller, scheduler, model, cache, policy, forge, runner, and agent events will appear after instrumentation records them." /> : <div className="card-grid">{recentEvents.slice(0, 24).map((event) => <article className="resource-card" key={event.id}><div className="resource-title"><Gauge aria-hidden="true" /><div><h3>{event.name}</h3><p>{event.component} · trace <code>{event.trace_id.slice(0, 12)}</code></p></div><Badge value={event.severity} /></div><dl><div><dt>Kind</dt><dd>{label(event.kind)}</dd></div><div><dt>Duration</dt><dd>{event.duration_millis} ms</dd></div><div><dt>Queue</dt><dd>{event.queue_millis} ms</dd></div><div><dt>Retries</dt><dd>{event.retry_count}</dd></div><div><dt>Resource bytes</dt><dd>{event.resource_bytes}</dd></div><div><dt>Redactions</dt><dd>{event.redaction_count}</dd></div><div><dt>Created</dt><dd>{date(event.created_at)}</dd></div></dl>{expert && <details><summary>Redacted attributes</summary><pre>{JSON.stringify(event.attributes, null, 2)}</pre></details>}</article>)}</div>}
+    </Section>
+    <Section title="Support bundle history" eyebrow="Hashes and manifests">
+      {recentBundles.length === 0 ? <Empty title="No bundle history" detail="Support bundle manifests will list included sections, component counts, redaction counts, and excluded sensitive categories." /> : <div className="audit-list">{recentBundles.map((bundle) => <div key={bundle.id}><time>{date(bundle.created_at)}</time><strong>{bundle.sections.join(", ")}</strong><span>{bundle.reason} · manifest <code>{bundle.manifest_sha256.slice(0, 16)}</code> · bundle <code>{bundle.bundle_sha256.slice(0, 16)}</code></span>{expert && <pre>{JSON.stringify(bundle.manifest, null, 2)}</pre>}</div>)}</div>}
+    </Section>
   </>;
 }
 

@@ -119,6 +119,8 @@ func run(arguments []string) error {
 		return api.modelProvider(arguments[1:])
 	case "evaluation":
 		return api.evaluation(arguments[1:])
+	case "observability":
+		return api.observability(arguments[1:])
 	case "config":
 		return api.config(arguments[1:])
 	case "intelligence":
@@ -1132,6 +1134,71 @@ func (c client) evaluation(arguments []string) error {
 		return c.printJSON(http.MethodPost, "/api/v1/evaluations/runs", input)
 	default:
 		return fmt.Errorf("evaluation action %q is not implemented", arguments[0])
+	}
+}
+
+func (c client) observability(arguments []string) error {
+	if len(arguments) == 0 {
+		return errors.New("usage: maintainctl observability <status|events|record|support-bundles|create-support-bundle> ...")
+	}
+	switch arguments[0] {
+	case "status":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl observability status")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/observability/status", nil)
+	case "events":
+		flags := flag.NewFlagSet("observability events", flag.ContinueOnError)
+		component := flags.String("component", "", "optional component filter")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return errors.New("usage: maintainctl observability events [--component <name>]")
+		}
+		path := "/api/v1/observability/events"
+		if *component != "" {
+			path += "?component=" + url.QueryEscape(*component)
+		}
+		return c.printJSON(http.MethodGet, path, nil)
+	case "record":
+		flags := flag.NewFlagSet("observability record", flag.ContinueOnError)
+		inputFile := flags.String("input", "", "observability event JSON file or '-' for stdin")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *inputFile == "" {
+			return errors.New("usage: maintainctl observability record --input <json-file|->")
+		}
+		input, err := readAnyJSON(*inputFile)
+		if err != nil {
+			return err
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/observability/events", input)
+	case "support-bundles":
+		if len(arguments) != 1 {
+			return errors.New("usage: maintainctl observability support-bundles")
+		}
+		return c.printJSON(http.MethodGet, "/api/v1/observability/support-bundles", nil)
+	case "create-support-bundle":
+		flags := flag.NewFlagSet("observability create-support-bundle", flag.ContinueOnError)
+		reason := flags.String("reason", "", "bounded diagnostic reason")
+		sectionsValue := flags.String("sections", "system_status,recent_telemetry,configuration_summary,support_manifest", "comma-separated section names")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || *reason == "" {
+			return errors.New("usage: maintainctl observability create-support-bundle --reason <text> [--sections a,b]")
+		}
+		sections := []string{}
+		for _, section := range strings.Split(*sectionsValue, ",") {
+			if trimmed := strings.TrimSpace(section); trimmed != "" {
+				sections = append(sections, trimmed)
+			}
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/observability/support-bundles", map[string]any{"reason": *reason, "sections": sections})
+	default:
+		return fmt.Errorf("observability action %q is not implemented", arguments[0])
 	}
 }
 

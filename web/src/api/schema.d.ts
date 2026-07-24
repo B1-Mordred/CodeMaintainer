@@ -1248,6 +1248,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/observability/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect local redacted observability collector status */
+        get: operations["getObservabilityStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/observability/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List bounded redacted local observability events */
+        get: operations["listObservabilityEvents"];
+        put?: never;
+        /** Record a bounded redacted local observability event */
+        post: operations["recordObservabilityEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/observability/support-bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained redacted support bundle manifests */
+        get: operations["listSupportBundles"];
+        put?: never;
+        /** Create a bounded redacted support bundle manifest */
+        post: operations["createSupportBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skill-proposals": {
         parameters: {
             query?: never;
@@ -4019,6 +4072,94 @@ export interface components {
             actor_id: string;
             /** Format: date-time */
             created_at: string;
+        };
+        ObservabilityRecordEventRequest: {
+            trace_id?: string;
+            span_id?: string;
+            correlation_id?: string;
+            component: string;
+            /**
+             * @default span
+             * @enum {string}
+             */
+            kind: "span" | "metric" | "log";
+            name: string;
+            /**
+             * @default info
+             * @enum {string}
+             */
+            severity: "info" | "warn" | "error";
+            attributes?: {
+                [key: string]: unknown;
+            };
+            duration_millis?: number;
+            queue_millis?: number;
+            retry_count?: number;
+            resource_bytes?: number;
+        };
+        ObservabilityEvent: {
+            id: string;
+            /** @constant */
+            schema_version: 1;
+            trace_id: string;
+            span_id: string;
+            correlation_id: string;
+            component: string;
+            /** @enum {string} */
+            kind: "span" | "metric" | "log";
+            name: string;
+            /** @enum {string} */
+            severity: "info" | "warn" | "error";
+            attributes: {
+                [key: string]: unknown;
+            };
+            redaction_count: number;
+            duration_millis: number;
+            queue_millis: number;
+            retry_count: number;
+            resource_bytes: number;
+            /** @constant */
+            external_exported: false;
+            external_endpoint: string;
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        SupportBundle: {
+            id: string;
+            /** @constant */
+            schema_version: 1;
+            /** @enum {string} */
+            status: "ready";
+            reason: string;
+            sections: string[];
+            redaction_policy: string;
+            manifest: {
+                [key: string]: unknown;
+            };
+            manifest_sha256: string;
+            bundle_sha256: string;
+            bytes: number;
+            actor_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreateSupportBundleRequest: {
+            reason: string;
+            sections?: string[];
+        };
+        ObservabilityStatus: {
+            /** @constant */
+            schema_version: 1;
+            local_collector: string;
+            retention_days: number;
+            sampling_ratio: number;
+            /** @constant */
+            external_otlp_enabled: false;
+            external_otlp_allowlist: string[];
+            redaction_policy: string;
+            recent_events: components["schemas"]["ObservabilityEvent"][];
+            recent_support_bundles: components["schemas"]["SupportBundle"][];
         };
         SkillProposalInput: {
             name: string;
@@ -7647,6 +7788,143 @@ export interface operations {
                 content: {
                     "application/json": {
                         run: components["schemas"]["EvaluationRun"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    getObservabilityStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Observability collector status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservabilityStatus"];
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listObservabilityEvents: {
+        parameters: {
+            query?: {
+                component?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted observability events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ObservabilityEvent"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    recordObservabilityEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservabilityRecordEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded redacted observability event */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        event: components["schemas"]["ObservabilityEvent"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    listSupportBundles: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Support bundle manifests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SupportBundle"][];
+                    };
+                };
+            };
+            401: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+        };
+    };
+    createSupportBundle: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSupportBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description Created support bundle manifest */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bundle: components["schemas"]["SupportBundle"];
                     };
                 };
             };
