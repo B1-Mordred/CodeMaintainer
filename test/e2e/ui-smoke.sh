@@ -30,9 +30,10 @@ session_token="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.read
 
 grep -q 'Setup and health' "$output_root/desktop.snapshot.txt"
 grep -q 'Administrator account' "$output_root/desktop.snapshot.txt"
-grep -q 'Provider configuration workbench' "$output_root/provider-workbench.snapshot.txt"
-grep -q 'Decision hash' "$output_root/provider-workbench.snapshot.txt"
-grep -q 'browser approved fake remote documentation route' "$output_root/provider-workbench.snapshot.txt"
 grep -q 'Route profile remote-documentation-ci-preview saved at version' "$output_root/provider-workbench.result.json"
 grep -q 'remote-documentation-ci-preview' "$output_root/provider-workbench.result.json"
+grep -q '"job_state":"completed"' "$output_root/provider-workbench.result.json"
+grep -q 'completed browser job retained fake remote provider execution manifest evidence' "$output_root/provider-workbench.result.json"
+grep -q 'provider_execution_status' "$output_root/provider-workbench.snapshot.txt"
+grep -q 'documentation worker task packet' "$output_root/provider-workbench.snapshot.txt"
 grep -q 'Primary navigation' "$output_root/mobile.snapshot.txt"

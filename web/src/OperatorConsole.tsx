@@ -342,13 +342,17 @@ function ProjectsPage({ expert }: { expert: boolean }) {
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
   const [provider, setProvider] = useState<"local" | "github" | "gitlab">("local");
+  const [localRemoteName, setLocalRemoteName] = useState("");
   const load = useCallback(async () => { setLoading(true); const result = await api.GET("/projects"); setProjects(result.data?.items ?? []); setLoading(false); }, []);
   useEffect(() => { void load(); }, [load]);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); const id = repository.replace("/", "-");
-    const response = await api.POST("/projects", { body: { id, provider, repository, default_branch: branch, ...(provider === "local" ? { local_remote_name: `${id}.git` } : {}) } });
+    const response = await api.POST("/projects", {
+      params: { header: { "X-CSRF-Token": getCSRFToken() } },
+      body: { id, provider, repository, default_branch: branch, ...(provider === "local" ? { local_remote_name: localRemoteName.trim() || `${id}.git` } : {}) },
+    });
     setMessage(response.data ? `Registered ${response.data.repository}.` : "The project could not be registered.");
-    if (response.data) { setRepository(""); await load(); }
+    if (response.data) { setRepository(""); setLocalRemoteName(""); await load(); }
   };
   const sync = async (project: Project) => {
     setMessage(`Synchronizing ${project.repository}…`);
@@ -363,7 +367,10 @@ function ProjectsPage({ expert }: { expert: boolean }) {
       const response = await api.DELETE("/projects/{projectID}", { params: { path: { projectID: project.id }, header: { "X-CSRF-Token": getCSRFToken() } } });
       succeeded = Boolean(response.data);
     } else {
-      const response = await api.POST("/projects", { body: { id: project.id, provider: project.provider, repository: project.repository, default_branch: project.default_branch, ...(project.provider === "local" ? { local_remote_name: project.local_remote_name } : {}) } });
+      const response = await api.POST("/projects", {
+        params: { header: { "X-CSRF-Token": getCSRFToken() } },
+        body: { id: project.id, provider: project.provider, repository: project.repository, default_branch: project.default_branch, ...(project.provider === "local" ? { local_remote_name: project.local_remote_name } : {}) },
+      });
       succeeded = Boolean(response.data);
     }
     setMessage(succeeded ? `${project.enabled ? "Disabled" : "Enabled"} ${project.repository}.` : `Could not ${project.enabled ? "disable" : "enable"} ${project.repository}.`);
@@ -376,6 +383,7 @@ function ProjectsPage({ expert }: { expert: boolean }) {
         <label>Repository<span>owner/repository</span><input required pattern="[A-Za-z0-9._-]+/[A-Za-z0-9._-]+" value={repository} onChange={(event) => setRepository(event.target.value)} placeholder="owner/repository" /></label>
         <label>Provider<select value={provider} onChange={(event) => setProvider(event.target.value as "local" | "github" | "gitlab")}><option value="local">Local bare remote</option><option value="github">GitHub App</option><option value="gitlab">GitLab</option></select></label>
         <label>Default branch<input required value={branch} onChange={(event) => setBranch(event.target.value)} /></label>
+        {provider === "local" && <label>Local remote name<span>defaults to the repository id</span><input value={localRemoteName} onChange={(event) => setLocalRemoteName(event.target.value)} placeholder={`${repository.replace("/", "-") || "owner-repository"}.git`} /></label>}
         <button type="submit">Register project</button>
       </form>
       {message && <p className="inline-message" role="status">{message}</p>}
@@ -410,8 +418,8 @@ function JobsPage({ initialJobs, expert }: { initialJobs: Job[]; expert: boolean
   const load = useCallback(async () => { const [jobsResult, projectsResult] = await Promise.all([api.GET("/jobs"), api.GET("/projects")]); setJobs(jobsResult.data?.items ?? []); setProjects(projectsResult.data?.items ?? []); }, []);
   useEffect(() => { void load(); }, [load]);
   const inspect = async (job: Job) => { setSelected(job); const [response, artifactResponse, graphResponse] = await Promise.all([api.GET("/jobs/{jobID}", { params: { path: { jobID: job.id } } }), api.GET("/jobs/{jobID}/artifacts", { params: { path: { jobID: job.id } } }), api.GET("/jobs/{jobID}/evidence-graph", { params: { path: { jobID: job.id } } })]); setDetail(response.data ?? null); setArtifacts(artifactResponse.data?.items ?? []); setEvidenceGraph(graphResponse.data ?? null); };
-  const submit = async (event: FormEvent) => { event.preventDefault(); const project = projects.find((item) => item.id === projectID); if (!project) return; const response = await api.POST("/jobs", { body: { project_id: project.id, repository: project.repository, task } }); if (response.data) { setTask(""); await load(); await inspect(response.data); } };
-  const action = async (name: "cancel" | "retry") => { if (!selected) return; await (name === "cancel" ? api.POST("/jobs/{jobID}/actions/cancel", { params: { path: { jobID: selected.id } } }) : api.POST("/jobs/{jobID}/actions/retry", { params: { path: { jobID: selected.id } } })); await load(); };
+  const submit = async (event: FormEvent) => { event.preventDefault(); const project = projects.find((item) => item.id === projectID); if (!project) return; const response = await api.POST("/jobs", { params: { header: { "X-CSRF-Token": getCSRFToken() } }, body: { project_id: project.id, repository: project.repository, task } }); if (response.data) { setTask(""); await load(); await inspect(response.data); } };
+  const action = async (name: "cancel" | "retry") => { if (!selected) return; const params = { path: { jobID: selected.id }, header: { "X-CSRF-Token": getCSRFToken() } }; await (name === "cancel" ? api.POST("/jobs/{jobID}/actions/cancel", { params }) : api.POST("/jobs/{jobID}/actions/retry", { params })); await load(); };
   const inspectAction = async (name: "verify" | "review") => { if (!selected) return; const response = name === "verify" ? await api.POST("/jobs/{jobID}/actions/verify", { params: { path: { jobID: selected.id }, header: { "X-CSRF-Token": getCSRFToken() } } }) : await api.POST("/jobs/{jobID}/actions/review", { params: { path: { jobID: selected.id }, header: { "X-CSRF-Token": getCSRFToken() } } }); setMessage(response.data ? `${label(name)} request recorded.` : `${label(name)} request failed.`); };
   const disposeTestProposal = async (reportID: string, proposalID: string, disposition: "accepted" | "rejected" | "not_applicable") => {
     if (!selected || !rationale.trim()) { setMessage("Test Designer dispositions require a reviewer rationale."); return; }

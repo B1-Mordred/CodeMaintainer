@@ -6218,7 +6218,9 @@ export interface operations {
     upsertProject: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -8576,7 +8578,9 @@ export interface operations {
     createJob: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -10118,7 +10122,9 @@ export interface operations {
     cancelJob: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
             path: {
                 jobID: components["parameters"]["JobID"];
             };
@@ -10142,7 +10148,9 @@ export interface operations {
     retryJob: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
             path: {
                 jobID: components["parameters"]["JobID"];
             };

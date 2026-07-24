@@ -323,6 +323,7 @@ paths:
     post:
       summary: Register or update a validated project
       operationId: upsertProject
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       requestBody:
         required: true
         content:
@@ -1660,6 +1661,7 @@ paths:
     post:
       summary: Submit a maintenance job
       operationId: createJob
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       requestBody:
         required: true
         content:
@@ -2664,6 +2666,7 @@ paths:
     post:
       summary: Cancel an active or waiting job
       operationId: cancelJob
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       responses:
         "200":
           description: Cancelled job
@@ -2676,6 +2679,7 @@ paths:
     post:
       summary: Requeue a failed or cancelled job
       operationId: retryJob
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
       responses:
         "200":
           description: Requeued failed or cancelled job

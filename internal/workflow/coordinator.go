@@ -1301,23 +1301,55 @@ func (c *Coordinator) recordAgentValidation(ctx context.Context, job jobs.Job, p
 	return err
 }
 
-func (c *Coordinator) routeModelCall(ctx context.Context, job jobs.Job, role, purpose string, packet agents.TaskPacket, dataClasses []string) (providers.RouteDecision, error) {
+type providerCallEvidence struct {
+	Report    providers.ExecutionReport
+	Manifest  providers.EgressManifest
+	TrustTier string
+}
+
+func (c *Coordinator) routeModelCall(ctx context.Context, job jobs.Job, role, purpose string, packet agents.TaskPacket, dataClasses []string) (providerCallEvidence, error) {
 	payload, err := json.Marshal(packet)
 	if err != nil {
-		return providers.RouteDecision{}, err
+		return providerCallEvidence{}, err
 	}
-	decision, err := c.providerRoutes.SimulateRoute(ctx, providers.RouteRequest{
-		JobID: job.ID, ProjectID: job.ProjectID, Role: role, Purpose: purpose,
-		DataClasses: dataClasses, EstimatedBytes: int64(len(payload)), EstimatedTokens: estimateTokens(len(payload)),
-		RequiresStructuredOutput: true,
+	report, err := c.providerRoutes.SimulateExecution(ctx, providers.ExecutionRequest{
+		Route: providers.RouteRequest{
+			JobID: job.ID, ProjectID: job.ProjectID, Role: role, Purpose: purpose,
+			DataClasses: dataClasses, EstimatedBytes: int64(len(payload)), EstimatedTokens: estimateTokens(len(payload)),
+			RequiresStructuredOutput: true,
+		},
+		Scenario: providers.ExecutionScenario{Behavior: providers.ExecutionBehaviorSuccess},
 	}, "workflow-controller")
 	if err != nil {
-		return providers.RouteDecision{}, err
+		return providerCallEvidence{}, err
 	}
-	if decision.Status != providers.DecisionAllowed {
-		return providers.RouteDecision{}, fmt.Errorf("provider route denied for %s worker call: %s", role, decision.Reason)
+	if report.Status != providers.ExecutionStatusSucceeded {
+		return providerCallEvidence{}, fmt.Errorf("provider execution denied for %s worker call: %s", role, report.Reason)
 	}
-	return decision, nil
+	manifests, err := c.store.ListEgressManifests(ctx, job.ProjectID, 100)
+	if err != nil {
+		return providerCallEvidence{}, err
+	}
+	var manifest providers.EgressManifest
+	for _, candidate := range manifests {
+		if candidate.ManifestSHA256 == report.EgressManifestSHA256 {
+			manifest = candidate
+			break
+		}
+	}
+	if manifest.ManifestSHA256 == "" {
+		return providerCallEvidence{}, errors.New("provider execution did not retain its egress manifest")
+	}
+	trustTier := ""
+	if profiles, err := c.store.ListProviderProfiles(ctx, 100); err == nil {
+		for _, profile := range profiles {
+			if profile.ID == report.ProviderID {
+				trustTier = profile.TrustTier
+				break
+			}
+		}
+	}
+	return providerCallEvidence{Report: report, Manifest: manifest, TrustTier: trustTier}, nil
 }
 
 func estimateTokens(bytes int) int {
@@ -1331,16 +1363,28 @@ func estimateTokens(bytes int) int {
 	return tokens
 }
 
-func withProviderRouteDetails(details map[string]any, decision providers.RouteDecision) map[string]any {
-	manifest := decision.EgressManifest
+func withProviderRouteDetails(details map[string]any, evidence providerCallEvidence) map[string]any {
+	manifest := evidence.Manifest
+	report := evidence.Report
 	details["provider_route_id"] = manifest.RouteID
 	details["provider_id"] = manifest.ProviderID
 	details["provider_endpoint_id"] = manifest.EndpointID
 	details["provider_model_profile_id"] = manifest.ModelProfileID
+	details["provider_purpose"] = manifest.Purpose
 	details["provider_policy_decision"] = manifest.PolicyDecision
 	details["provider_egress_manifest_id"] = manifest.ID
 	details["provider_egress_manifest_sha256"] = manifest.ManifestSHA256
-	details["provider_trust_tier"] = decision.Provider.TrustTier
+	details["provider_execution_status"] = report.Status
+	details["provider_execution_attempts"] = report.Attempts
+	details["provider_execution_retry_budget"] = report.RetryBudget
+	details["provider_execution_network_contacted"] = report.NetworkContacted
+	details["provider_execution_reason"] = report.Reason
+	if report.FailureClass != "" {
+		details["provider_execution_failure_class"] = report.FailureClass
+	}
+	if evidence.TrustTier != "" {
+		details["provider_trust_tier"] = evidence.TrustTier
+	}
 	return details
 }
 

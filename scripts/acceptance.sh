@@ -4,6 +4,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+acceptance_port="${MAINTAINER_ACCEPTANCE_PORT:-8080}"
+acceptance_base_url="http://127.0.0.1:${acceptance_port}"
+
 docker_command=(docker)
 if ! docker info >/dev/null 2>&1; then
   if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
@@ -15,7 +18,11 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 compose() {
-  "${docker_command[@]}" compose "$@"
+  if [[ "${docker_command[0]}" == "sudo" ]]; then
+    sudo -n env "MAINTAINER_ACCEPTANCE_PORT=${acceptance_port}" docker compose "$@"
+  else
+    MAINTAINER_ACCEPTANCE_PORT="${acceptance_port}" docker compose "$@"
+  fi
 }
 
 if ! compose version >/dev/null 2>&1; then
@@ -23,8 +30,6 @@ if ! compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-acceptance_port="${MAINTAINER_ACCEPTANCE_PORT:-8080}"
-acceptance_base_url="http://127.0.0.1:${acceptance_port}"
 compose_files=(-f compose.yaml -f compose.dev.yaml)
 if [[ "$acceptance_port" != "8080" ]]; then
   compose_files+=(-f compose.acceptance.yaml)
@@ -79,7 +84,16 @@ elif ! acceptance_compose --profile tools run --rm maintainctl doctor >/dev/null
     exit 1
   fi
 fi
+if [[ -r "$acceptance_password_file" ]]; then
+  acceptance_compose --profile tools run --rm maintainctl login \
+    --username acceptance-admin \
+    --password-file /workspace/.data/secrets/acceptance-admin.password
+fi
 acceptance_compose --profile tools run --rm maintainctl doctor
+if [[ -r "$acceptance_password_file" ]]; then
+  acceptance_compose --profile tools run --rm maintainctl reauthenticate \
+    --password-file /workspace/.data/secrets/acceptance-admin.password
+fi
 acceptance_compose --profile tools run --rm --build browser-tool ./test/e2e/ui-smoke.sh "$acceptance_base_url"
 
 printf '\nLocal application and real-browser acceptance passed.\n'

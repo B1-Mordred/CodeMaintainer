@@ -199,12 +199,12 @@
         {"path": "internal/api/server_test.go", "contains": ["typed provider workbench", "stale provider update returned", "remote-documentation-ci-preview"]},
         {"path": "internal/providers/service_test.go", "contains": ["TestProfileUpdatesRequireFreshVersionsAndRemoteEgressApproval", "egress preview approval"]},
         {"path": "internal/workflow/coordinator_test.go", "contains": ["provider_egress_manifest_sha256", "implementation worker task packet", "repair worker task packet"]},
-        {"path": "internal/workflow/coordinator.go", "contains": ["routeModelCall", "withProviderRouteDetails", "provider_egress_manifest_sha256"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["routeModelCall", "withProviderRouteDetails", "provider_purpose"]},
         {"path": "internal/acceptance/local_fake_e2e_test.go", "contains": ["SimulateExecution", "browser approved fake remote documentation route", "NetworkContacted"]},
-        {"path": "test/e2e/provider-workbench.js", "contains": ["Probe capabilities for fake-remote-json", "I reviewed the retained egress preview", "browser approved fake remote documentation route"]},
-        {"path": "test/e2e/ui-smoke.sh", "contains": ["provider-workbench.result.json", "Route profile remote-documentation-ci-preview saved at version", "Decision hash"]}
+        {"path": "test/e2e/provider-workbench.js", "contains": ["Probe capabilities for fake-remote-json", "completed browser job retained fake remote provider execution manifest evidence", "documentation worker task packet"]},
+        {"path": "test/e2e/ui-smoke.sh", "contains": ["provider-workbench.result.json", "job_state", "provider_execution_status"]}
       ],
-      "remaining_work": ["Promote provider-backed job execution into the same real browser-to-controller local-fake E2E; add policy-driven per-job remote egress approval when project policy requires it."]
+      "remaining_work": ["Add policy-driven per-job remote egress approval when project policy requires it."]
     },
     {
       "step": 13,
