@@ -27,6 +27,10 @@ This checkpoint introduces the durable provider-gateway foundation:
 - deterministic fake capability probes that retain observed native API shape,
   observed model ID, capability set, request/response schema hashes, latency,
   status, errors, actor, and timestamp without contacting external providers;
+- a bounded streamed event parser that normalizes provider-family chunks enough
+  to reject malformed events, interleaved tool-call deltas, truncation, and
+  unbounded content while retaining partial usage events for later
+  reconciliation;
 - REST, OpenAPI, generated TypeScript client, `maintainctl model-provider`, and
   Models-page visibility.
 
@@ -118,8 +122,8 @@ The full Increment 2 provider milestone is still open. Remaining work includes:
 - real protocol adapters behind the fake conformance adapter boundary;
 - write-only credential rotation workflows;
 - override/revalidation history and drift pausing;
-- provider-native streaming, cancellation, batch/asynchronous resumability, and
-  usage reconciliation;
+- integration of provider-native streaming, cancellation, batch/asynchronous
+  resumability, and usage reconciliation into model-backed worker calls;
 - OPA-bound project data-class policy and per-job approval when required;
 - editable provider/endpoint/model/route workbench controls with rollback and
   export/import through the configuration registry;

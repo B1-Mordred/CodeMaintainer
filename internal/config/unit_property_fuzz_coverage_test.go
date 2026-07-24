@@ -48,7 +48,7 @@ func TestUnitPropertyFuzzCoverageMatrixTracksRequiredCategories(t *testing.T) {
 		"unit-provider-route-capability-cost-egress-fallback": false,
 		"fuzz-imports-manifests-webhooks-archives":            false,
 		"fuzz-paths-toolcalls-markdown":                       false,
-		"remaining-streamed-provider-events":                  false,
+		"fuzz-streamed-provider-events":                       false,
 	}
 	if len(coverage.Surfaces) != len(required) {
 		t.Fatalf("unit/property/fuzz surface count = %d, want %d", len(coverage.Surfaces), len(required))

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T10:05:00Z",
+  "updated_at": "2026-07-24T11:20:57Z",
   "surfaces": [
     {
       "id": "unit-schema-precedence-migrations",
@@ -99,18 +99,18 @@
       "remaining_work": []
     },
     {
-      "id": "remaining-streamed-provider-events",
-      "status": "remaining",
-      "title": "Streamed provider event fuzzing remains pending until streamed gateway parsing exists",
-      "implementation": ["internal/agents/runner.go", "cmd/fake-model-server/main.go", "internal/providers/adapters.go"],
-      "tests": ["cmd/fake-model-server/main_test.go", "internal/providers/service_test.go"],
+      "id": "fuzz-streamed-provider-events",
+      "status": "covered",
+      "title": "Streamed provider event parser fuzzing rejects malformed chunks, interleaved tool deltas, cancellation, truncation, and partial usage drift",
+      "implementation": ["internal/providers/stream.go", "internal/providers/adapters.go", "internal/agents/runner.go", "cmd/fake-model-server/main.go"],
+      "tests": ["internal/providers/stream_test.go", "cmd/fake-model-server/main_test.go", "internal/providers/service_test.go"],
       "docs": ["docs/model-providers.md", "execplan/increment-2.md"],
       "proof": [
-        {"path": "internal/agents/runner.go", "contains": ["\"stream\": false"]},
-        {"path": "cmd/fake-model-server/main.go", "contains": ["request.Stream", "invalid bounded fake-model request"]},
-        {"path": "docs/model-providers.md", "contains": ["provider-native streaming", "usage reconciliation"]}
+        {"path": "internal/providers/stream.go", "contains": ["ParseStreamEvents", "MaxStreamChunkBytes", "provider stream interleaved tool-call deltas are not accepted"]},
+        {"path": "internal/providers/stream_test.go", "contains": ["FuzzParseStreamEventsRejectsMalformedChunks", "TestParseStreamEventsRejectsInterleavedToolDeltasCancellationAndTruncation", "PartialUsageEvents"]},
+        {"path": "docs/model-providers.md", "contains": ["streamed event parser", "interleaved tool-call deltas", "partial usage events"]}
       ],
-      "remaining_work": ["Add provider-family streamed event parsers and fuzz malformed chunks, interleaved tool-call deltas, cancellation, truncation, and partial usage events when worker traffic moves through the provider gateway."]
+      "remaining_work": []
     }
   ]
 }
