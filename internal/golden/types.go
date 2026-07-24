@@ -80,6 +80,31 @@ type Approval struct {
 	CreatedAt               time.Time `json:"created_at"`
 }
 
+type ToleranceProfile struct {
+	Mode     string  `json:"mode"`
+	Absolute float64 `json:"absolute"`
+	Relative float64 `json:"relative"`
+}
+
+type MaskProfile struct {
+	Mode           string   `json:"mode"`
+	DynamicRegions bool     `json:"dynamic_regions"`
+	Selectors      []string `json:"selectors"`
+}
+
+type ComparisonProfile struct {
+	ID              string           `json:"id"`
+	ReportID        string           `json:"report_id"`
+	ComparisonID    string           `json:"comparison_id"`
+	ActorID         string           `json:"actor_id"`
+	ActorRole       string           `json:"actor_role"`
+	Reason          string           `json:"reason"`
+	Reauthenticated bool             `json:"reauthenticated"`
+	Tolerance       ToleranceProfile `json:"tolerance"`
+	Mask            MaskProfile      `json:"mask"`
+	CreatedAt       time.Time        `json:"created_at"`
+}
+
 type ApprovalRequest struct {
 	ReportID        string
 	ComparisonID    string
@@ -90,12 +115,25 @@ type ApprovalRequest struct {
 	Reauthenticated bool
 }
 
+type ProfileRequest struct {
+	ReportID        string
+	ComparisonID    string
+	ActorID         string
+	ActorRole       string
+	Reason          string
+	Reauthenticated bool
+	Tolerance       ToleranceProfile
+	Mask            MaskProfile
+}
+
 type Store interface {
 	SaveGoldenReport(context.Context, Report) (Report, error)
 	GetGoldenReport(context.Context, string) (Report, error)
 	ListGoldenReports(context.Context, string, int) ([]Report, error)
 	ApproveGoldenUpdate(context.Context, ApprovalRequest) (Approval, error)
 	ListGoldenApprovals(context.Context, string, int) ([]Approval, error)
+	SaveGoldenComparisonProfile(context.Context, ProfileRequest) (ComparisonProfile, error)
+	ListGoldenComparisonProfiles(context.Context, string, int) ([]ComparisonProfile, error)
 }
 
 func NewReport(jobID, projectID, contractSHA256, riskLevel, resultSHA string, assignments []capabilities.Assignment, catalog *capabilities.Catalog, reports []testdesigner.Report) (Report, error) {
@@ -253,6 +291,46 @@ func (r ApprovalRequest) Validate() error {
 	return nil
 }
 
+func (r ProfileRequest) Validate() error {
+	if !safeID.MatchString(r.ReportID) || !safeID.MatchString(r.ComparisonID) || strings.TrimSpace(r.ActorID) == "" ||
+		(r.ActorRole != "reviewer" && r.ActorRole != "administrator") {
+		return errors.New("invalid golden profile identity")
+	}
+	if !r.Reauthenticated {
+		return errors.New("golden profile changes require recent reauthentication")
+	}
+	if len(strings.TrimSpace(r.Reason)) < 8 || len(r.Reason) > 1000 {
+		return errors.New("golden profile changes require a bounded reason")
+	}
+	if err := validateTolerance(r.Tolerance); err != nil {
+		return err
+	}
+	return validateMask(r.Mask)
+}
+
+func validateTolerance(profile ToleranceProfile) error {
+	if profile.Mode != "typed-review-profile-v1" || profile.Absolute < 0 || profile.Relative < 0 ||
+		profile.Absolute > 1_000_000 || profile.Relative > 1 {
+		return errors.New("invalid golden tolerance profile")
+	}
+	return nil
+}
+
+func validateMask(profile MaskProfile) error {
+	if profile.Mode != "typed-review-profile-v1" || len(profile.Selectors) > 100 {
+		return errors.New("invalid golden mask profile")
+	}
+	seen := map[string]bool{}
+	for _, selector := range profile.Selectors {
+		trimmed := strings.TrimSpace(selector)
+		if trimmed == "" || len(trimmed) > 256 || strings.ContainsAny(trimmed, "\x00\r\n") || seen[trimmed] {
+			return errors.New("invalid golden mask selector")
+		}
+		seen[trimmed] = true
+	}
+	return nil
+}
+
 type ApprovalResolution struct {
 	Pending  int `json:"pending"`
 	Rejected int `json:"rejected"`
@@ -316,4 +394,18 @@ func (a Approval) Validate() error {
 		return fmt.Errorf("invalid golden approval artifact identity")
 	}
 	return nil
+}
+
+func (p ComparisonProfile) Validate() error {
+	if !safeID.MatchString(p.ID) || !safeID.MatchString(p.ReportID) || !safeID.MatchString(p.ComparisonID) {
+		return fmt.Errorf("invalid golden profile identity")
+	}
+	if strings.TrimSpace(p.ActorID) == "" || (p.ActorRole != "reviewer" && p.ActorRole != "administrator") ||
+		len(strings.TrimSpace(p.Reason)) < 8 || !p.Reauthenticated {
+		return fmt.Errorf("invalid golden profile authority")
+	}
+	if err := validateTolerance(p.Tolerance); err != nil {
+		return err
+	}
+	return validateMask(p.Mask)
 }

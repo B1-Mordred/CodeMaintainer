@@ -55,6 +55,20 @@ func TestGoldenReportsAndApprovalsAreAppendOnly(t *testing.T) {
 	if resolution := golden.ResolveApprovals(saved, []golden.Approval{approval}); resolution.Pending != 0 || resolution.Rejected != 0 {
 		t.Fatalf("approved golden did not resolve pending update: %#v", resolution)
 	}
+	profile, err := store.SaveGoldenComparisonProfile(ctx, golden.ProfileRequest{
+		ReportID: saved.ID, ComparisonID: saved.Comparisons[0].ID, ActorID: "reviewer",
+		ActorRole: "administrator", Reason: "reviewed tolerance and mask profile",
+		Reauthenticated: true,
+		Tolerance:       golden.ToleranceProfile{Mode: "typed-review-profile-v1", Absolute: 0.01, Relative: 0.001},
+		Mask:            golden.MaskProfile{Mode: "typed-review-profile-v1", DynamicRegions: true, Selectors: []string{".timestamp"}},
+	})
+	if err != nil || profile.Tolerance.Absolute != 0.01 || len(profile.Mask.Selectors) != 1 {
+		t.Fatalf("profile = %#v, %v", profile, err)
+	}
+	profiles, err := store.ListGoldenComparisonProfiles(ctx, "job_golden", 10)
+	if err != nil || len(profiles) != 1 || profiles[0].ID != profile.ID {
+		t.Fatalf("profiles = %#v, %v", profiles, err)
+	}
 	approvals, err := store.ListGoldenApprovals(ctx, "job_golden", 10)
 	if err != nil || len(approvals) != 1 || approvals[0].ID != approval.ID {
 		t.Fatalf("approvals = %#v, %v", approvals, err)
@@ -64,5 +78,8 @@ func TestGoldenReportsAndApprovalsAreAppendOnly(t *testing.T) {
 	}
 	if _, err := store.db.ExecContext(ctx, "DELETE FROM golden_update_approvals"); err == nil {
 		t.Fatal("golden approvals are deletable")
+	}
+	if _, err := store.db.ExecContext(ctx, "UPDATE golden_comparison_profiles SET reason='changed'"); err == nil {
+		t.Fatal("golden profiles are mutable")
 	}
 }

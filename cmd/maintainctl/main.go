@@ -300,7 +300,7 @@ func (c client) policy(arguments []string) error {
 
 func (c client) golden(arguments []string) error {
 	if len(arguments) < 2 {
-		return errors.New("usage: maintainctl golden <reports|approve|reject> ...")
+		return errors.New("usage: maintainctl golden <reports|approve|reject|configure-profile> ...")
 	}
 	switch arguments[0] {
 	case "reports":
@@ -324,8 +324,29 @@ func (c client) golden(arguments []string) error {
 			"approved": arguments[0] == "approve",
 			"reason":   *reason,
 		})
+	case "configure-profile":
+		if len(arguments) < 3 {
+			return errors.New("usage: maintainctl golden configure-profile <report-id> <comparison-id> --reason text --absolute <n> --relative <n> [--mask-dynamic] [--mask-selector <selector> ...]")
+		}
+		flags := flag.NewFlagSet("golden configure-profile", flag.ContinueOnError)
+		reason := flags.String("reason", "", "audited profile reason")
+		absolute := flags.Float64("absolute", 0, "absolute tolerance")
+		relative := flags.Float64("relative", 0, "relative tolerance")
+		maskDynamic := flags.Bool("mask-dynamic", false, "mask declared dynamic regions")
+		var selectors repeatedFlag
+		flags.Var(&selectors, "mask-selector", "bounded selector to mask; repeatable")
+		if err := flags.Parse(arguments[3:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*reason) == "" || *absolute < 0 || *relative < 0 || *relative > 1 {
+			return errors.New("usage: maintainctl golden configure-profile <report-id> <comparison-id> --reason text --absolute <n> --relative <n> [--mask-dynamic] [--mask-selector <selector> ...]")
+		}
+		return c.printJSON(http.MethodPost, "/api/v1/golden-rehearsals/"+url.PathEscape(arguments[1])+"/comparisons/"+url.PathEscape(arguments[2])+"/actions/configure-profile", map[string]any{
+			"reason": *reason, "tolerance_absolute": *absolute, "tolerance_relative": *relative,
+			"mask_dynamic_regions": *maskDynamic, "mask_selectors": []string(selectors),
+		})
 	default:
-		return errors.New("usage: maintainctl golden <reports|approve|reject> ...")
+		return errors.New("usage: maintainctl golden <reports|approve|reject|configure-profile> ...")
 	}
 }
 
@@ -1391,6 +1412,7 @@ Commands:
   documentation <job-id>
   golden reports <job-id>
   golden approve|reject <report-id> <comparison-id> --reason text
+  golden configure-profile <report-id> <comparison-id> --reason text --absolute <n> --relative <n> [--mask-dynamic] [--mask-selector selector]
   open [job-id]
   backup
   restore (--dry-run|--apply) <backup-id>

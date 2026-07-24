@@ -340,6 +340,9 @@ summary { width: fit-content; color: var(--accent); cursor: pointer; }
 .import-result.valid { border-color: #365e53; }
 .import-result.invalid { border-color: #7c3c3b; }
 .import-result p, .import-result li { margin-top: var(--space-1); color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.inline-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3); margin-block: var(--space-3); }
+.checkbox-line { align-content: end; grid-template-columns: auto minmax(0, 1fr); display: grid; gap: var(--space-2); color: var(--muted); font-size: .78rem; }
+.checkbox-line input { width: auto; margin: .2rem 0 0; }
 .prerequisite-list { grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); margin-bottom: 0; }
 .rollback-password { max-width: 28rem; margin-bottom: var(--space-3); }
 .configuration-history small { color: var(--subtle); }
@@ -374,7 +377,7 @@ summary { width: fit-content; color: var(--accent); cursor: pointer; }
   .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
   .metric-card { min-height: 7rem; }
   .metric-value { font-size: 1.2rem; }
-  .inline-form, .filter-bar, .detail-grid, .forge-form-grid { grid-template-columns: 1fr; }
+  .inline-form, .inline-form-grid, .filter-bar, .detail-grid, .forge-form-grid { grid-template-columns: 1fr; }
   .forge-form { padding: var(--space-4); }
   .forge-span-two { grid-column: auto; }
   .configuration-toolbar, .configuration-summary, .setting-grid, .configuration-rail, .import-panel, .intelligence-query, .destructive-confirmation { grid-template-columns: 1fr; }

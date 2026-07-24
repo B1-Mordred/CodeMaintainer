@@ -272,7 +272,16 @@ func TestGoldenCLIListsReportsAndApprovesUpdates(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 			}
-			if body["approved"] != true || body["reason"] != "reviewed golden update" {
+			if strings.Contains(r.URL.Path, "configure-profile") {
+				if body["reason"] != "reviewed tolerance profile" || body["tolerance_absolute"] != 0.02 ||
+					body["tolerance_relative"] != 0.001 || body["mask_dynamic_regions"] != true {
+					t.Errorf("unexpected profile body %#v", body)
+				}
+				selectors, _ := body["mask_selectors"].([]any)
+				if len(selectors) != 1 || selectors[0] != ".timestamp" {
+					t.Errorf("unexpected mask selectors %#v", body["mask_selectors"])
+				}
+			} else if body["approved"] != true || body["reason"] != "reviewed golden update" {
 				t.Errorf("unexpected body %#v", body)
 			}
 		}
@@ -288,9 +297,13 @@ func TestGoldenCLIListsReportsAndApprovesUpdates(t *testing.T) {
 	if err := run([]string{"golden", "approve", "report-one", "cmp-one", "--reason", "reviewed golden update"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := run([]string{"golden", "configure-profile", "report-one", "cmp-one", "--reason", "reviewed tolerance profile", "--absolute", "0.02", "--relative", "0.001", "--mask-dynamic", "--mask-selector", ".timestamp"}); err != nil {
+		t.Fatal(err)
+	}
 	want := []string{
 		"GET /api/v1/jobs/job-one/golden-rehearsals",
 		"POST /api/v1/golden-rehearsals/report-one/comparisons/cmp-one/actions/approve",
+		"POST /api/v1/golden-rehearsals/report-one/comparisons/cmp-one/actions/configure-profile",
 	}
 	if strings.Join(requests, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("requests = %#v", requests)

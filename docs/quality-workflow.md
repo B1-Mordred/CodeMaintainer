@@ -74,11 +74,14 @@ The report stores candidate-vs-approved artifact identities, comparison class, t
 
 Golden update approvals are append-only records with actor, role, reason, recent reauthentication, and the exact approved/candidate artifact hashes. The effective decision for each comparison is the latest append-only approval record. Rejections keep the comparison unresolved until a later explicit approval supersedes them; when all required comparisons are approved, the API advances a waiting job to `loading_documentation_model`.
 
-Operators can inspect reports and append an approval or rejection through the Jobs page/API or CLI:
+Reviewer/admin tolerance and mask changes are also append-only records separate from immutable reports and approval decisions. A profile records typed absolute and relative tolerances, dynamic-region masking, explicit mask selectors, actor, role, reason, recent reauthentication, and creation time. The Jobs page renders a structured diff preview with summary/provenance/hash evidence plus the stored policy metadata and typed profiles; saving a profile never rewrites the original report or approved artifact.
+
+Operators can inspect reports and append a tolerance/mask profile, approval, or rejection through the Jobs page/API or CLI:
 
 ```sh
 maintainctl golden reports <job-id>
 maintainctl reauthenticate --password-file <file|->
+maintainctl golden configure-profile <report-id> <comparison-id> --reason <text> --absolute <number> --relative <number> [--mask-dynamic] [--mask-selector <selector> ...]
 maintainctl golden approve <report-id> <comparison-id> --reason <text>
 maintainctl golden reject <report-id> <comparison-id> --reason <text>
 ```
@@ -125,4 +128,4 @@ This foundation exposes advanced Rego authoring only behind the expert UI and co
 
 ## Remaining Milestone 5 work
 
-This slice does not complete Milestone 5. Still pending are editable tolerance/mask management and rendered visual diffs for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.
+This slice does not complete Milestone 5. Still pending are richer rendered visual diff artifacts for golden reports, the complete declarative documentation-policy/toolchain/QC workbench, structured policy editing, richer rollback/staged-rollout operations, and cross-domain protected-action enforcement.

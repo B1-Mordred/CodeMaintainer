@@ -276,6 +276,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/golden-rehearsals", s.listJobGoldenReports)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/documentation", s.listJobDocumentationManifests)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/policy-decisions", s.listJobPolicyDecisions)
+	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/configure-profile", s.configureGoldenComparisonProfile)
 	mux.HandleFunc("POST /api/v1/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/approve", s.approveGoldenUpdate)
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/risk", s.getJobRisk)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/risk/waivers", s.createRiskWaiver)
@@ -733,6 +734,12 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response["golden_update_approvals"] = approvals
+		profiles, profileErr := s.store.ListGoldenComparisonProfiles(r.Context(), job.ID, 100)
+		if profileErr != nil {
+			s.internalError(w, r, profileErr)
+			return
+		}
+		response["golden_comparison_profiles"] = profiles
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		s.internalError(w, r, err)
 		return

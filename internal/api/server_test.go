@@ -1645,8 +1645,9 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 		t.Fatal(err)
 	}
 	var listed struct {
-		Reports   []golden.Report   `json:"reports"`
-		Approvals []golden.Approval `json:"approvals"`
+		Reports   []golden.Report            `json:"reports"`
+		Approvals []golden.Approval          `json:"approvals"`
+		Profiles  []golden.ComparisonProfile `json:"profiles"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
 		t.Fatal(err)
@@ -1654,6 +1655,21 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || len(listed.Reports) != 1 || listed.Reports[0].Status != "approval_required" {
 		t.Fatalf("golden reports endpoint returned %d %#v", response.StatusCode, listed)
+	}
+	response, err = http.Post(server.URL+"/api/v1/golden-rehearsals/"+report.ID+"/comparisons/"+report.Comparisons[0].ID+"/actions/configure-profile", "application/json", strings.NewReader(`{"reason":"reviewed visual tolerance profile","tolerance_absolute":0.02,"tolerance_relative":0.001,"mask_dynamic_regions":true,"mask_selectors":[".timestamp"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profileResponse struct {
+		Profile golden.ComparisonProfile `json:"profile"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&profileResponse); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || profileResponse.Profile.ReportID != report.ID ||
+		profileResponse.Profile.Tolerance.Absolute != 0.02 || len(profileResponse.Profile.Mask.Selectors) != 1 {
+		t.Fatalf("golden profile = %d %#v", response.StatusCode, profileResponse)
 	}
 	response, err = http.Post(server.URL+"/api/v1/golden-rehearsals/"+report.ID+"/comparisons/"+report.Comparisons[0].ID+"/actions/approve", "application/json", strings.NewReader(`{"reason":"reviewed fixture golden update","approved":true}`))
 	if err != nil {
@@ -1680,7 +1696,8 @@ func TestGoldenRehearsalReportsAndApprovalsAreVisible(t *testing.T) {
 	}
 	body, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("golden_rehearsal_reports")) || !bytes.Contains(body, []byte("golden_update_approvals")) {
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("golden_rehearsal_reports")) ||
+		!bytes.Contains(body, []byte("golden_update_approvals")) || !bytes.Contains(body, []byte("golden_comparison_profiles")) {
 		t.Fatalf("job detail omitted golden evidence: %d %s", response.StatusCode, body)
 	}
 }

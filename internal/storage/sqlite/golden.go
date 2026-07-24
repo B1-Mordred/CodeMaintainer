@@ -138,6 +138,71 @@ func (s *Store) ListGoldenApprovals(ctx context.Context, jobID string, limit int
 	return items, rows.Err()
 }
 
+func (s *Store) SaveGoldenComparisonProfile(ctx context.Context, request golden.ProfileRequest) (golden.ComparisonProfile, error) {
+	if err := request.Validate(); err != nil {
+		return golden.ComparisonProfile{}, storage.ErrInvalid
+	}
+	report, err := s.GetGoldenReport(ctx, request.ReportID)
+	if err != nil {
+		return golden.ComparisonProfile{}, err
+	}
+	found := false
+	for _, comparison := range report.Comparisons {
+		if comparison.ID == request.ComparisonID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return golden.ComparisonProfile{}, storage.ErrInvalid
+	}
+	id, err := NewID("goldenprofile")
+	if err != nil {
+		return golden.ComparisonProfile{}, err
+	}
+	now := s.now()
+	profile := golden.ComparisonProfile{
+		ID: id, ReportID: request.ReportID, ComparisonID: request.ComparisonID,
+		ActorID: request.ActorID, ActorRole: request.ActorRole, Reason: request.Reason,
+		Reauthenticated: true, Tolerance: request.Tolerance, Mask: request.Mask, CreatedAt: now,
+	}
+	if err := profile.Validate(); err != nil {
+		return golden.ComparisonProfile{}, storage.ErrInvalid
+	}
+	tolerance, _ := json.Marshal(profile.Tolerance)
+	mask, _ := json.Marshal(profile.Mask)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO golden_comparison_profiles(
+		id,report_id,comparison_id,actor_id,actor_role,reason,reauthenticated,tolerance_json,mask_json,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		profile.ID, profile.ReportID, profile.ComparisonID, profile.ActorID, profile.ActorRole,
+		profile.Reason, 1, string(tolerance), string(mask), profile.CreatedAt.Format(timestampFormat))
+	if err != nil {
+		return golden.ComparisonProfile{}, err
+	}
+	return profile, nil
+}
+
+func (s *Store) ListGoldenComparisonProfiles(ctx context.Context, jobID string, limit int) ([]golden.ComparisonProfile, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.report_id,p.comparison_id,p.actor_id,p.actor_role,
+		p.reason,p.reauthenticated,p.tolerance_json,p.mask_json,p.created_at
+		FROM golden_comparison_profiles p JOIN golden_rehearsal_reports r ON r.id=p.report_id
+		WHERE r.job_id=? ORDER BY p.created_at DESC,p.id DESC LIMIT ?`,
+		jobID, boundedLimit(limit, 100, 500))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []golden.ComparisonProfile{}
+	for rows.Next() {
+		item, err := scanGoldenComparisonProfile(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func scanGoldenReport(row scanner) (golden.Report, error) {
 	var item golden.Report
 	var comparisons, created string
@@ -155,6 +220,32 @@ func scanGoldenReport(row scanner) (golden.Report, error) {
 	parsed, err := time.Parse(timestampFormat, created)
 	if err != nil {
 		return item, err
+	}
+	item.CreatedAt = parsed
+	return item, item.Validate()
+}
+
+func scanGoldenComparisonProfile(row scanner) (golden.ComparisonProfile, error) {
+	var item golden.ComparisonProfile
+	var tolerance, mask, created string
+	var reauthenticated int
+	if err := row.Scan(&item.ID, &item.ReportID, &item.ComparisonID, &item.ActorID,
+		&item.ActorRole, &item.Reason, &reauthenticated, &tolerance, &mask, &created); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return item, storage.ErrNotFound
+		}
+		return item, err
+	}
+	item.Reauthenticated = reauthenticated == 1
+	if err := json.Unmarshal([]byte(tolerance), &item.Tolerance); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(mask), &item.Mask); err != nil {
+		return item, err
+	}
+	parsed, err := time.Parse(timestampFormat, created)
+	if err != nil {
+		return item, fmt.Errorf("parse golden comparison profile timestamp: %w", err)
 	}
 	item.CreatedAt = parsed
 	return item, item.Validate()

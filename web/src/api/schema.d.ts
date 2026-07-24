@@ -1681,6 +1681,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/configure-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reportID: string;
+                comparisonID: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a typed tolerance and mask profile for one golden comparison */
+        post: operations["configureGoldenComparisonProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobID}/risk": {
         parameters: {
             query?: never;
@@ -3681,6 +3701,32 @@ export interface components {
             reauthenticated: boolean;
             approved_artifact_sha256: string;
             candidate_artifact_sha256: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        GoldenToleranceProfile: {
+            /** @enum {string} */
+            mode: "typed-review-profile-v1";
+            absolute: number;
+            relative: number;
+        };
+        GoldenMaskProfile: {
+            /** @enum {string} */
+            mode: "typed-review-profile-v1";
+            dynamic_regions: boolean;
+            selectors: string[];
+        };
+        GoldenComparisonProfile: {
+            id: string;
+            report_id: string;
+            comparison_id: string;
+            actor_id: string;
+            /** @enum {string} */
+            actor_role: "reviewer" | "administrator";
+            reason: string;
+            reauthenticated: boolean;
+            tolerance: components["schemas"]["GoldenToleranceProfile"];
+            mask: components["schemas"]["GoldenMaskProfile"];
             /** Format: date-time */
             created_at: string;
         };
@@ -7018,6 +7064,7 @@ export interface operations {
                         test_designer_dispositions?: components["schemas"]["TestDesignerDisposition"][];
                         golden_rehearsal_reports?: components["schemas"]["GoldenRehearsalReport"][];
                         golden_update_approvals?: components["schemas"]["GoldenUpdateApproval"][];
+                        golden_comparison_profiles?: components["schemas"]["GoldenComparisonProfile"][];
                         documentation_manifests?: components["schemas"]["DocumentationManifest"][];
                         policy_decisions?: components["schemas"]["PolicyDecision"][];
                         configuration_snapshot?: components["schemas"]["JobConfigSnapshot"];
@@ -7507,7 +7554,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Golden rehearsal report and approval history */
+            /** @description Golden rehearsal report, approval, and typed tolerance/mask profile history */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7516,6 +7563,7 @@ export interface operations {
                     "application/json": {
                         reports: components["schemas"]["GoldenRehearsalReport"][];
                         approvals: components["schemas"]["GoldenUpdateApproval"][];
+                        profiles: components["schemas"]["GoldenComparisonProfile"][];
                     };
                 };
             };
@@ -7608,6 +7656,47 @@ export interface operations {
                         pending_approvals: number;
                         rejected_approvals: number;
                         job?: components["schemas"]["Job"];
+                    };
+                };
+            };
+            400: components["responses"]["ErrorResponse"];
+            403: components["responses"]["ErrorResponse"];
+            404: components["responses"]["ErrorResponse"];
+            422: components["responses"]["ErrorResponse"];
+        };
+    };
+    configureGoldenComparisonProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                reportID: string;
+                comparisonID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                    tolerance_absolute: number;
+                    tolerance_relative: number;
+                    mask_dynamic_regions: boolean;
+                    mask_selectors: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Append-only typed profile */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        profile: components["schemas"]["GoldenComparisonProfile"];
                     };
                 };
             };

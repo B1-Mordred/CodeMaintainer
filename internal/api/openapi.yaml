@@ -1266,6 +1266,7 @@ paths:
                   test_designer_dispositions: { type: array, items: { $ref: "#/components/schemas/TestDesignerDisposition" } }
                   golden_rehearsal_reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
                   golden_update_approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
+                  golden_comparison_profiles: { type: array, items: { $ref: "#/components/schemas/GoldenComparisonProfile" } }
                   documentation_manifests: { type: array, items: { $ref: "#/components/schemas/DocumentationManifest" } }
                   policy_decisions: { type: array, items: { $ref: "#/components/schemas/PolicyDecision" } }
                   configuration_snapshot: { $ref: "#/components/schemas/JobConfigSnapshot" }
@@ -1632,15 +1633,16 @@ paths:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         "200":
-          description: Golden rehearsal report and approval history
+          description: Golden rehearsal report, approval, and typed tolerance/mask profile history
           content:
             application/json:
               schema:
                 type: object
-                required: [reports, approvals]
+                required: [reports, approvals, profiles]
                 properties:
                   reports: { type: array, items: { $ref: "#/components/schemas/GoldenRehearsalReport" } }
                   approvals: { type: array, items: { $ref: "#/components/schemas/GoldenUpdateApproval" } }
+                  profiles: { type: array, items: { $ref: "#/components/schemas/GoldenComparisonProfile" } }
         "404": { $ref: "#/components/responses/ErrorResponse" }
   /jobs/{jobID}/documentation:
     parameters:
@@ -1712,6 +1714,45 @@ paths:
                   pending_approvals: { type: integer, minimum: 0 }
                   rejected_approvals: { type: integer, minimum: 0 }
                   job: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/ErrorResponse" }
+        "403": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+  /golden-rehearsals/{reportID}/comparisons/{comparisonID}/actions/configure-profile:
+    parameters:
+      - { name: reportID, in: path, required: true, schema: { type: string } }
+      - { name: comparisonID, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Append a typed tolerance and mask profile for one golden comparison
+      operationId: configureGoldenComparisonProfile
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, tolerance_absolute, tolerance_relative, mask_dynamic_regions, mask_selectors]
+              properties:
+                reason: { type: string, minLength: 8, maxLength: 1000 }
+                tolerance_absolute: { type: number, minimum: 0, maximum: 1000000 }
+                tolerance_relative: { type: number, minimum: 0, maximum: 1 }
+                mask_dynamic_regions: { type: boolean }
+                mask_selectors:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        "201":
+          description: Append-only typed profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { $ref: "#/components/schemas/GoldenComparisonProfile" }
         "400": { $ref: "#/components/responses/ErrorResponse" }
         "403": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
@@ -3743,6 +3784,40 @@ components:
         reauthenticated: { type: boolean }
         approved_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         candidate_artifact_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        created_at: { type: string, format: date-time }
+    GoldenToleranceProfile:
+      type: object
+      additionalProperties: false
+      required: [mode, absolute, relative]
+      properties:
+        mode: { type: string, enum: [typed-review-profile-v1] }
+        absolute: { type: number, minimum: 0, maximum: 1000000 }
+        relative: { type: number, minimum: 0, maximum: 1 }
+    GoldenMaskProfile:
+      type: object
+      additionalProperties: false
+      required: [mode, dynamic_regions, selectors]
+      properties:
+        mode: { type: string, enum: [typed-review-profile-v1] }
+        dynamic_regions: { type: boolean }
+        selectors:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 256 }
+    GoldenComparisonProfile:
+      type: object
+      additionalProperties: false
+      required: [id, report_id, comparison_id, actor_id, actor_role, reason, reauthenticated, tolerance, mask, created_at]
+      properties:
+        id: { type: string }
+        report_id: { type: string }
+        comparison_id: { type: string }
+        actor_id: { type: string }
+        actor_role: { type: string, enum: [reviewer, administrator] }
+        reason: { type: string }
+        reauthenticated: { type: boolean }
+        tolerance: { $ref: "#/components/schemas/GoldenToleranceProfile" }
+        mask: { $ref: "#/components/schemas/GoldenMaskProfile" }
         created_at: { type: string, format: date-time }
     PolicyStructuredRules:
       type: object

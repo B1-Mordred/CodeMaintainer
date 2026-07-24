@@ -24,12 +24,59 @@ func (s *Server) listJobGoldenReports(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"reports": reports, "approvals": approvals})
+	profiles, err := s.store.ListGoldenComparisonProfiles(r.Context(), jobID, queryInt(r, "limit", 100))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reports": reports, "approvals": approvals, "profiles": profiles})
 }
 
 type goldenApprovalRequest struct {
 	Reason   string `json:"reason"`
 	Approved bool   `json:"approved"`
+}
+
+type goldenProfileRequest struct {
+	Reason             string   `json:"reason"`
+	ToleranceAbsolute  float64  `json:"tolerance_absolute"`
+	ToleranceRelative  float64  `json:"tolerance_relative"`
+	MaskDynamicRegions bool     `json:"mask_dynamic_regions"`
+	MaskSelectors      []string `json:"mask_selectors"`
+}
+
+func (s *Server) configureGoldenComparisonProfile(w http.ResponseWriter, r *http.Request) {
+	var request goldenProfileRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody)).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_golden_profile", "golden profile request must be valid JSON")
+		return
+	}
+	reauthenticated := s.auth == nil || recentlyReauthenticated(r)
+	if !reauthenticated {
+		writeError(w, http.StatusForbidden, "recent_reauthentication_required", "golden profile changes require recent reauthentication")
+		return
+	}
+	role := actorRole(r)
+	if role == "operator" {
+		role = "reviewer"
+	}
+	profile, err := s.store.SaveGoldenComparisonProfile(r.Context(), golden.ProfileRequest{
+		ReportID: r.PathValue("reportID"), ComparisonID: r.PathValue("comparisonID"),
+		ActorID: actorID(r), ActorRole: role, Reason: request.Reason,
+		Reauthenticated: reauthenticated,
+		Tolerance: golden.ToleranceProfile{
+			Mode: "typed-review-profile-v1", Absolute: request.ToleranceAbsolute, Relative: request.ToleranceRelative,
+		},
+		Mask: golden.MaskProfile{
+			Mode: "typed-review-profile-v1", DynamicRegions: request.MaskDynamicRegions,
+			Selectors: request.MaskSelectors,
+		},
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"profile": profile})
 }
 
 func (s *Server) approveGoldenUpdate(w http.ResponseWriter, r *http.Request) {
