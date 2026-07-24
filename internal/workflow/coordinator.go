@@ -59,6 +59,7 @@ type coordinatorStore interface {
 	documentation.Store
 	policy.Store
 	providers.Store
+	storage.ApprovalStore
 	intelligence.Store
 	projectmemory.DurableStore
 }
@@ -223,6 +224,9 @@ func (c *Coordinator) Execute(ctx context.Context, job jobs.Job) (Outcome, error
 			return Outcome{}, err
 		}
 		route, err := c.routeModelCall(ctx, job, "implementation", "implementation worker task packet", packet, []string{"task_metadata", "context_packet", "selected_symbols_tests", "candidate_diff", "memory_excerpt", "security_findings"})
+		if outcome, ok := remoteEgressApprovalOutcome(job.State, err); ok {
+			return outcome, nil
+		}
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -598,6 +602,9 @@ func (c *Coordinator) review(ctx context.Context, job jobs.Job) (Outcome, error)
 		{Class: "documentation_policy", Passed: true, Summary: "Documentation Agent manifest was retained and any documentation commit received fresh exact-commit verification"},
 	}
 	route, err := c.routeModelCall(ctx, job, "qc", "qc worker task packet", packet, []string{"task_metadata", "context_packet", "candidate_diff", "security_findings", "logs_artifacts"})
+	if outcome, ok := remoteEgressApprovalOutcome(job.State, err); ok {
+		return outcome, nil
+	}
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -685,6 +692,9 @@ func (c *Coordinator) designTests(ctx context.Context, job jobs.Job) (Outcome, e
 		return Outcome{}, err
 	}
 	route, err := c.routeModelCall(ctx, job, "test_designer", "test designer worker task packet", packet, []string{"task_metadata", "context_packet", "candidate_diff", "selected_symbols_tests"})
+	if outcome, ok := remoteEgressApprovalOutcome(job.State, err); ok {
+		return outcome, nil
+	}
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -814,6 +824,9 @@ func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Ou
 		return Outcome{}, err
 	}
 	route, err := c.routeModelCall(ctx, job, "documentation", "documentation worker task packet", packet, []string{"documentation_public_source", "context_packet", "candidate_diff"})
+	if outcome, ok := remoteEgressApprovalOutcome(job.State, err); ok {
+		return outcome, nil
+	}
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -1082,6 +1095,9 @@ func (c *Coordinator) repair(ctx context.Context, job jobs.Job) (Outcome, error)
 		return Outcome{}, err
 	}
 	route, err := c.routeModelCall(ctx, job, "repair", "repair worker task packet", packet, []string{"task_metadata", "context_packet", "selected_symbols_tests", "candidate_diff", "memory_excerpt", "security_findings"})
+	if outcome, ok := remoteEgressApprovalOutcome(job.State, err); ok {
+		return outcome, nil
+	}
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -1307,17 +1323,55 @@ type providerCallEvidence struct {
 	TrustTier string
 }
 
+type remoteEgressApprovalRequired struct {
+	Evidence providerCallEvidence
+}
+
+func (e remoteEgressApprovalRequired) Error() string {
+	return "remote provider egress manifest requires explicit per-job approval"
+}
+
 func (c *Coordinator) routeModelCall(ctx context.Context, job jobs.Job, role, purpose string, packet agents.TaskPacket, dataClasses []string) (providerCallEvidence, error) {
 	payload, err := json.Marshal(packet)
 	if err != nil {
 		return providerCallEvidence{}, err
 	}
-	report, err := c.providerRoutes.SimulateExecution(ctx, providers.ExecutionRequest{
-		Route: providers.RouteRequest{
-			JobID: job.ID, ProjectID: job.ProjectID, Role: role, Purpose: purpose,
-			DataClasses: dataClasses, EstimatedBytes: int64(len(payload)), EstimatedTokens: estimateTokens(len(payload)),
-			RequiresStructuredOutput: true,
+	routeRequest := providers.RouteRequest{
+		JobID: job.ID, ProjectID: job.ProjectID, Role: role, Purpose: purpose,
+		DataClasses: dataClasses, EstimatedBytes: int64(len(payload)), EstimatedTokens: estimateTokens(len(payload)),
+		RequiresStructuredOutput: true,
+	}
+	decision, err := c.providerRoutes.SimulateRoute(ctx, routeRequest, "workflow-controller")
+	if err != nil {
+		return providerCallEvidence{}, err
+	}
+	if decision.Status != providers.DecisionAllowed {
+		return providerCallEvidence{}, fmt.Errorf("provider route denied for %s worker call: %s", role, decision.Reason)
+	}
+	evidence := providerCallEvidence{
+		Report: providers.ExecutionReport{
+			Status: providers.ExecutionStatusSucceeded, Reason: "provider route approved before worker execution",
+			RetryBudget: decision.Route.RetryBudget, NetworkContacted: false,
+			RouteID: decision.Route.ID, ProviderID: decision.Provider.ID, EndpointID: decision.Endpoint.ID,
+			ModelProfileID: decision.Model.ID, EgressManifestSHA256: decision.EgressManifest.ManifestSHA256,
 		},
+		Manifest: decision.EgressManifest, TrustTier: decision.Provider.TrustTier,
+	}
+	if required, err := c.requiresRemoteEgressApproval(ctx, job, decision); err != nil {
+		return providerCallEvidence{}, err
+	} else if required {
+		approved, err := c.remoteEgressApproved(ctx, job.ID, decision.EgressManifest.ManifestSHA256)
+		if err != nil {
+			return providerCallEvidence{}, err
+		}
+		if !approved {
+			evidence.Report.Status = "awaiting_remote_egress_approval"
+			evidence.Report.Reason = "network contact withheld until exact egress manifest is approved"
+			return evidence, remoteEgressApprovalRequired{Evidence: evidence}
+		}
+	}
+	report, err := c.providerRoutes.SimulateExecution(ctx, providers.ExecutionRequest{
+		Route:    routeRequest,
 		Scenario: providers.ExecutionScenario{Behavior: providers.ExecutionBehaviorSuccess},
 	}, "workflow-controller")
 	if err != nil {
@@ -1340,16 +1394,57 @@ func (c *Coordinator) routeModelCall(ctx context.Context, job jobs.Job, role, pu
 	if manifest.ManifestSHA256 == "" {
 		return providerCallEvidence{}, errors.New("provider execution did not retain its egress manifest")
 	}
-	trustTier := ""
-	if profiles, err := c.store.ListProviderProfiles(ctx, 100); err == nil {
-		for _, profile := range profiles {
-			if profile.ID == report.ProviderID {
-				trustTier = profile.TrustTier
-				break
-			}
+	return providerCallEvidence{Report: report, Manifest: manifest, TrustTier: decision.Provider.TrustTier}, nil
+}
+
+func remoteEgressApprovalOutcome(resume jobs.State, err error) (Outcome, bool) {
+	var required remoteEgressApprovalRequired
+	if !errors.As(err, &required) {
+		return Outcome{}, false
+	}
+	details := withProviderRouteDetails(map[string]any{
+		"approval_required": true,
+		"approval_kind":     storage.ApprovalKindRemoteEgress,
+		"resume_state":      resume,
+		"data_classes":      required.Evidence.Manifest.DataClasses,
+		"redactions":        required.Evidence.Manifest.Redactions,
+		"retention":         required.Evidence.Manifest.Retention,
+		"estimated_bytes":   required.Evidence.Manifest.EstimatedBytes,
+		"estimated_tokens":  required.Evidence.Manifest.EstimatedTokens,
+	}, required.Evidence)
+	return Outcome{NextState: jobs.StateAwaitingRemoteEgressApproval, Details: mustJSON(details)}, true
+}
+
+func (c *Coordinator) requiresRemoteEgressApproval(ctx context.Context, job jobs.Job, decision providers.RouteDecision) (bool, error) {
+	if !decision.Provider.Remote || decision.Provider.TrustTier == providers.TrustLocal {
+		return false, nil
+	}
+	assessment, err := c.store.GetLatestRiskAssessment(ctx, job.ID)
+	if errors.Is(err, storage.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, gate := range assessment.Routing.ManualGates {
+		if gate == "remote_egress_approval" {
+			return true, nil
 		}
 	}
-	return providerCallEvidence{Report: report, Manifest: manifest, TrustTier: trustTier}, nil
+	return assessment.Level == risk.LevelHigh, nil
+}
+
+func (c *Coordinator) remoteEgressApproved(ctx context.Context, jobID, manifestSHA string) (bool, error) {
+	approvals, err := c.store.ListApprovals(ctx, jobID)
+	if err != nil {
+		return false, err
+	}
+	for _, approval := range approvals {
+		if approval.Kind == storage.ApprovalKindRemoteEgress && approval.SubjectSHA == manifestSHA && approval.Reauthenticated {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func estimateTokens(bytes int) int {

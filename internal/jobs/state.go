@@ -23,6 +23,7 @@ const (
 	StateAwaitingTestDesignDisposition State = "awaiting_test_design_disposition"
 	StateGoldenRehearsalReview         State = "golden_rehearsal_review"
 	StateAwaitingGoldenApproval        State = "awaiting_golden_approval"
+	StateAwaitingRemoteEgressApproval  State = "awaiting_remote_egress_approval"
 	StateLoadingDocumentationModel     State = "loading_documentation_model"
 	StateDocumentationReview           State = "documentation_review"
 	StatePolicyReview                  State = "policy_review"
@@ -56,6 +57,7 @@ var allStates = []State{
 	StateAwaitingTestDesignDisposition,
 	StateGoldenRehearsalReview,
 	StateAwaitingGoldenApproval,
+	StateAwaitingRemoteEgressApproval,
 	StateLoadingDocumentationModel,
 	StateDocumentationReview,
 	StatePolicyReview,
@@ -81,21 +83,22 @@ var transitions = map[State]map[State]struct{}{
 	StateAwaitingTaskApproval:          set(StateLoadingImplementationModel, StateCancelled, StateFailed),
 	StateLoadingImplementationModel:    set(StateReproducing, StateCancelled, StateFailed),
 	StateReproducing:                   set(StateImplementing, StateCancelled, StateFailed),
-	StateImplementing:                  set(StateVerifyingTargeted, StateCancelled, StateFailed),
+	StateImplementing:                  set(StateVerifyingTargeted, StateAwaitingRemoteEgressApproval, StateCancelled, StateFailed),
 	StateVerifyingTargeted:             set(StateVerifyingFull, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateVerifyingFull:                 set(StateLoadingTestDesignerModel, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateLoadingTestDesignerModel:      set(StateTestDesignReview, StateCancelled, StateFailed),
-	StateTestDesignReview:              set(StateAwaitingTestDesignDisposition, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateTestDesignReview:              set(StateAwaitingTestDesignDisposition, StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateAwaitingRemoteEgressApproval, StateCancelled, StateFailed),
 	StateAwaitingTestDesignDisposition: set(StateGoldenRehearsalReview, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateGoldenRehearsalReview:         set(StateAwaitingGoldenApproval, StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
 	StateAwaitingGoldenApproval:        set(StateLoadingDocumentationModel, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateAwaitingRemoteEgressApproval:  set(StateImplementing, StateTestDesignReview, StateLoadingDocumentationModel, StateDocumentationReview, StateLoadingQCModel, StateQCReview, StateRepairing, StateCancelled, StateFailed),
 	StateLoadingDocumentationModel:     set(StateDocumentationReview, StateCancelled, StateFailed),
-	StateDocumentationReview:           set(StatePolicyReview, StateLoadingQCModel, StateCancelled, StateFailed),
+	StateDocumentationReview:           set(StatePolicyReview, StateLoadingQCModel, StateAwaitingRemoteEgressApproval, StateCancelled, StateFailed),
 	StatePolicyReview:                  set(StateLoadingQCModel, StateCancelled, StateFailed),
 	StateLoadingQCModel:                set(StateQCReview, StateCancelled, StateFailed),
-	StateQCReview:                      set(StateAwaitingRepair, StateAwaitingOperator, StateCancelled, StateFailed),
+	StateQCReview:                      set(StateAwaitingRepair, StateAwaitingOperator, StateAwaitingRemoteEgressApproval, StateCancelled, StateFailed),
 	StateAwaitingRepair:                set(StateRepairing, StateAwaitingOperator, StateCancelled, StateFailed),
-	StateRepairing:                     set(StateFinalVerification, StateCancelled, StateFailed),
+	StateRepairing:                     set(StateFinalVerification, StateAwaitingRemoteEgressApproval, StateCancelled, StateFailed),
 	StateFinalVerification:             set(StateLoadingDocumentationModel, StatePolicyReview, StateLoadingQCModel, StateAwaitingRepair, StateCancelled, StateFailed),
 	StateAwaitingOperator:              set(StatePublishingBranch, StateCompleted, StateCancelled, StateFailed),
 	StatePublishingBranch:              set(StateDraftPRCreated, StateAwaitingOperator, StateFailed),
@@ -134,7 +137,7 @@ func (s State) Terminal() bool {
 
 func (s State) Resumable() bool {
 	return s.Valid() && !s.Terminal() && s != StateAwaitingOperator && s != StateAwaitingTaskApproval &&
-		s != StateAwaitingTestDesignDisposition && s != StateAwaitingGoldenApproval
+		s != StateAwaitingTestDesignDisposition && s != StateAwaitingGoldenApproval && s != StateAwaitingRemoteEgressApproval
 }
 
 func CanTransition(from, to State) bool {

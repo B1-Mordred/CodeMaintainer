@@ -292,6 +292,7 @@ func NewServer(store storage.Store, logger *slog.Logger, profile string, options
 	mux.HandleFunc("GET /api/v1/jobs/{jobID}/evidence-graph", s.getJobEvidenceGraph)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/cancel", s.cancelJob)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/retry", s.retryJob)
+	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-remote-egress", s.approveRemoteEgress)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/approve-publication", s.approvePublication)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/verify", s.requestVerification)
 	mux.HandleFunc("POST /api/v1/jobs/{jobID}/actions/review", s.requestReview)
@@ -1007,6 +1008,37 @@ func (s *Server) approvePublication(w http.ResponseWriter, r *http.Request) {
 	job, approval, err := s.store.ApprovePublication(r.Context(), current.ID, storage.PublicationApprovalRequest{
 		ActorID: actorID(r), ActorRole: actorRole(r), Rationale: request.Rationale,
 		Reauthenticated: reauthenticated, ExpectedVersion: current.Version,
+	})
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job": job, "approval": approval})
+}
+
+func (s *Server) approveRemoteEgress(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Rationale       string     `json:"rationale"`
+		ManifestSHA256  string     `json:"manifest_sha256"`
+		ResumeState     jobs.State `json:"resume_state"`
+		Reauthenticated bool       `json:"reauthenticated,omitempty"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	current, err := s.store.GetJob(r.Context(), r.PathValue("jobID"))
+	if err != nil {
+		s.storageError(w, r, err)
+		return
+	}
+	reauthenticated := request.Reauthenticated
+	if principal, ok := principalFromRequest(r); ok {
+		reauthenticated = principal.RecentlyReauthenticated(time.Now().UTC())
+	}
+	job, approval, err := s.store.ApproveRemoteEgress(r.Context(), current.ID, storage.RemoteEgressApprovalRequest{
+		ActorID: actorID(r), ActorRole: actorRole(r), Rationale: request.Rationale,
+		Reauthenticated: reauthenticated, ExpectedVersion: current.Version,
+		SubjectSHA: request.ManifestSHA256, ResumeState: request.ResumeState,
 	})
 	if err != nil {
 		s.storageError(w, r, err)

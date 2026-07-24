@@ -187,24 +187,26 @@
     {
       "step": 12,
       "id": "ui-fake-remote-provider-route-egress-job",
-      "status": "in_progress",
+      "status": "covered",
       "title": "Configure a fake remote endpoint from the UI, probe, route, approve egress, complete a job, and retain safe usage/cost evidence",
       "fixtures": [],
-      "implementation": ["internal/providers", "internal/api/providers.go", "internal/api/openapi.yaml", "internal/workflow/coordinator.go", "web/src/OperatorConsole.tsx"],
-      "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "internal/workflow/coordinator_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go", "internal/acceptance/local_fake_e2e_test.go", "test/e2e/ui-smoke.sh", "test/e2e/provider-workbench.js"],
+      "implementation": ["internal/providers", "internal/api/providers.go", "internal/api/server.go", "internal/api/openapi.yaml", "internal/jobs/state.go", "internal/storage/sqlite/approvals.go", "internal/workflow/coordinator.go", "web/src/OperatorConsole.tsx"],
+      "tests": ["internal/api/server_test.go", "internal/providers/service_test.go", "internal/storage/sqlite/approvals_test.go", "internal/workflow/coordinator_test.go", "web/src/App.test.tsx", "cmd/maintainctl/main_test.go", "internal/acceptance/local_fake_e2e_test.go", "test/e2e/ui-smoke.sh", "test/e2e/provider-workbench.js"],
       "ui": ["web/src/OperatorConsole.tsx#models-agents"],
       "docs": ["docs/model-providers.md", "docs/acceptance.md"],
       "proof": [
         {"path": "web/src/App.test.tsx", "contains": ["Provider configuration workbench", "Save provider version", "I reviewed the retained egress preview"]},
         {"path": "internal/api/server_test.go", "contains": ["typed provider workbench", "stale provider update returned", "remote-documentation-ci-preview"]},
+        {"path": "internal/storage/sqlite/approvals_test.go", "contains": ["TestRemoteEgressApprovalRequiresExactManifestAndResumesWorkerPhase", "remote_egress"]},
         {"path": "internal/providers/service_test.go", "contains": ["TestProfileUpdatesRequireFreshVersionsAndRemoteEgressApproval", "egress preview approval"]},
+        {"path": "internal/jobs/state.go", "contains": ["StateAwaitingRemoteEgressApproval", "awaiting_remote_egress_approval"]},
         {"path": "internal/workflow/coordinator_test.go", "contains": ["provider_egress_manifest_sha256", "implementation worker task packet", "repair worker task packet"]},
-        {"path": "internal/workflow/coordinator.go", "contains": ["routeModelCall", "withProviderRouteDetails", "provider_purpose"]},
+        {"path": "internal/workflow/coordinator.go", "contains": ["remoteEgressApprovalOutcome", "requiresRemoteEgressApproval", "provider_purpose"]},
         {"path": "internal/acceptance/local_fake_e2e_test.go", "contains": ["SimulateExecution", "browser approved fake remote documentation route", "NetworkContacted"]},
-        {"path": "test/e2e/provider-workbench.js", "contains": ["Probe capabilities for fake-remote-json", "completed browser job retained fake remote provider execution manifest evidence", "documentation worker task packet"]},
+        {"path": "test/e2e/provider-workbench.js", "contains": ["awaiting_remote_egress_approval", "approve-remote-egress", "completed browser job retained fake remote provider execution manifest evidence"]},
         {"path": "test/e2e/ui-smoke.sh", "contains": ["provider-workbench.result.json", "job_state", "provider_execution_status"]}
       ],
-      "remaining_work": ["Add policy-driven per-job remote egress approval when project policy requires it."]
+      "remaining_work": []
     },
     {
       "step": 13,

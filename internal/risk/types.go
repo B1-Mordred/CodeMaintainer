@@ -160,7 +160,7 @@ func RoutingForLevel(level Level) Routing {
 		base.DocumentationReview = true
 	}
 	if level == LevelHigh {
-		base.ManualGates = append(base.ManualGates, "publication_reauthentication")
+		base.ManualGates = append(base.ManualGates, "remote_egress_approval", "publication_reauthentication")
 	}
 	return base
 }

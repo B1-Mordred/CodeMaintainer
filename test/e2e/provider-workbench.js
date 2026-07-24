@@ -142,6 +142,16 @@ async (page) => {
     disposition: "accepted",
     reason: "browser accepted independent provider-backed Test Designer proposal",
   });
+  detail = await waitForJobState(jobID, "awaiting_remote_egress_approval", 180000);
+  const remoteEgressTransition = [...detail.transitions].reverse().find((transition) => transition.to === "awaiting_remote_egress_approval");
+  if (!remoteEgressTransition?.details?.provider_egress_manifest_sha256 || !remoteEgressTransition.details.resume_state) {
+    throw new Error("provider-backed browser job did not retain exact remote egress approval evidence");
+  }
+  await controller("POST", `/jobs/${jobID}/actions/approve-remote-egress`, {
+    rationale: "browser approved exact per-job remote egress manifest before provider execution",
+    manifest_sha256: remoteEgressTransition.details.provider_egress_manifest_sha256,
+    resume_state: remoteEgressTransition.details.resume_state,
+  });
   detail = await waitForJobState(jobID, "awaiting_operator", 180000);
   await controller("POST", `/jobs/${jobID}/actions/approve-publication`, {
     rationale: "browser approved exact provider-backed local-fake publication after retained egress evidence inspection",

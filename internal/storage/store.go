@@ -120,6 +120,11 @@ type Approval struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+const (
+	ApprovalKindDraftPublication = "draft_publication"
+	ApprovalKindRemoteEgress     = "remote_egress"
+)
+
 type PublicationApprovalRequest struct {
 	ActorID         string
 	ActorRole       string
@@ -128,8 +133,19 @@ type PublicationApprovalRequest struct {
 	ExpectedVersion int64
 }
 
+type RemoteEgressApprovalRequest struct {
+	ActorID         string
+	ActorRole       string
+	Rationale       string
+	Reauthenticated bool
+	ExpectedVersion int64
+	SubjectSHA      string
+	ResumeState     jobs.State
+}
+
 type ApprovalStore interface {
 	ApprovePublication(context.Context, string, PublicationApprovalRequest) (jobs.Job, Approval, error)
+	ApproveRemoteEgress(context.Context, string, RemoteEgressApprovalRequest) (jobs.Job, Approval, error)
 	ListApprovals(context.Context, string) ([]Approval, error)
 }
 

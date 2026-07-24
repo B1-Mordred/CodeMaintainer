@@ -156,6 +156,17 @@ uses local llama.cpp route profiles for the worker packet classes, while explici
 remote provider simulations still exercise the default-off remote documentation
 route.
 
+For high-risk jobs whose risk routing includes `remote_egress_approval`, a
+remote provider route pauses the job in `awaiting_remote_egress_approval`
+before provider execution. The pause transition exposes the exact manifest hash,
+route/provider/model IDs, purpose, data classes, redactions, byte/token
+estimates, retention, and the worker phase to resume. A reviewer or
+administrator must recently reauthenticate and approve that exact
+`manifest_sha256`; the approval is stored append-only as `kind=remote_egress`
+before the controller resumes the original worker phase. Stale job versions,
+unknown manifests, local-provider manifests, and mismatched resume states fail
+closed.
+
 ## Provider profile workbench
 
 The Models and agents page now exposes typed controls for registered provider,
@@ -180,7 +191,8 @@ The full Increment 2 provider milestone is still open. Remaining work includes:
 - integration of provider-native streaming, cancellation, batch/asynchronous
   resumability, and usage reconciliation into model-backed worker calls beyond
   the deterministic execution fakes;
-- OPA-bound project data-class policy and per-job approval when required;
+- OPA-bound project data-class policy beyond the current high-risk
+  `remote_egress_approval` routing gate;
 - rollback and export/import for provider profile revisions through the
   configuration/recovery workflow;
 - benchmark-backed local runtime optimization profiles.
