@@ -221,8 +221,8 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrations); err != nil {
 		t.Fatal(err)
 	}
-	if migrations != 40 {
-		t.Fatalf("applied migration count = %d, want 40", migrations)
+	if migrations != CurrentSchemaVersion {
+		t.Fatalf("applied migration count = %d, want %d", migrations, CurrentSchemaVersion)
 	}
 	var leaseTable string
 	if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='job_leases'").Scan(&leaseTable); err != nil {
@@ -324,6 +324,18 @@ func TestMigrationFromVersionOneAddsEveryRetainedSchema(t *testing.T) {
 		var name string
 		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
 			t.Fatalf("migration 38 table %s missing: %v", table, err)
+		}
+	}
+	for _, table := range []string{"evaluation_datasets", "evaluation_runs"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
+			t.Fatalf("migration 39 table %s missing: %v", table, err)
+		}
+	}
+	for _, table := range []string{"observability_events", "support_bundles"} {
+		var name string
+		if err := store.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
+			t.Fatalf("migration 40 table %s missing: %v", table, err)
 		}
 	}
 }
