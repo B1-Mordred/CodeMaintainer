@@ -811,12 +811,19 @@ func (c *Coordinator) reviewDocumentation(ctx context.Context, job jobs.Job) (Ou
 	if err != nil {
 		return Outcome{}, err
 	}
+	documentationFindings := documentationPolicyFindings(manifest)
+	if len(documentationFindings) != 0 {
+		if _, err := c.store.ObserveFindings(ctx, job.ID, job.ReviewCycle, documentationFindings); err != nil {
+			return Outcome{}, err
+		}
+	}
 	details := map[string]any{
 		"documentation": manifest.Status, "manifest_id": manifest.ID,
 		"requirements": len(manifest.Requirements), "changes": len(manifest.Changes),
+		"documentation_findings": len(documentationFindings),
 	}
-	if manifest.Status == "blocked" {
-		return Outcome{Details: mustJSON(details)}, errors.New("documentation policy blocked final QC until unsupported claims are resolved")
+	if manifest.Status == "blocked" || len(documentationFindings) != 0 {
+		return Outcome{Details: mustJSON(details)}, errors.New("documentation policy blocked final QC until documentation findings are resolved")
 	}
 	committed, err := c.git.Commit(ctx, gitbridge.CommitRequest{
 		ProjectID: job.ProjectID, JobID: job.ID, ExpectedHead: job.ResultSHA, OperationID: phaseKey(job),
@@ -897,6 +904,105 @@ func latestDocumentationStatus(items []documentation.Manifest) string {
 		return "missing"
 	}
 	return items[0].Status
+}
+
+func documentationPolicyFindings(manifest documentation.Manifest) []agents.Finding {
+	result := make([]agents.Finding, 0)
+	for _, requirement := range manifest.Requirements {
+		if requirement.Required && (requirement.Status == "pending" || requirement.Status == "blocked") {
+			result = append(result, agents.Finding{
+				ID:                 documentationFindingID("REQ", requirement.ID),
+				Severity:           "must_fix",
+				Category:           "documentation_policy",
+				Claim:              "Required documentation evidence is not satisfied for " + requirement.Document,
+				Location:           agents.Location{Path: documentationFindingPath(requirement.Document)},
+				Evidence:           "Policy source " + requirement.Source + " requires this document because: " + requirement.Reason,
+				RequiredResolution: "Update the required documentation or record an authorized documentation-not-required approval with evidence.",
+				VerificationMethod: "documentation_policy_check",
+			})
+		}
+	}
+	for _, check := range manifest.Checks {
+		if check.Status == "failed" {
+			result = append(result, agents.Finding{
+				ID:                 documentationFindingID("CHECK", check.ID),
+				Severity:           "must_fix",
+				Category:           "documentation_policy",
+				Claim:              "Documentation check failed for " + check.Target,
+				Location:           agents.Location{Path: documentationFindingPath(check.Target)},
+				Evidence:           check.Summary,
+				RequiredResolution: "Repair the documented source, render, link, accessibility, or freshness failure and rerun documentation validation.",
+				VerificationMethod: "documentation_policy_check",
+			})
+		}
+	}
+	for index, claim := range manifest.UnsupportedClaims {
+		result = append(result, agents.Finding{
+			ID:                 documentationFindingID("CLAIM", fmt.Sprintf("%03d", index+1)),
+			Severity:           "blocker",
+			Category:           "documentation_unsupported_claim",
+			Claim:              "Documentation contains an unsupported claim: " + trimFindingText(claim.Claim, 512),
+			Location:           agents.Location{Path: documentationFindingPath(claim.Location)},
+			Evidence:           claim.Reason,
+			RequiredResolution: "Remove the unsupported claim or link it to authoritative code, schema, test, or operator-approved evidence.",
+			VerificationMethod: "documentation_claim_qc",
+		})
+	}
+	if manifest.Status == "blocked" && len(result) == 0 {
+		result = append(result, agents.Finding{
+			ID:                 "QC-DOCBLOCKED-001",
+			Severity:           "must_fix",
+			Category:           "documentation_policy",
+			Claim:              "Documentation policy blocked final QC without a more specific retained finding",
+			Location:           agents.Location{Path: "docs/quality-workflow.md"},
+			Evidence:           manifest.PolicySummary,
+			RequiredResolution: "Record a specific documentation requirement, failed check, or unsupported claim before the job can proceed.",
+			VerificationMethod: "documentation_policy_check",
+		})
+	}
+	return result
+}
+
+func documentationFindingID(kind, value string) string {
+	clean := strings.ToUpper(value)
+	var builder strings.Builder
+	for _, char := range clean {
+		if (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
+			builder.WriteRune(char)
+			continue
+		}
+		builder.WriteByte('-')
+	}
+	suffix := strings.Trim(builder.String(), "-_")
+	if suffix == "" {
+		suffix = "001"
+	}
+	id := "QC-DOC" + kind + "-" + suffix
+	if len(id) > 67 {
+		id = id[:67]
+	}
+	return strings.TrimRight(id, "-_")
+}
+
+func documentationFindingPath(value string) string {
+	path := strings.TrimSpace(strings.Split(value, ":")[0])
+	clean := filepath.Clean(path)
+	if path == "" || clean == "." || clean == ".." || filepath.IsAbs(clean) ||
+		strings.HasPrefix(clean, ".."+string(filepath.Separator)) || strings.ContainsRune(clean, 0) {
+		return "docs/quality-workflow.md"
+	}
+	return clean
+}
+
+func trimFindingText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return value[:limit]
+	}
+	return strings.TrimSpace(value[:limit-3]) + "..."
 }
 
 func latestGoldenStatus(items []golden.Report) string {

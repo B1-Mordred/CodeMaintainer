@@ -77,3 +77,28 @@ func TestLaterReviewCannotChurnStableFindingOrInventOrdinaryBlocker(t *testing.T
 		t.Fatalf("allowed new-evidence finding returned %v", err)
 	}
 }
+
+func TestDocumentationPolicyFindingsCanAppearAfterRepairReview(t *testing.T) {
+	ctx := context.Background()
+	store, _ := Open(ctx, ":memory:")
+	defer store.Close()
+	job, _ := store.CreateJob(ctx, storage.CreateJobParams{ProjectID: "project", Repository: "owner/repo", Task: "fix docs", ActorID: "operator"})
+	for _, finding := range []agents.Finding{
+		{
+			ID: "QC-DOCREQ-001", Severity: "must_fix", Category: "documentation_policy",
+			Claim: "required docs are stale", Location: agents.Location{Path: "docs/api.md"},
+			Evidence: "documentation policy requires an API update", RequiredResolution: "update docs/api.md",
+			VerificationMethod: "documentation_policy_check",
+		},
+		{
+			ID: "QC-DOCCLAIM-001", Severity: "blocker", Category: "documentation_unsupported_claim",
+			Claim: "unsupported documentation claim", Location: agents.Location{Path: "docs/api.md"},
+			Evidence: "claim is not linked to source evidence", RequiredResolution: "remove or cite the claim",
+			VerificationMethod: "documentation_claim_qc",
+		},
+	} {
+		if _, err := store.ObserveFindings(ctx, job.ID, 1, []agents.Finding{finding}); err != nil {
+			t.Fatalf("documentation finding after repair returned %v", err)
+		}
+	}
+}

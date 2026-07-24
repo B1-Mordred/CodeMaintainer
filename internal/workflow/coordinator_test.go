@@ -156,6 +156,48 @@ func (f fixtureExecution) Document(_ context.Context, job jobs.Job, packet agent
 	return manifest, manifest.Validate()
 }
 
+func TestDocumentationPolicyFindingsBindManifestFailuresToQCFindingLifecycle(t *testing.T) {
+	manifest := documentation.Manifest{
+		JobID: "job_doc_findings", ProjectID: "project-doc", SchemaVersion: 1,
+		ContractSHA256: strings.Repeat("a", 64), RiskLevel: "high", ResultSHA: strings.Repeat("b", 40),
+		SourceContext: "documentation_agent_context_v1", PolicyVersion: "documentation-policy-v1",
+		Requirements: []documentation.Requirement{{
+			ID: "DOC-API", Document: "docs/api.md", Reason: "public API changed", Source: "candidate_diff",
+			RenderTargets: []string{"markdown"}, Required: true, Status: "pending",
+		}},
+		Changes: []documentation.Change{},
+		Checks: []documentation.Check{{
+			ID: "DOC-CHECK-LINKS", Kind: "link", Target: "docs/api.md", Status: "failed",
+			Summary: "docs/api.md links to a removed route",
+		}},
+		UnsupportedClaims: []documentation.UnsupportedClaim{{
+			Claim: "the CLI command is available on Windows", Location: "docs/api.md:12",
+			Reason: "no Windows-worker evidence supports this documentation claim",
+		}},
+		Edits: []documentation.Edit{}, Status: "blocked",
+		PolicySummary: "documentation policy blocked stale public API documentation",
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	items := documentationPolicyFindings(manifest)
+	if len(items) != 3 {
+		t.Fatalf("documentation findings = %#v", items)
+	}
+	categories := map[string]bool{}
+	severities := map[string]bool{}
+	for _, item := range items {
+		if err := item.Validate(); err != nil {
+			t.Fatalf("invalid finding %#v: %v", item, err)
+		}
+		categories[item.Category] = true
+		severities[item.Severity] = true
+	}
+	if !categories["documentation_policy"] || !categories["documentation_unsupported_claim"] || !severities["blocker"] || !severities["must_fix"] {
+		t.Fatalf("findings did not retain documentation policy and unsupported-claim blockers: %#v", items)
+	}
+}
+
 func TestCoordinatorCompletesImplementRejectRepairApproveAndLocalPublish(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

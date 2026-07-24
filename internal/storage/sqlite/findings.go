@@ -42,7 +42,8 @@ func (s *Store) ObserveFindings(ctx context.Context, jobID string, cycle int, va
 		switch {
 		case errors.Is(err, storage.ErrNotFound):
 			blocking := value.Severity == "blocker" || value.Severity == "must_fix"
-			if cycle > 0 && blocking && value.Category != "regression_introduced_by_repair" && value.Category != "newly_observed_evidence" {
+			if cycle > 0 && blocking && value.Category != "regression_introduced_by_repair" && value.Category != "newly_observed_evidence" &&
+				value.Category != "documentation_policy" && value.Category != "documentation_unsupported_claim" {
 				return nil, fmt.Errorf("new blocking finding category is forbidden after repair: %w", storage.ErrInvalid)
 			}
 			_, err = tx.ExecContext(ctx, `INSERT INTO qc_findings(
